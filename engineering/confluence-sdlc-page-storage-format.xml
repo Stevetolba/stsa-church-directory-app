@@ -1,0 +1,388 @@
+<ac:structured-macro ac:name="toc" ac:schema-version="1" ac:macro-id="toc-1">
+  <ac:parameter ac:name="maxLevel">2</ac:parameter>
+</ac:structured-macro>
+
+<h1>How We Build Here — the AI-SDLC</h1>
+
+<ac:structured-macro ac:name="panel" ac:schema-version="1" ac:macro-id="panel-keystone">
+  <ac:parameter ac:name="panelIcon">📌</ac:parameter>
+  <ac:parameter ac:name="panelIconText">📌</ac:parameter>
+  <ac:parameter ac:name="bgColor">#FFF7D6</ac:parameter>
+  <ac:parameter ac:name="titleBGColor">#FFE380</ac:parameter>
+  <ac:parameter ac:name="title">Keystone (Rule #1)</ac:parameter>
+  <ac:rich-text-body>
+    <p><strong>You own every line that merges.</strong> If you can't explain and defend the diff, it doesn't merge. "The AI wrote it" is never an answer.</p>
+  </ac:rich-text-body>
+</ac:structured-macro>
+
+<p>This page is the operating manual for shipping work on this project. It implements the <strong>AI-SDLC Team Blueprint</strong>. The day-to-day loop below is the whole process — everything else on this page explains <em>why</em> each step exists and what enforces it.</p>
+
+<p><strong>Audience:</strong> every engineer on the team, junior and senior, AI-assisted or not. Read this page before your first ticket.</p>
+
+<hr/>
+
+<h2>1. Why this process exists</h2>
+
+<p>This team is mostly junior and heavily AI-assisted, with <strong>one part-time senior reviewer (the lead)</strong> staffing the human gates. Without structure, that combination produces "vibe coding": the AI leads alone, shortcuts accumulate, code gets duplicated, and architectural decisions happen by accident.</p>
+
+<p>This SDLC externalises a senior engineer's judgment into <strong>process + automated rails</strong>, so that:</p>
+
+<ul>
+  <li><strong>The right path is the easy path; the wrong path is mechanically blocked or escalated.</strong></li>
+  <li><strong>The human owns every line that merges.</strong> AI implements; a person is accountable.</li>
+  <li><strong>Conflicts are prevented, not resolved</strong> — the system makes them rare and small.</li>
+  <li><strong>Tests are the contract</strong> that pins AI output to the spec.</li>
+  <li><strong>Authored truth is the only source of truth</strong> — specs, ADRs, and this page are authoritative; code maps and AI session memory are not.</li>
+  <li><strong>CI is the authority; local hooks are only convenience.</strong> Enforcement never depends on anyone's local config.</li>
+  <li><strong>Ceremony scales with risk.</strong> A typo and a schema migration do not travel the same path.</li>
+  <li><strong>The process is living</strong> — every gate rejection and near-miss becomes a new rail (lint rule, CI check, ADR, playbook line).</li>
+</ul>
+
+<ac:structured-macro ac:name="tip" ac:schema-version="1" ac:macro-id="tip-test">
+  <ac:rich-text-body>
+    <p>The test for every rule here: <em>can a junior violate it and still merge?</em> If yes, it's a suggestion, not a guardrail — and it gets moved into automation.</p>
+  </ac:rich-text-body>
+</ac:structured-macro>
+
+<hr/>
+
+<h2>2. The platforms — who owns what</h2>
+
+<p>Each tool has exactly one job. <strong>Link, never copy</strong> — duplicating content between them guarantees drift.</p>
+
+<table>
+  <tbody>
+    <tr>
+      <th>Platform</th>
+      <th>Owns</th>
+      <th>Does NOT own</th>
+    </tr>
+    <tr>
+      <td><strong>Jira</strong></td>
+      <td>The work ledger and gate workflow: one issue per unit of work (Epics → Stories → Tasks), assignee, risk tier, dependencies (<code>blocks</code>/<code>blocked-by</code>), WIP limits. Workflow states encode the lifecycle gates.</td>
+      <td>Specs, plans, ADRs — these are <strong>linked</strong> from the issue, never pasted in.</td>
+    </tr>
+    <tr>
+      <td><strong>GitHub</strong></td>
+      <td>Code, review, and the mechanical gates: PRs, branch protection, required status checks, CODEOWNERS, merge queue, AI review bot, CI. <strong>Specs, plans, and ADRs live in-repo</strong> (versioned, diff-reviewable, PR'd).</td>
+      <td>Work state, assignment, prioritisation.</td>
+    </tr>
+    <tr>
+      <td><strong>Confluence</strong> (this space)</td>
+      <td>Team-facing instructions, onboarding, runbooks — narrative documentation that isn't tied to a specific code change.</td>
+      <td>Anything that gates a merge.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>The link layer:</strong> the Jira key goes in every branch name (<code>PROJ-123-short-slug</code>) and PR title. With the GitHub-for-Jira app, this gives full traceability — <strong>Jira issue ↔ branch ↔ PR ↔ spec ↔ ADR</strong> — and PR merges drive Jira transitions automatically. Every merged line traces back to an approved intent.</p>
+
+<h3>The Jira workflow</h3>
+
+<ac:structured-macro ac:name="code" ac:schema-version="1" ac:macro-id="code-jira-workflow">
+  <ac:parameter ac:name="language">text</ac:parameter>
+  <ac:plain-text-body><![CDATA[Backlog → Spec/Plan Review ⛔ → (Arch/ADR Review ⛔, Tier 2 only) → In Progress → In Review ⛔ → Done]]></ac:plain-text-body>
+</ac:structured-macro>
+
+<p>The ⛔ transitions are <strong>permission-gated to the lead</strong>. You cannot move your own ticket into <code>In Progress</code> — the lead approving your spec/plan is what unlocks implementation. This is structural, not honour-system.</p>
+
+<hr/>
+
+<h2>3. Risk tiers — ceremony scales with risk</h2>
+
+<p>Every ticket gets a <strong>Risk Tier</strong> at triage. <strong>The tier is assigned by the lead, not self-selected.</strong> Tiering <em>up</em> is always free; tiering <em>down</em> requires lead sign-off. When in doubt, tier up.</p>
+
+<table>
+  <tbody>
+    <tr>
+      <th>Tier</th>
+      <th>Triggers</th>
+      <th>Process</th>
+    </tr>
+    <tr>
+      <td><ac:structured-macro ac:name="status" ac:schema-version="1" ac:macro-id="status-t0"><ac:parameter ac:name="colour">Green</ac:parameter><ac:parameter ac:name="title">TIER 0 · TRIVIAL</ac:parameter></ac:structured-macro></td>
+      <td>Copy change, config flip, doc edit, in-policy dependency bump. Isolated, no new surface.</td>
+      <td>No spec/plan. Branch → small PR → CI green → merge. Bypasses the lead (AI bot + peer merge) once graduation applies — but <strong>never zero review</strong>.</td>
+    </tr>
+    <tr>
+      <td><ac:structured-macro ac:name="status" ac:schema-version="1" ac:macro-id="status-t1"><ac:parameter ac:name="colour">Yellow</ac:parameter><ac:parameter ac:name="title">TIER 1 · STANDARD</ac:parameter></ac:structured-macro></td>
+      <td>Normal feature or fix inside the existing architecture. No new dependency, boundary, or migration.</td>
+      <td><strong>Combined spec+plan</strong> (one lead gate) → build with TDD → PR → AI review → human review.</td>
+    </tr>
+    <tr>
+      <td><ac:structured-macro ac:name="status" ac:schema-version="1" ac:macro-id="status-t2"><ac:parameter ac:name="colour">Red</ac:parameter><ac:parameter ac:name="title">TIER 2 · SIGNIFICANT</ac:parameter></ac:structured-macro></td>
+      <td>New module, schema/migration, <strong>any new dependency</strong>, public API/contract change, cross-module edge, auth/security, money-touching code, large codemod/rename ("conflict bomb").</td>
+      <td>Full spec <strong>and</strong> plan <strong>and</strong> an ADR, approved at the Arch/ADR gate. Lead closely involved throughout.</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr/>
+
+<h2>4. The lifecycle — every change, stage by stage</h2>
+
+<h3>Stage 0 — Intake &amp; triage</h3>
+<ul>
+  <li>All work starts as a <strong>Jira ticket</strong>. Don't start work that isn't a ticket.</li>
+  <li>The lead assigns the <strong>risk tier</strong> at triage.</li>
+  <li>Claiming a ticket = assigning yourself, <strong>within your WIP limit</strong> (see §7). Wire <code>blocks</code>/<code>blocked-by</code> so you never stack work on unmerged branches.</li>
+</ul>
+
+<h3>Stage 1 — Spec (Tier 1–2)</h3>
+<ul>
+  <li>Run the <strong>brainstorming → spec</strong> skill with your AI agent. The output is a spec document in the repo (<code>docs/superpowers/specs/</code>), opened as a PR.</li>
+  <li>The spec must show <strong>search-before-build</strong>: "I searched for prior art → reusing X / justified building new." Duplication is the classic junior+AI failure; this rail is mandatory.</li>
+  <li><strong>Acceptance criteria must be explicit and testable.</strong> "How will we know it's done?" is answered <em>before</em> any code exists. Untestable criteria = bounced at the gate.</li>
+  <li>Link the spec from the Jira issue. <strong>Link, never paste.</strong></li>
+</ul>
+
+<h3>Stage 2 — Plan (Tier 1–2)</h3>
+<ul>
+  <li>Run the <strong>writing-plans</strong> skill. The plan includes: implementation steps, test plan, backward-compatibility note, and — critically — <strong>PR slicing</strong>.</li>
+  <li><strong>Slicing is a gate:</strong> a plan is not done until it is an ordered list of independently-mergeable slices, each targeting the <strong>~400-line PR cap</strong>. You brainstorm/spec <strong>once</strong> at the epic level; each slice is a small PR riding the approved spec. Small PRs are the <em>output</em> of a good plan, not a constraint fought after the fact.</li>
+  <li>For Tier 1, spec and plan are reviewed together at <strong>one combined gate</strong>.</li>
+</ul>
+
+<ac:structured-macro ac:name="note" ac:schema-version="1" ac:macro-id="note-gate">
+  <ac:parameter ac:name="title">Gate ⛔ — Lead approval</ac:parameter>
+  <ac:rich-text-body>
+    <p>The <code>Spec/Plan Review → In Progress</code> Jira transition is lead-only. <strong>Implementation does not start before it.</strong> Tier 2 work additionally passes the <strong>Arch/ADR Review</strong> gate (see §5).</p>
+  </ac:rich-text-body>
+</ac:structured-macro>
+
+<h3>Stage 3 — Implement</h3>
+<ul>
+  <li>Branch <code>PROJ-123-short-slug</code> off <code>main</code>. <strong>One active branch per person.</strong> Isolation is branch + CI, not local worktrees — no worktree fan-out.</li>
+  <li><strong>TDD is the default:</strong> every behaviour named in the spec gets a test. Prefer the pure-core pattern — business logic in isolated, unit-testable modules.</li>
+  <li><strong>Backward compatible by default:</strong> additive/optional schema and contract changes; expand-then-contract for migrations; never break a shipped client. If a change can't be backward compatible, <strong>stop and escalate</strong> before writing it.</li>
+  <li><strong>No drive-by edits</strong> — a PR changes only what its ticket needs.</li>
+  <li><strong>Architecture stop-condition:</strong> if you (or your agent) discover mid-build that you need an unapproved architectural decision — a new dependency, table, cross-module import, pattern — <strong>halt and open an ADR</strong>. You may not "just add it." The build will be red anyway (see §5).</li>
+</ul>
+
+<h3>Stage 4 — Verify</h3>
+<p>CI runs the full <strong>green suite</strong>: typecheck, lint, unit/integration tests, build, architecture fitness functions, E2E smoke (Playwright per-PR for web; Maestro on-merge/nightly for mobile), and coverage-can't-drop.</p>
+<ul>
+  <li><strong>A red gate is a stop, not a suggestion.</strong> Never <code>--no-verify</code>, never bypass a hook, never merge red.</li>
+  <li><strong>No human reviews a red PR.</strong> The green suite is the floor, so human review time goes only to intent and design.</li>
+</ul>
+
+<h3>Stage 5 — Review</h3>
+<ol>
+  <li><strong>Open the PR from the template.</strong> It must carry the <strong>Jira key</strong>, the <strong>Risk tier</strong>, the spec/plan link, the prior-art link, and the Definition-of-Done checklist. The <code>PR hygiene</code> CI check fails PRs missing any of these, and enforces the <strong>~400-line cap</strong> (override label exists only for scheduled stop-the-line refactors).</li>
+  <li><strong>AI first-pass review</strong> runs on every PR — it catches the mechanical 80% (style, obvious bugs, duplication) before a human looks.</li>
+  <li><strong>Human review</strong> by a code owner (CODEOWNERS routes it). <strong>No self-merge, ever.</strong> The reviewer's judgment focuses on what machines can't check: does the diff match the approved intent, and <strong>are the tests real?</strong> Tautological tests — tests that pass but prove nothing — are the classic junior+AI trap and a specific review check.</li>
+</ol>
+
+<h3>Stage 6 — Integrate</h3>
+<ul>
+  <li><strong>Squash-merge only</strong>, via the <strong>merge queue</strong>, with the branch required up-to-date (this stops "two PRs green alone, broken together").</li>
+  <li>Branch is deleted on merge. The GitHub↔Jira link drives the ticket to <strong>Done</strong>.</li>
+  <li>Merged in <strong>hours, max a day</strong>, from branch creation. A branch idle 2 days is flagged and closed — the long-lived branch is banned.</li>
+</ul>
+
+<hr/>
+
+<h2>5. Architecture &amp; decision control</h2>
+
+<p>The architecture defends itself <strong>in CI, not in someone's head</strong>:</p>
+
+<ul>
+  <li><strong>Architecture-as-code.</strong> Modules are tagged; the allowed dependency graph is declared once; CI <strong>fails</strong> any disallowed edge (module-boundary lint at error). If your agent suggests crossing a boundary, you get a red build, not a review comment.</li>
+  <li><strong>New dependencies are always Tier 2</strong> — ADR + lead approval. CI flags any <code>package.json</code> dependency addition. (Version bumps of existing deps go through Renovate/Dependabot as Tier 0.)</li>
+  <li><strong>ADRs</strong> (<code>docs/adr/</code>) record every architecturally significant decision, one page each: context / decision / consequences / alternatives rejected. Triggers: new dependency, new DB table/migration, new cross-module edge, new public API, auth/security change, any new pattern.</li>
+  <li><strong>Golden paths.</strong> Use the blessed generators/scaffolding for new services, pages, and tests. Doing it right is <em>running a generator</em> — faster than improvising, and correct by construction.</li>
+  <li><strong>Design system rails</strong> (front-end): all colour/spacing comes from the design-tokens package (no hardcoded values — lint-enforced); user-facing copy resolves from the message catalogue (no hardcoded strings); layout uses logical properties only; WCAG 2.2 AA token-contrast is a CI gate. Effect colour (confetti, particles, rarity) is the one sanctioned carve-out.</li>
+</ul>
+
+<hr/>
+
+<h2>6. Definition of Ready &amp; Definition of Done</h2>
+
+<h3>Definition of Ready</h3>
+<p>A ticket may not enter <code>In Progress</code> until:</p>
+
+<ac:task-list>
+  <ac:task>
+    <ac:task-id>1</ac:task-id>
+    <ac:task-status>incomplete</ac:task-status>
+    <ac:task-body>Risk tier assigned (by the lead)</ac:task-body>
+  </ac:task>
+  <ac:task>
+    <ac:task-id>2</ac:task-id>
+    <ac:task-status>incomplete</ac:task-status>
+    <ac:task-body>Spec/plan approved (Tier 1–2)</ac:task-body>
+  </ac:task>
+  <ac:task>
+    <ac:task-id>3</ac:task-id>
+    <ac:task-status>incomplete</ac:task-status>
+    <ac:task-body>Acceptance criteria explicit and testable</ac:task-body>
+  </ac:task>
+  <ac:task>
+    <ac:task-id>4</ac:task-id>
+    <ac:task-status>incomplete</ac:task-status>
+    <ac:task-body>Dependencies identified (blocks/blocked-by wired)</ac:task-body>
+  </ac:task>
+</ac:task-list>
+
+<h3>Definition of Done</h3>
+<p>Verified at the review gate, never self-declared (automatable items are CI-enforced; it lives in the PR template and every box is a real gate):</p>
+
+<ac:task-list>
+  <ac:task>
+    <ac:task-id>5</ac:task-id>
+    <ac:task-status>incomplete</ac:task-status>
+    <ac:task-body>Green suite passes (incl. E2E smoke)</ac:task-body>
+  </ac:task>
+  <ac:task>
+    <ac:task-id>6</ac:task-id>
+    <ac:task-status>incomplete</ac:task-status>
+    <ac:task-body>Acceptance criteria met and linked</ac:task-body>
+  </ac:task>
+  <ac:task>
+    <ac:task-id>7</ac:task-id>
+    <ac:task-status>incomplete</ac:task-status>
+    <ac:task-body>Architecture boundaries respected (CI)</ac:task-body>
+  </ac:task>
+  <ac:task>
+    <ac:task-id>8</ac:task-id>
+    <ac:task-status>incomplete</ac:task-status>
+    <ac:task-body>Backward compatibility respected (additive/optional; expand-then-contract)</ac:task-body>
+  </ac:task>
+  <ac:task>
+    <ac:task-id>9</ac:task-id>
+    <ac:task-status>incomplete</ac:task-status>
+    <ac:task-body>Tests are real (behaviour-covering, not tautological)</ac:task-body>
+  </ac:task>
+  <ac:task>
+    <ac:task-id>10</ac:task-id>
+    <ac:task-status>incomplete</ac:task-status>
+    <ac:task-body>Docs / help content / E2E regression suite updated if behaviour changed</ac:task-body>
+  </ac:task>
+  <ac:task>
+    <ac:task-id>11</ac:task-id>
+    <ac:task-status>incomplete</ac:task-status>
+    <ac:task-body>If UI changed — design tokens used, message-catalogue copy, direction-agnostic layout, WCAG-AA contrast holds</ac:task-body>
+  </ac:task>
+  <ac:task>
+    <ac:task-id>12</ac:task-id>
+    <ac:task-status>incomplete</ac:task-status>
+    <ac:task-body>Promote-to-authored-truth done — anything important discovered during the work landed in an ADR/spec/this space, not just in one person's AI session memory</ac:task-body>
+  </ac:task>
+  <ac:task>
+    <ac:task-id>13</ac:task-id>
+    <ac:task-status>incomplete</ac:task-status>
+    <ac:task-body>PR within the ~400-line size cap (or scheduled-refactor override)</ac:task-body>
+  </ac:task>
+  <ac:task>
+    <ac:task-id>14</ac:task-id>
+    <ac:task-status>incomplete</ac:task-status>
+    <ac:task-body>Jira ticket driven to Done by the merge</ac:task-body>
+  </ac:task>
+</ac:task-list>
+
+<hr/>
+
+<h2>7. Working in parallel — the concurrency rules</h2>
+
+<p>These exist to prevent specific, well-known failure modes of parallel AI-assisted work: orphaned worktrees, weeks-stale branches, shared-file claim conflicts, and repo-wide rename conflict-bombs.</p>
+
+<ul>
+  <li><strong>Trunk-based development.</strong> One task → one branch → one small PR → merged same day → branch deleted. <code>main</code> is always green and releasable.</li>
+  <li><strong>WIP limit: 1–2 per person</strong> (everyone starts at 1). One active branch each.</li>
+  <li><strong>Vertical slices, not horizontal layers.</strong> You own a feature end-to-end; module boundaries double as concurrency boundaries, so parallel work rarely touches the same files.</li>
+  <li><strong>Conflict bombs are legislated.</strong> Large cross-cutting changes (renames, codemods, formatting sweeps) are <strong>scheduled "stop-the-line" events</strong> that land alone; everyone rebases after. Tier 2 by definition.</li>
+  <li><strong>Minimise hot files</strong> (barrels, route registries, hand-edited lists) — prefer directory-based discovery and generated files.</li>
+  <li><strong>Conflict playbook:</strong> rebase on <code>main</code> → if conflicts, re-run your agent on the conflicted files with <em>both</em> versions in context → <strong>if you can't explain the resolution, escalate. Never guess.</strong></li>
+</ul>
+
+<hr/>
+
+<h2>8. Escalation — "stop and ask a human"</h2>
+
+<ac:structured-macro ac:name="warning" ac:schema-version="1" ac:macro-id="warning-escalation">
+  <ac:rich-text-body>
+    <p>Stopping is <strong>expected and safe</strong>, never a failure. Explicit triggers:</p>
+    <ul>
+      <li>Any <strong>architecture / dependency / migration / auth / money-touching</strong> change not already approved.</li>
+      <li>Any <strong>merge conflict you don't fully understand</strong>.</li>
+      <li>Any <strong>spec ambiguity</strong> — pick nothing; ask.</li>
+      <li>Any time <strong>the AI suggests something that contradicts these rules</strong> — the rules win; surface it.</li>
+      <li>Anything that <strong>cannot be made backward compatible</strong>.</li>
+    </ul>
+  </ac:rich-text-body>
+</ac:structured-macro>
+
+<p>Review turnaround is <strong>batched, not interrupt-driven</strong>: the lead reviews in ~2 fixed windows per day. Latency is bounded, not zero — plan around it (that's what the WIP limit and <code>blocks</code> links are for).</p>
+
+<hr/>
+
+<h2>9. Working with AI — the rules of engagement</h2>
+
+<ul>
+  <li><strong>The agent configuration is shared, versioned code.</strong> <code>CLAUDE.md</code>, the skills, templates, and generators are committed to the repo and identical for everyone. Clone the repo → your agent knows the rules. Don't maintain a private variant.</li>
+</ul>
+
+<p><strong>Source-of-truth taxonomy</strong> — every "memory" surface has exactly one bucket:</p>
+
+<table>
+  <tbody>
+    <tr>
+      <th>Category</th>
+      <th>Examples</th>
+      <th>Trust level</th>
+    </tr>
+    <tr>
+      <td><strong>Authored truth</strong></td>
+      <td>ADRs, specs, <code>ARCHITECTURE.md</code>, <code>CLAUDE.md</code>, Jira, this space</td>
+      <td><strong>The only authority</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Derived index</strong></td>
+      <td>Code knowledge graph, Nx project graph</td>
+      <td>Never trusted as truth; regenerated in CI; a stale index is worse than none</td>
+    </tr>
+    <tr>
+      <td><strong>Episodic memory</strong></td>
+      <td>AI session memory, personal notes</td>
+      <td>Personal only — <strong>promote</strong> discoveries into authored truth, never rely on them</td>
+    </tr>
+  </tbody>
+</table>
+
+<ul>
+  <li><strong>You review everything the AI writes before it goes in a commit.</strong> Rule #1 applies: if you can't explain the diff, it doesn't merge — and you shouldn't have committed it.</li>
+  <li>Tests pin the AI to the spec: write (or approve) the tests first, then let the agent implement against them.</li>
+</ul>
+
+<hr/>
+
+<h2>10. Onboarding &amp; progressive autonomy</h2>
+
+<ul>
+  <li><strong>The repo is the onboarding.</strong> Clone it, run the setup, and your agent already knows the conventions; the generators and templates exist. Day-1 productive, day-1 safe.</li>
+  <li><strong>Everyone starts at max guardrails:</strong> WIP = 1, Tier-0 tickets only, shadowed by the lead.</li>
+  <li><strong>Autonomy is earned on evidence</strong>, not tenure: e.g. N clean Tier-1 PRs with zero gate rejections unlocks peer-review rights for Tier 0/1. The concrete thresholds are set by the lead.</li>
+  <li><strong>Weekly retro hardens the system:</strong> every gate rejection and near-miss becomes a new rail — a lint rule, a CI check, an ADR, a line on this page. If a rail is wrong, fix the rail (and ADR it if it's Tier 2) — don't route around it.</li>
+</ul>
+
+<hr/>
+
+<h2>Quick reference — the loop on one screen</h2>
+
+<ac:structured-macro ac:name="panel" ac:schema-version="1" ac:macro-id="panel-quickref">
+  <ac:parameter ac:name="bgColor">#F0F5FF</ac:parameter>
+  <ac:rich-text-body>
+    <ol>
+      <li>Pick a Jira ticket (tier assigned by the lead). Respect your WIP limit.</li>
+      <li>Spec + plan via the skills (Tier 1–2); output lands in the repo, linked from Jira.</li>
+      <li>⛔ <strong>Lead approves</strong> → ticket moves to In Progress. Not before.</li>
+      <li>Branch <code>PROJ-123-slug</code> off <code>main</code>. One branch per person.</li>
+      <li>Implement with TDD. Small slices. Backward compatible. Halt on unapproved architecture.</li>
+      <li>Green suite + E2E must pass. Red = stop.</li>
+      <li>PR from the template: Jira key, tier, spec link, DoD checklist, ≤400 lines.</li>
+      <li>AI review → human review (no self-merge).</li>
+      <li>Squash-merge via the merge queue. Ticket auto-moves to Done. Branch deleted.</li>
+    </ol>
+    <p><strong>When in doubt: tier up, stop, and ask.</strong></p>
+  </ac:rich-text-body>
+</ac:structured-macro>
