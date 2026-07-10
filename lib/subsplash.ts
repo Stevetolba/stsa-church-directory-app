@@ -216,6 +216,7 @@ export interface SearchProfilesParams {
 export interface ProfileSearchResult {
   profiles: Profile[];
   total: number;
+  overallTotal: number;
   page: number;
   pageSize: number;
 }
@@ -241,6 +242,7 @@ function filterAndPaginateProfiles(
   return {
     profiles: filtered.slice(start, start + pageSize),
     total: filtered.length,
+    overallTotal: all.length,
     page,
     pageSize,
   };
@@ -255,6 +257,7 @@ export interface ListHouseholdsParams {
 export interface HouseholdSearchResult {
   households: Household[];
   total: number;
+  overallTotal: number;
   page: number;
   pageSize: number;
 }
@@ -269,6 +272,7 @@ function filterAndPaginateHouseholds(
   return {
     households: filtered.slice(start, start + pageSize),
     total: filtered.length,
+    overallTotal: all.length,
     page,
     pageSize,
   };
