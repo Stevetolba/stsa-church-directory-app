@@ -1,4 +1,10 @@
-export type MemberStatus = "Member" | "Regular Attendee" | "Visitor";
+// Mirrors Subsplash's latest-membership-status-change enum 1:1 — see ADR-0006.
+export type MemberStatus =
+  | "Visitor"
+  | "Newcomer"
+  | "Regular Attendee"
+  | "Member"
+  | "Former Attender";
 
 export type Campus = "Arlington" | "Leesburg";
 

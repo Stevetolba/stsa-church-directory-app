@@ -10,7 +10,7 @@
 
 @layer base {
   :root {
-    --background: 40 33% 96%; /* cream #FAF7F1 */
+    --background: 40 47% 96%; /* cream #FAF7F1 (mockup-exact) */
     --foreground: 209 46% 22%; /* navy #1A3A5C */
     --card: 0 0% 100%;
     --card-foreground: 209 46% 22%;

@@ -47,11 +47,11 @@ const config: Config = {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
-        // Church Directory brand palette — spec §11
+        // STSA Church brand palette — design/README.md (logo-derived)
         brand: {
           navy: "#1A3A5C",
-          gold: "#C8973A",
-          cream: "#F7F6F2",
+          sky: "#29B6F6",
+          cream: "#FAF7F1",
         },
         status: {
           active: "#16A34A",
