@@ -9,8 +9,11 @@ export const AVATAR_TINTS = [
   { bg: "#E6EEE1", text: "#3F6B45" },
 ];
 
-export function initialsOf(firstName: string, lastName: string): string {
-  return `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase();
+export function initialsOf(firstName: string | undefined, lastName: string | undefined): string {
+  // Real Subsplash data has profiles with a missing first_name or
+  // last_name despite our type declaring both required — confirmed by a
+  // crash against the live org, not a hypothetical.
+  return `${firstName?.[0] ?? ""}${lastName?.[0] ?? ""}`.toUpperCase();
 }
 
 export function avatarTintForId(id: string) {

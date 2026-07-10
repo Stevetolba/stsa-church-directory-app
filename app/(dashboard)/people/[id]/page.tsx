@@ -7,6 +7,7 @@ import { avatarTintForId, initialsOf } from "@/lib/avatar";
 import { formatDate } from "@/lib/utils";
 import { StatusBadge } from "@/components/StatusBadge";
 import { CopyableField } from "@/components/CopyableField";
+import { HouseholdTypeBadge } from "@/components/HouseholdTypeBadge";
 import type { HouseholdRole } from "@/types/profile";
 
 // No mockup exists for this screen — matches the card/typography treatment
@@ -143,7 +144,7 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
             </div>
           </Section>
 
-          {profile.household_name && (
+          {profile.household_id && (
             <>
               <div className="h-px bg-[#F0EBDF]" />
               <Section label="Household">
@@ -151,7 +152,7 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
                   href={`/households/${profile.household_id}`}
                   className="text-[14px] font-semibold text-brand-sky hover:underline"
                 >
-                  {profile.household_name}
+                  {household?.name ?? profile.household_name ?? "View household"}
                 </Link>
 
                 {profile.household_role && (
@@ -201,6 +202,7 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
                           <span className="flex-1 truncate text-[14px] text-brand-navy">
                             {member.first_name} {member.last_name}
                           </span>
+                          <HouseholdTypeBadge role={member.household_role} />
                           <StatusBadge status={member.status} />
                         </Link>
                       );

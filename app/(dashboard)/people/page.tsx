@@ -1,9 +1,10 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Plus, Users } from "lucide-react";
 import { SearchBar } from "@/components/SearchBar";
 import { PersonCard } from "@/components/PersonCard";
+import { PersonCardSkeleton } from "@/components/PersonCardSkeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { usePeople } from "@/hooks/usePeople";
 import type { Campus, MemberStatus } from "@/types/profile";
@@ -121,8 +122,14 @@ export default function PeoplePage() {
         </button>
       </div>
 
-      {!isLoading && profiles.length === 0 ? (
-        <EmptyState message={`No people match "${search}".`} />
+      {isLoading ? (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-[18px]">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <PersonCardSkeleton key={index} />
+          ))}
+        </div>
+      ) : profiles.length === 0 ? (
+        <EmptyState icon={<Users className="h-6 w-6" />} message={`No people match "${search}".`} />
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-[18px]">
           {profiles.map((profile, index) => (

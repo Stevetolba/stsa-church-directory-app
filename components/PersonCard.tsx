@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Mail, Phone } from "lucide-react";
 import type { Profile } from "@/types/profile";
 import { AVATAR_TINTS, initialsOf } from "@/lib/avatar";
@@ -13,7 +14,10 @@ export function PersonCard({ profile, index }: { profile: Profile; index: number
   const householdCampus = [profile.household_name, profile.campus].filter(Boolean).join(" · ");
 
   return (
-    <div className="flex flex-col gap-3.5 rounded-[14px] border border-[#EAE2D0] bg-white p-5 shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
+    <Link
+      href={`/people/${profile.id}`}
+      className="flex cursor-pointer flex-col gap-3.5 rounded-[14px] border border-[#EAE2D0] bg-white p-5 shadow-[0_1px_3px_rgba(26,58,92,0.05)]"
+    >
       <div className="flex items-start justify-between gap-2.5">
         <div className="flex min-w-0 items-center gap-3">
           <div
@@ -48,6 +52,6 @@ export function PersonCard({ profile, index }: { profile: Profile; index: number
           </div>
         )}
       </div>
-    </div>
+    </Link>
   );
 }
