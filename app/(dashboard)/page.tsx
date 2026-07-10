@@ -23,12 +23,12 @@ export default async function DashboardPage() {
       </h1>
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <StatCard icon={Users} label="Total Members" value={memberCount} />
+        <StatCard icon={Users} label="Total People" value={memberCount} />
         <StatCard icon={Home} label="Total Households" value={householdCount} />
       </div>
 
       <form
-        action="/members"
+        action="/people"
         method="GET"
         className="mt-8 flex max-w-[440px] items-center gap-2.5 rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-[11px] shadow-[0_1px_2px_rgba(26,58,92,0.04)]"
       >
@@ -43,10 +43,10 @@ export default async function DashboardPage() {
 
       <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <ActionCard
-          href="/members"
+          href="/people"
           icon={Users}
-          title="Browse Members"
-          description="Search and view the member directory."
+          title="Browse People"
+          description="Search and view the church directory."
         />
         <ActionCard
           href="/households"

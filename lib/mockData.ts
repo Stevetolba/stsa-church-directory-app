@@ -3,15 +3,34 @@ import type { Household } from "@/types/household";
 
 // Mock fixtures — Step 3 build order: "mock responses until credentials
 // arrive". Extends the design mockup's 9 sample members with the full
-// Profile shape, one household per member, and all five MemberStatus
-// values represented (ADR-0006).
+// Profile shape, one household per member (plus one two-member household
+// to exercise the "other household members" list), and all five
+// MemberStatus values represented (ADR-0006). Arlington and Leesburg are
+// both real Northern Virginia towns, so addresses use VA.
 
-export const mockHouseholds: Household[] = [
+// Stored on globalThis rather than as plain module-level consts: Next.js's
+// dev server compiles Route Handlers and Server Components as separate
+// module layers, so a plain array here would be a *different* array in
+// each — mutations from updateProfile() (called from the API route) would
+// be invisible to pages reading it back. globalThis is a true singleton
+// across all layers within the same process (the same reasoning as the
+// standard Next.js Prisma-client-singleton pattern for surviving Fast
+// Refresh). Irrelevant once wired to the real API — a real HTTP call has
+// no such problem.
+declare global {
+  // eslint-disable-next-line no-var
+  var __mockHouseholds: Household[] | undefined;
+  // eslint-disable-next-line no-var
+  var __mockProfiles: Profile[] | undefined;
+}
+
+const SEED_HOUSEHOLDS: Household[] = [
   {
     id: "household-whitfield",
     name: "Whitfield Family",
     primary_email: "margaret.whitfield@gracechapel.org",
     primary_phone: "(614) 555-0142",
+    address: "142 Maple Street, Arlington, VA 22201",
     status: "active",
     created_at: "2019-03-11T14:00:00Z",
     updated_at: "2025-11-02T09:30:00Z",
@@ -21,6 +40,7 @@ export const mockHouseholds: Household[] = [
     name: "Okafor Household",
     primary_email: "d.okafor@gracechapel.org",
     primary_phone: "(614) 555-0198",
+    address: "88 Cardinal Lane, Leesburg, VA 20175",
     status: "active",
     created_at: "2020-06-04T14:00:00Z",
     updated_at: "2025-10-18T09:30:00Z",
@@ -30,6 +50,7 @@ export const mockHouseholds: Household[] = [
     name: "Anand Family",
     primary_email: "priya.anand@gmail.com",
     primary_phone: "(614) 555-0173",
+    address: "27 Birchwood Court, Arlington, VA 22203",
     status: "active",
     created_at: "2021-01-22T14:00:00Z",
     updated_at: "2025-09-30T09:30:00Z",
@@ -39,6 +60,7 @@ export const mockHouseholds: Household[] = [
     name: "Reyes Household",
     primary_email: "treyes88@outlook.com",
     primary_phone: "(614) 555-0110",
+    address: "510 Harrison Ave, Leesburg, VA 20176",
     status: "active",
     created_at: "2024-12-01T14:00:00Z",
     updated_at: "2025-12-01T09:30:00Z",
@@ -48,6 +70,7 @@ export const mockHouseholds: Household[] = [
     name: "Carter Family",
     primary_email: "evelyn.carter@gracechapel.org",
     primary_phone: "(614) 555-0161",
+    address: "9 Fairview Terrace, Arlington, VA 22204",
     status: "active",
     created_at: "2017-08-19T14:00:00Z",
     updated_at: "2025-11-20T09:30:00Z",
@@ -57,6 +80,7 @@ export const mockHouseholds: Household[] = [
     name: "Sutton Household",
     primary_email: "j.sutton@yahoo.com",
     primary_phone: "(614) 555-0129",
+    address: "233 King Street, Leesburg, VA 20175",
     status: "active",
     created_at: "2026-02-09T14:00:00Z",
     updated_at: "2026-02-09T09:30:00Z",
@@ -66,6 +90,7 @@ export const mockHouseholds: Household[] = [
     name: "Morales Family",
     primary_email: "ana.morales@gmail.com",
     primary_phone: "(614) 555-0184",
+    address: "76 Wilson Blvd, Arlington, VA 22201",
     status: "active",
     created_at: "2025-05-14T14:00:00Z",
     updated_at: "2025-12-15T09:30:00Z",
@@ -75,6 +100,7 @@ export const mockHouseholds: Household[] = [
     name: "Bishop Household",
     primary_email: "h.bishop@gracechapel.org",
     primary_phone: "(614) 555-0155",
+    address: "14 Loudoun St, Leesburg, VA 20176",
     status: "active",
     created_at: "2015-04-02T14:00:00Z",
     updated_at: "2024-06-10T09:30:00Z",
@@ -84,13 +110,14 @@ export const mockHouseholds: Household[] = [
     name: "Fields Family",
     primary_email: "naomi.fields@gmail.com",
     primary_phone: "(614) 555-0137",
+    address: "301 Clarendon Blvd, Arlington, VA 22203",
     status: "active",
     created_at: "2022-09-27T14:00:00Z",
     updated_at: "2025-08-05T09:30:00Z",
   },
 ];
 
-export const mockProfiles: Profile[] = [
+const SEED_PROFILES: Profile[] = [
   {
     id: "profile-margaret-whitfield",
     first_name: "Margaret",
@@ -102,10 +129,50 @@ export const mockProfiles: Profile[] = [
     marital_status: "married",
     household_id: "household-whitfield",
     household_name: "Whitfield Family",
-    household_role: "head",
+    household_role: "parent",
     status: "Member",
     campus: "Arlington",
     baptism_date: "1985-06-02",
+    custom_fields: [{ id: "cf-campus", label: "Campus", value: "Arlington" }],
+    created_at: "2019-03-11T14:00:00Z",
+    updated_at: "2025-11-02T09:30:00Z",
+  },
+  {
+    id: "profile-robert-whitfield",
+    first_name: "Robert",
+    last_name: "Whitfield",
+    email: "robert.whitfield@gracechapel.org",
+    phone_number: "(614) 555-0143",
+    date_of_birth: "1966-09-21",
+    gender: "male",
+    marital_status: "married",
+    household_id: "household-whitfield",
+    household_name: "Whitfield Family",
+    household_role: "parent",
+    status: "Member",
+    campus: "Arlington",
+    baptism_date: "1983-05-15",
+    custom_fields: [{ id: "cf-campus", label: "Campus", value: "Arlington" }],
+    created_at: "2019-03-11T14:00:00Z",
+    updated_at: "2025-11-02T09:30:00Z",
+  },
+  {
+    id: "profile-lily-whitfield",
+    first_name: "Lily",
+    last_name: "Whitfield",
+    email: "lily.whitfield@gracechapel.org",
+    date_of_birth: "2016-03-08",
+    gender: "female",
+    household_id: "household-whitfield",
+    household_name: "Whitfield Family",
+    household_role: "child",
+    // academic_grade is normally computed server-side by Subsplash from
+    // graduation_year — hardcoded here as a mock stand-in for that.
+    graduation_year: 2034,
+    academic_grade: "5th Grade",
+    status: "Member",
+    campus: "Arlington",
+    baptism_date: "2016-08-21",
     custom_fields: [{ id: "cf-campus", label: "Campus", value: "Arlington" }],
     created_at: "2019-03-11T14:00:00Z",
     updated_at: "2025-11-02T09:30:00Z",
@@ -121,7 +188,7 @@ export const mockProfiles: Profile[] = [
     marital_status: "married",
     household_id: "household-okafor",
     household_name: "Okafor Household",
-    household_role: "head",
+    household_role: "guardian",
     status: "Member",
     campus: "Leesburg",
     baptism_date: "2001-09-16",
@@ -140,7 +207,7 @@ export const mockProfiles: Profile[] = [
     marital_status: "single",
     household_id: "household-anand",
     household_name: "Anand Family",
-    household_role: "head",
+    household_role: "guardian",
     status: "Regular Attendee",
     campus: "Arlington",
     custom_fields: [{ id: "cf-campus", label: "Campus", value: "Arlington" }],
@@ -157,7 +224,7 @@ export const mockProfiles: Profile[] = [
     gender: "male",
     household_id: "household-reyes",
     household_name: "Reyes Household",
-    household_role: "head",
+    household_role: "guardian",
     status: "Visitor",
     campus: "Leesburg",
     custom_fields: [{ id: "cf-campus", label: "Campus", value: "Leesburg" }],
@@ -175,7 +242,7 @@ export const mockProfiles: Profile[] = [
     marital_status: "widowed",
     household_id: "household-carter",
     household_name: "Carter Family",
-    household_role: "head",
+    household_role: "guardian",
     status: "Member",
     campus: "Arlington",
     baptism_date: "1973-04-08",
@@ -193,7 +260,7 @@ export const mockProfiles: Profile[] = [
     gender: "male",
     household_id: "household-sutton",
     household_name: "Sutton Household",
-    household_role: "head",
+    household_role: "guardian",
     status: "Newcomer",
     campus: "Leesburg",
     custom_fields: [{ id: "cf-campus", label: "Campus", value: "Leesburg" }],
@@ -211,7 +278,7 @@ export const mockProfiles: Profile[] = [
     marital_status: "single",
     household_id: "household-morales",
     household_name: "Morales Family",
-    household_role: "head",
+    household_role: "guardian",
     status: "Visitor",
     campus: "Arlington",
     custom_fields: [{ id: "cf-campus", label: "Campus", value: "Arlington" }],
@@ -229,7 +296,7 @@ export const mockProfiles: Profile[] = [
     marital_status: "widowed",
     household_id: "household-bishop",
     household_name: "Bishop Household",
-    household_role: "head",
+    household_role: "guardian",
     status: "Former Attender",
     campus: "Leesburg",
     baptism_date: "1966-08-14",
@@ -248,7 +315,7 @@ export const mockProfiles: Profile[] = [
     marital_status: "married",
     household_id: "household-fields",
     household_name: "Fields Family",
-    household_role: "head",
+    household_role: "guardian",
     status: "Regular Attendee",
     campus: "Arlington",
     custom_fields: [{ id: "cf-campus", label: "Campus", value: "Arlington" }],
@@ -256,3 +323,6 @@ export const mockProfiles: Profile[] = [
     updated_at: "2025-08-05T09:30:00Z",
   },
 ];
+
+export const mockHouseholds = globalThis.__mockHouseholds ?? (globalThis.__mockHouseholds = SEED_HOUSEHOLDS);
+export const mockProfiles = globalThis.__mockProfiles ?? (globalThis.__mockProfiles = SEED_PROFILES);

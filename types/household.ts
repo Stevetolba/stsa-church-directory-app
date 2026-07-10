@@ -5,6 +5,7 @@ export interface Household {
   name: string;
   primary_email?: string;
   primary_phone?: string;
+  address?: string;
   status?: string;
   members?: Profile[];
   created_at: string;

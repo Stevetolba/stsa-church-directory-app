@@ -46,7 +46,9 @@ interface RawProfile {
   date_of_birth?: string | null;
   gender?: string;
   marital_status?: string;
-  household_role?: string;
+  household_role?: "guardian" | "parent" | "child" | "other" | "unknown";
+  academic_grade?: { name: string; value: number } | null;
+  graduation_year?: number | null;
   baptism_date?: string | null;
   custom_fields?: RawCustomFieldValue[];
   created_at: string;
@@ -58,6 +60,13 @@ interface RawProfile {
   };
 }
 
+interface RawAddress {
+  street?: string;
+  city?: string;
+  state?: string;
+  postal_code?: string;
+}
+
 interface RawHousehold {
   id: string;
   name: string;
@@ -66,7 +75,7 @@ interface RawHousehold {
   status?: string;
   created_at: string;
   updated_at: string;
-  _embedded?: { members?: RawProfile[] };
+  _embedded?: { members?: RawProfile[]; address?: RawAddress };
 }
 
 interface HalCollection<T> {
@@ -143,6 +152,8 @@ function mapProfile(raw: RawProfile): Profile {
     household_id: household?.id,
     household_name: household?.name,
     household_role: raw.household_role,
+    academic_grade: raw.academic_grade?.name,
+    graduation_year: raw.graduation_year ?? undefined,
     status: statusRaw ? MEMBERSHIP_STATUS_MAP[statusRaw] : "Visitor",
     campus: extractCampus(raw.custom_fields),
     baptism_date: raw.baptism_date ?? undefined,
@@ -157,12 +168,21 @@ function mapProfile(raw: RawProfile): Profile {
   };
 }
 
+function formatAddress(address: RawAddress | undefined): string | undefined {
+  if (!address) return undefined;
+  const cityStateZip = [address.city, [address.state, address.postal_code].filter(Boolean).join(" ")]
+    .filter(Boolean)
+    .join(", ");
+  return [address.street, cityStateZip].filter(Boolean).join(", ") || undefined;
+}
+
 function mapHousehold(raw: RawHousehold): Household {
   return {
     id: raw.id,
     name: raw.name,
     primary_email: raw.primary_email,
     primary_phone: raw.primary_phone,
+    address: formatAddress(raw._embedded?.address),
     status: raw.status,
     members: raw._embedded?.members?.map(mapProfile),
     created_at: raw.created_at,
@@ -298,19 +318,46 @@ export async function getProfile(id: string): Promise<Profile | null> {
 }
 
 // Only the fields actually editable via PATCH /people/v1/profiles/{id} at
-// the top level. Membership status (Member/Visitor/etc.) is a separate
-// Subsplash resource, not a field on this endpoint — mapping the edit
-// form's status control to the right call is a Step 11 concern.
+// the top level, plus campus (handled separately below — it lives in
+// custom_fields, not as a top-level field). Membership status
+// (Member/Visitor/etc.) is a separate Subsplash resource entirely — see
+// ADR-0007.
 export type UpdateProfileInput = Partial<
-  Pick<Profile, "first_name" | "last_name" | "email" | "phone_number">
+  Pick<Profile, "first_name" | "last_name" | "email" | "phone_number" | "campus">
 >;
 
 export async function updateProfile(id: string, patch: UpdateProfileInput): Promise<Profile> {
+  const { campus, ...topLevelPatch } = patch;
+
   if (USE_MOCK_DATA) {
     const existing = mockProfiles.find((p) => p.id === id);
     if (!existing) throw new Error(`Profile not found: ${id}`);
-    Object.assign(existing, patch, { updated_at: new Date().toISOString() });
+    Object.assign(existing, topLevelPatch, { updated_at: new Date().toISOString() });
+    if (campus !== undefined) {
+      existing.campus = campus;
+      const campusField = existing.custom_fields?.find((f) => f.label.toLowerCase() === "campus");
+      if (campusField) {
+        campusField.value = campus;
+      } else {
+        existing.custom_fields = [
+          ...(existing.custom_fields ?? []),
+          { id: "cf-campus", label: "Campus", value: campus },
+        ];
+      }
+    }
     return existing;
+  }
+
+  if (campus !== undefined) {
+    // Updating a custom field for real requires the Campus field's
+    // custom_field_definition id/revision_id and, since it's a dropdown,
+    // the target choice's id — none of which are hardcodable (they're
+    // org-specific and would need a GET /people/v1/custom-field-definitions
+    // lookup this app doesn't make yet). Stopping here rather than
+    // guessing and risking a bad write against real data.
+    throw new Error(
+      "Updating campus against the real Subsplash API isn't implemented yet — requires looking up the Campus custom field's definition and choice IDs first."
+    );
   }
 
   const token = await getServiceToken();
@@ -320,7 +367,7 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(patch),
+    body: JSON.stringify(topLevelPatch),
   });
   if (!res.ok) {
     throw new Error(`Subsplash API error: ${res.status} PATCH /people/v1/profiles/${id}`);
@@ -345,4 +392,36 @@ export async function getHousehold(id: string): Promise<Household | null> {
   } catch {
     return null;
   }
+}
+
+export type UpdateHouseholdInput = Partial<Pick<Household, "address">>;
+
+export async function updateHousehold(id: string, patch: UpdateHouseholdInput): Promise<Household> {
+  if (USE_MOCK_DATA) {
+    const existing = mockHouseholds.find((h) => h.id === id);
+    if (!existing) throw new Error(`Household not found: ${id}`);
+    Object.assign(existing, patch, { updated_at: new Date().toISOString() });
+    return existing;
+  }
+
+  const token = await getServiceToken();
+  const res = await fetch(`${BASE_URL}/people/v1/households/${id}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    // Subsplash wants a structured _embedded.address (street/city/state/
+    // postal_code) — confirmed in openapi.yaml's household PATCH request
+    // body. Our display model stores one formatted string, so putting the
+    // whole thing in `street` is a best-effort stopgap; proper structured
+    // address input fields are needed before this is production-ready.
+    body: JSON.stringify(
+      patch.address !== undefined ? { _embedded: { address: { street: patch.address } } } : {}
+    ),
+  });
+  if (!res.ok) {
+    throw new Error(`Subsplash API error: ${res.status} PATCH /people/v1/households/${id}`);
+  }
+  return mapHousehold((await res.json()) as RawHousehold);
 }

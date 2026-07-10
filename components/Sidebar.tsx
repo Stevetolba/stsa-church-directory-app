@@ -13,7 +13,7 @@ import type { Role } from "@/types/auth";
 // be recreated literally — "not SVGs or an icon font").
 
 const NAV_ITEMS = [
-  { href: "/members", label: "Members", icon: Users },
+  { href: "/people", label: "People", icon: Users },
   { href: "/households", label: "Families & Households", icon: Home },
 ];
 

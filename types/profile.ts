@@ -8,6 +8,10 @@ export type MemberStatus =
 
 export type Campus = "Arlington" | "Leesburg";
 
+// Mirrors Subsplash's HouseholdRole enum exactly (openapi.yaml) — not
+// "head"/"spouse" as earlier mock data guessed before this was checked.
+export type HouseholdRole = "guardian" | "parent" | "child" | "other" | "unknown";
+
 export interface CustomField {
   id: string;
   label: string;
@@ -27,7 +31,12 @@ export interface Profile {
   marital_status?: string;
   household_id?: string;
   household_name?: string;
-  household_role?: string;
+  household_role?: HouseholdRole;
+  // Subsplash computes academic_grade server-side from graduation_year —
+  // it isn't itself stored/editable. Only meaningful when household_role
+  // is "child".
+  academic_grade?: string;
+  graduation_year?: number;
   status: MemberStatus;
   campus?: Campus;
   baptism_date?: string;
