@@ -46,7 +46,15 @@ export function EditProfileForm({
 
   async function onSubmit(values: EditFormValues) {
     setSubmitError(null);
-    const { address, ...profileValues } = values;
+    const { address, campus, ...restProfileValues } = values;
+    // Campus is a controlled <select> with a default, so it's always
+    // present in `values` even when unchanged. Real-mode campus updates
+    // aren't implemented yet (lib/subsplash.ts throws clearly if asked to
+    // change it) — only include it in the PATCH if it actually changed,
+    // so saving name/email/phone doesn't fail just because the select's
+    // default value is technically "defined".
+    const profileValues =
+      campus !== (profile.campus ?? "Arlington") ? { ...restProfileValues, campus } : restProfileValues;
 
     const profileRes = await fetch(`/api/profiles/${profile.id}`, {
       method: "PATCH",
@@ -55,10 +63,11 @@ export function EditProfileForm({
     });
 
     if (!profileRes.ok) {
+      const body = await profileRes.json().catch(() => null);
       const message =
         profileRes.status === 403
           ? "You don't have permission to edit profiles."
-          : "Something went wrong saving changes. Please try again.";
+          : (body?.error as string | undefined) ?? "Something went wrong saving changes. Please try again.";
       setSubmitError(message);
       toast.error(message);
       return;
@@ -72,8 +81,9 @@ export function EditProfileForm({
       });
 
       if (!householdRes.ok) {
-        const message =
-          "Profile saved, but the household address couldn't be updated. Please try again.";
+        const body = await householdRes.json().catch(() => null);
+        const detail = (body?.error as string | undefined) ?? "Please try again.";
+        const message = `Profile saved, but the household address couldn't be updated. ${detail}`;
         setSubmitError(message);
         toast.error(message);
         return;
@@ -93,7 +103,6 @@ export function EditProfileForm({
       <div className="mb-6 flex items-center gap-3">
         <span className="text-[13px] text-[#5B7185]">Status</span>
         <StatusBadge status={profile.status} />
-        <span className="text-[12px] text-[#8A94A0]">Not editable here — see ADR-0007</span>
       </div>
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">

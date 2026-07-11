@@ -13,7 +13,10 @@ export const editProfileSchema = z.object({
     .max(20, "Too long")
     .optional()
     .or(z.literal("")),
-  campus: z.enum(["Arlington", "Leesburg"]),
+  // Optional: the edit form only includes campus in the PATCH body when it
+  // actually changed (real-mode campus updates aren't implemented yet —
+  // see updateProfile), so omitting it must still validate.
+  campus: z.enum(["Arlington", "Leesburg"]).optional(),
 });
 
 export type EditProfileValues = z.infer<typeof editProfileSchema>;

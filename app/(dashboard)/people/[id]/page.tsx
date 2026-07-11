@@ -176,6 +176,7 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
                     <CopyableField
                       icon={<MapPin className="h-4 w-4 shrink-0 text-[#97A9B8]" />}
                       value={household.address}
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(household.address)}`}
                     />
                   </div>
                 )}
