@@ -13,6 +13,7 @@ import type { Household } from "@/types/household";
 import { getServiceToken } from "./subsplashToken";
 import { mockHouseholds, mockProfiles } from "./mockData";
 import { householdCampus } from "./household";
+import { MAX_GRADE_VALUE, MIN_GRADE_VALUE } from "./grades";
 
 const USE_MOCK_DATA = process.env.SUBSPLASH_USE_MOCK !== "false";
 const BASE_URL = process.env.SUBSPLASH_BASE_URL ?? "https://core.subsplash.com";
@@ -65,6 +66,11 @@ interface RawProfile {
   graduation_year?: number | null;
   baptism_date?: string | null;
   custom_fields?: RawCustomFieldValue[];
+  // Lifecycle status (active/archived/merged/gdpr/fraud) — distinct from the
+  // membership status in `_embedded.latest-membership-status-change`. Only
+  // consumed by hasDirectoryAccess() to avoid granting access via a
+  // non-active profile.
+  status?: string;
   created_at: string;
   updated_at: string;
   _embedded?: {
@@ -131,6 +137,19 @@ const MEMBERSHIP_STATUS_MAP: Record<string, MemberStatus> = {
 
 const CAMPUS_FIELD_NAME = "campus";
 
+// ADR-0010: the custom field a church admin sets in Subsplash to grant a
+// personal-email volunteer read-only access. Name is configurable so the
+// church can call it whatever they like without a code change.
+const ACCESS_FIELD_NAME = (process.env.SUBSPLASH_ACCESS_FIELD_NAME ?? "Directory Access")
+  .trim()
+  .toLowerCase();
+
+// Affirmative values that count as "access granted", covering the likely
+// Subsplash field types: Yes/No or single-select ("Yes"), or a checkbox
+// (which tends to serialize as "true"/"1"). Anything else (incl. "No",
+// empty, or an unset field) means no access.
+const ACCESS_GRANTED_VALUES = new Set(["yes", "y", "true", "1", "granted", "checked", "on"]);
+
 function extractCustomFieldValue(field: RawCustomFieldValue): string | undefined {
   if (field.value.choices?.length) {
     return field.value.choices.map((c) => c.name).join(", ");
@@ -177,6 +196,7 @@ function mapProfile(raw: RawProfile): Profile {
     household_name: household?.name,
     household_role: raw.household_role,
     academic_grade: raw.academic_grade?.name,
+    academic_grade_value: raw.academic_grade?.value,
     graduation_year: raw.graduation_year ?? undefined,
     status: statusRaw ? MEMBERSHIP_STATUS_MAP[statusRaw] : "Visitor",
     campus: extractCampus(raw.custom_fields),
@@ -278,6 +298,8 @@ export interface SearchProfilesParams {
   search?: string;
   status?: MemberStatus;
   campus?: Campus;
+  gradeFrom?: number;
+  gradeTo?: number;
   page?: number;
   pageSize?: number;
 }
@@ -292,19 +314,35 @@ export interface ProfileSearchResult {
 
 function filterAndPaginateProfiles(
   all: Profile[],
-  { search, status, campus, page = 1, pageSize = DEFAULT_PAGE_SIZE }: SearchProfilesParams
+  {
+    search,
+    status,
+    campus,
+    gradeFrom,
+    gradeTo,
+    page = 1,
+    pageSize = DEFAULT_PAGE_SIZE,
+  }: SearchProfilesParams
 ): ProfileSearchResult {
   const needle = search?.trim().toLowerCase();
+  const gradeFilterActive = gradeFrom !== undefined || gradeTo !== undefined;
+  const lowerGrade = gradeFrom ?? MIN_GRADE_VALUE;
+  const upperGrade = gradeTo ?? MAX_GRADE_VALUE;
 
   const filtered = all.filter((p) => {
     const matchesStatus = !status || p.status === status;
     const matchesCampus = !campus || p.campus === campus;
+    const matchesGrade =
+      !gradeFilterActive ||
+      (p.academic_grade_value !== undefined &&
+        p.academic_grade_value >= lowerGrade &&
+        p.academic_grade_value <= upperGrade);
     const matchesSearch =
       !needle ||
       [`${p.first_name ?? ""} ${p.last_name ?? ""}`, p.email ?? "", p.phone_number ?? ""].some(
         (field) => field.toLowerCase().includes(needle)
       );
-    return matchesStatus && matchesCampus && matchesSearch;
+    return matchesStatus && matchesCampus && matchesGrade && matchesSearch;
   });
 
   const start = (page - 1) * pageSize;
@@ -374,6 +412,49 @@ export async function getProfile(id: string): Promise<Profile | null> {
     return mapProfile(raw);
   } catch {
     return null;
+  }
+}
+
+function isAccessValueGranted(value: string | undefined): boolean {
+  return !!value && ACCESS_GRANTED_VALUES.has(value.trim().toLowerCase());
+}
+
+// ADR-0010: does this email belong to someone granted read-only directory
+// access via Subsplash? Used by the sign-in gate (lib/auth.ts) to admit
+// personal-email volunteers. Returns false (deny) on any lookup error —
+// fail closed, since this decides who can see member PII.
+export async function hasDirectoryAccess(email: string): Promise<boolean> {
+  const needle = email.trim().toLowerCase();
+  if (!needle) return false;
+
+  if (USE_MOCK_DATA) {
+    return mockProfiles.some(
+      (p) =>
+        p.email?.toLowerCase() === needle &&
+        p.custom_fields?.some(
+          (f) => f.label.trim().toLowerCase() === ACCESS_FIELD_NAME && isAccessValueGranted(f.value)
+        )
+    );
+  }
+
+  try {
+    // filter[email] is exact-match (openapi.yaml: "Wildcards not supported"),
+    // which is exactly what we want here; filter[org_key] is added by
+    // subsplashFetch. custom_fields come back on this list response.
+    const data = await subsplashFetch<HalCollection<RawProfile>>(
+      `/people/v1/profiles?filter[email]=${encodeURIComponent(needle)}`
+    );
+    return data._embedded.profiles.some((raw) => {
+      const active = !raw.status || raw.status.toLowerCase() === "active";
+      const granted = raw.custom_fields?.some(
+        (f) =>
+          f.custom_field_definition.name.trim().toLowerCase() === ACCESS_FIELD_NAME &&
+          isAccessValueGranted(extractCustomFieldValue(f))
+      );
+      return active && !!granted;
+    });
+  } catch {
+    return false;
   }
 }
 

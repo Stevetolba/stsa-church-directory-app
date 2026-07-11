@@ -18,7 +18,7 @@ const publicSans = Public_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Church Directory",
+  title: "STSA Church Directory",
   description: "Staff-only church member directory",
 };
 

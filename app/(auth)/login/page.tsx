@@ -21,7 +21,7 @@ export default function LoginPage({
     ? (ERROR_MESSAGES[searchParams.error] ?? ERROR_MESSAGES.Default)
     : null;
 
-  const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "Church Directory";
+  const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "STSA Church Directory";
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -30,7 +30,7 @@ export default function LoginPage({
           <Image src="/stsa-logo.png" alt="STSA Church" fill sizes="56px" className="object-cover" />
         </div>
         <h1 className="font-heading text-2xl font-semibold text-brand-navy">{appName}</h1>
-        <p className="mt-1 text-sm uppercase tracking-wide text-muted-foreground">Staff Directory</p>
+        <p className="mt-1 text-sm uppercase tracking-wide text-muted-foreground">People Directory</p>
 
         {errorMessage && (
           <p className="mt-6 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">

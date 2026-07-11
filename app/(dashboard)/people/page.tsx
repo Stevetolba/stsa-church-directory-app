@@ -7,6 +7,7 @@ import { PersonCard } from "@/components/PersonCard";
 import { PersonCardSkeleton } from "@/components/PersonCardSkeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { usePeople } from "@/hooks/usePeople";
+import { GRADE_LEVELS } from "@/lib/grades";
 import type { Campus, MemberStatus } from "@/types/profile";
 
 // "People", not "Members" — the section covers every status (Visitor,
@@ -32,9 +33,13 @@ export default function PeoplePage() {
   const search = searchParams.get("search") ?? "";
   const status = (searchParams.get("status") as MemberStatus | null) ?? undefined;
   const campus = (searchParams.get("campus") as Campus | null) ?? undefined;
+  const gradeFromRaw = searchParams.get("gradeFrom");
+  const gradeToRaw = searchParams.get("gradeTo");
+  const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
+  const gradeTo = gradeToRaw ? Number(gradeToRaw) : undefined;
   const page = Number(searchParams.get("page") ?? "1");
 
-  const { data, isLoading } = usePeople({ search, status, campus, page });
+  const { data, isLoading } = usePeople({ search, status, campus, gradeFrom, gradeTo, page });
 
   function updateParams(updates: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -76,25 +81,19 @@ export default function PeoplePage() {
           placeholder="Search by name, email, or phone"
         />
 
-        <div className="flex flex-wrap items-center gap-2">
-          {STATUS_OPTIONS.map((option) => {
-            const active = option === "All" ? !status : status === option;
-            return (
-              <button
-                key={option}
-                type="button"
-                onClick={() => updateParams({ status: option === "All" ? null : option, page: null })}
-                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
-                  active
-                    ? "border border-brand-navy bg-brand-navy text-brand-cream"
-                    : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
-                }`}
-              >
-                {option}
-              </button>
-            );
-          })}
-        </div>
+        <select
+          value={status ?? "All"}
+          onChange={(e) =>
+            updateParams({ status: e.target.value === "All" ? null : e.target.value, page: null })
+          }
+          className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
+        >
+          {STATUS_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
 
         <select
           value={campus ?? "All Campuses"}
@@ -112,6 +111,39 @@ export default function PeoplePage() {
             </option>
           ))}
         </select>
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+            Grade Min
+          </span>
+          <select
+            value={gradeFromRaw ?? ""}
+            onChange={(e) => updateParams({ gradeFrom: e.target.value || null, page: null })}
+            className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
+          >
+            <option value="">None</option>
+            {GRADE_LEVELS.map((grade) => (
+              <option key={grade.value} value={grade.value}>
+                {grade.label}
+              </option>
+            ))}
+          </select>
+          <span className="ml-1 text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+            Max
+          </span>
+          <select
+            value={gradeToRaw ?? ""}
+            onChange={(e) => updateParams({ gradeTo: e.target.value || null, page: null })}
+            className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
+          >
+            <option value="">None</option>
+            {GRADE_LEVELS.map((grade) => (
+              <option key={grade.value} value={grade.value}>
+                {grade.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {isLoading ? (

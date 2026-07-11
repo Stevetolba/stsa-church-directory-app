@@ -18,8 +18,12 @@ export async function GET(request: NextRequest) {
   const search = searchParams.get("search") ?? undefined;
   const status = (searchParams.get("status") as MemberStatus | null) ?? undefined;
   const campus = (searchParams.get("campus") as Campus | null) ?? undefined;
+  const gradeFromRaw = searchParams.get("gradeFrom");
+  const gradeToRaw = searchParams.get("gradeTo");
+  const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
+  const gradeTo = gradeToRaw ? Number(gradeToRaw) : undefined;
   const page = Number(searchParams.get("page") ?? "1");
 
-  const result = await searchProfiles({ search, status, campus, page });
+  const result = await searchProfiles({ search, status, campus, gradeFrom, gradeTo, page });
   return NextResponse.json(result);
 }
