@@ -133,7 +133,12 @@ const SEED_PROFILES: Profile[] = [
     status: "Member",
     campus: "Arlington",
     baptism_date: "1985-06-02",
-    custom_fields: [{ id: "cf-campus", label: "Campus", value: "Arlington" }],
+    // "Directory Access" flags this person as an approved read-only volunteer
+    // (ADR-0010) — lets the volunteer sign-in path be exercised in mock mode.
+    custom_fields: [
+      { id: "cf-campus", label: "Campus", value: "Arlington" },
+      { id: "cf-access", label: "Directory Access", value: "Yes" },
+    ],
     created_at: "2019-03-11T14:00:00Z",
     updated_at: "2025-11-02T09:30:00Z",
   },
@@ -168,8 +173,11 @@ const SEED_PROFILES: Profile[] = [
     household_role: "child",
     // academic_grade is normally computed server-side by Subsplash from
     // graduation_year — hardcoded here as a mock stand-in for that.
+    // academic_grade_value follows Subsplash's real ordinal scale
+    // (lib/grades.ts): 5th Grade = 7.
     graduation_year: 2034,
     academic_grade: "5th Grade",
+    academic_grade_value: 7,
     status: "Member",
     campus: "Arlington",
     baptism_date: "2016-08-21",

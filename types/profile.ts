@@ -34,8 +34,10 @@ export interface Profile {
   household_role?: HouseholdRole;
   // Subsplash computes academic_grade server-side from graduation_year —
   // it isn't itself stored/editable. Only meaningful when household_role
-  // is "child".
+  // is "child". academic_grade_value is Subsplash's numeric ordinal for
+  // the same grade (see lib/grades.ts) — used for range filtering.
   academic_grade?: string;
+  academic_grade_value?: number;
   graduation_year?: number;
   status: MemberStatus;
   campus?: Campus;

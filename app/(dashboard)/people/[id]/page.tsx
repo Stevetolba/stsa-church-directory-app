@@ -70,7 +70,7 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
       </Link>
 
       <div className="rounded-[14px] border border-[#EAE2D0] bg-white p-6 shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-4">
             <div
               className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full font-heading text-xl font-semibold"

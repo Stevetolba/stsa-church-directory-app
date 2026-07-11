@@ -7,6 +7,23 @@ const ADMIN_EMAILS = (process.env.ADMIN_EMAILS ?? "")
   .map((e) => e.trim().toLowerCase())
   .filter(Boolean);
 
+const WORKSPACE_DOMAIN = process.env.CHURCH_GOOGLE_WORKSPACE_DOMAIN?.trim().toLowerCase();
+
+export function isAdminEmail(email: string): boolean {
+  return ADMIN_EMAILS.includes(email.toLowerCase());
+}
+
+function isWorkspaceEmail(email: string): boolean {
+  return !!WORKSPACE_DOMAIN && email.toLowerCase().endsWith(`@${WORKSPACE_DOMAIN}`);
+}
+
+// ADR-0010: three tiers. Admins (ADMIN_EMAILS) can write; workspace-domain
+// staff and personal-email volunteers are both read-only, distinguished so
+// the UI can label them and so volunteers could be restricted further later.
+// This only assigns a role to an already-authorized user — the signIn gate
+// (lib/auth.ts) decides who is allowed in at all.
 export function resolveRole(email: string): Role {
-  return ADMIN_EMAILS.includes(email.toLowerCase()) ? "admin" : "staff";
+  if (isAdminEmail(email)) return "admin";
+  if (isWorkspaceEmail(email)) return "staff";
+  return "volunteer";
 }

@@ -11,14 +11,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen flex-col bg-background lg:flex-row">
       <Sidebar
         user={{
           name: session.user.name ?? session.user.email ?? "Staff",
           role: session.user.role,
         }}
       />
-      <main className="min-w-0 flex-1 px-11 pb-[60px] pt-9">{children}</main>
+      <main className="min-w-0 flex-1 px-4 pb-10 pt-6 sm:px-6 lg:px-11 lg:pb-[60px] lg:pt-9">
+        {children}
+      </main>
     </div>
   );
 }
