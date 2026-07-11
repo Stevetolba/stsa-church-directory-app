@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Home, Plus } from "lucide-react";
+import { Home } from "lucide-react";
 import { SearchBar } from "@/components/SearchBar";
 import { HouseholdCard } from "@/components/HouseholdCard";
 import { HouseholdCardSkeleton } from "@/components/HouseholdCardSkeleton";
@@ -45,7 +45,7 @@ export default function HouseholdsPage() {
     <div>
       <div className="mb-7 flex flex-wrap items-start justify-between gap-6">
         <div>
-          <h1 className="font-heading text-3xl font-semibold text-brand-navy">Families & Households</h1>
+          <h1 className="font-heading text-3xl font-semibold text-brand-navy">Households</h1>
           <p className="mt-1 text-[14.5px] text-[#5B7185]">
             {total} of {overallTotal} households
           </p>
@@ -78,14 +78,6 @@ export default function HouseholdsPage() {
             </option>
           ))}
         </select>
-
-        <button
-          type="button"
-          className="ml-auto flex items-center gap-2 whitespace-nowrap rounded-[10px] bg-brand-navy px-5 py-[11px] text-[14px] font-semibold text-brand-cream"
-        >
-          <Plus className="h-3.5 w-3.5 text-brand-sky" />
-          Add Household
-        </button>
       </div>
 
       {isLoading ? (

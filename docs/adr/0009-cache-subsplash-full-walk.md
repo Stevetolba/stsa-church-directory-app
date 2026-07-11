@@ -1,6 +1,6 @@
 # ADR-0009: Cache the full Subsplash profiles/households walk
 
-**Status:** Accepted
+**Status:** Accepted (amended 2026-07-10 — see Amendment below)
 **Date:** 2026-07-10
 
 ## Context
@@ -55,6 +55,32 @@ Replaced with a plain in-memory TTL cache — the same pattern `lib/subsplashTok
 ## Alternatives rejected
 
 - **Match the UI to Subsplash's real filter limits** (exact-match-only search, drop status/campus filtering). Same rejection as ADR-0004: a real, visible feature regression for no necessity, since caching solves the actual performance problem without giving up any verified functionality.
-- **`unstable_cache`.** Tried first; rejected after hitting its 2MB per-entry limit against the real data size (see implementation note above).
-- **A dedicated KV/DB-backed cache or sync job.** Would survive cold starts and support true real-time invalidation, but is new infrastructure this app doesn't otherwise need. Revisit if the in-memory cache's cold-start behavior proves unacceptable in production.
+- **A dedicated KV/DB-backed cache or sync job.** Would survive cold starts and support true real-time invalidation, but is new infrastructure this app doesn't otherwise need given the amendment below made `unstable_cache` viable. Revisit if the amended approach's cold-start behavior proves unacceptable in production.
 - **Shorter revalidate window (e.g., 60s).** Would reduce staleness but increases how often the expensive cold-cache walk runs under real traffic. 5 minutes is a starting point, not a load-bearing constant — tune via `CACHE_REVALIDATE_SECONDS` if usage patterns call for it.
+
+## Amendment (2026-07-10, same day) — back to `unstable_cache`, chunked
+
+The plain in-memory cache above shipped, got deployed to Vercel, and the very next real-user report was "still there is API latency." The predicted risk in Consequences was exactly right: a plain module-level variable doesn't reliably persist across Vercel's serverless invocations, so most requests in production were still hitting a cold cache and paying the full walk's cost — the opposite of what this ADR set out to fix.
+
+The actual fix: go back to `unstable_cache` (which *does* persist via Vercel's Data Cache), but avoid the earlier 2MB-per-entry failure by caching **per page** instead of the whole collection in one entry:
+
+- `getCachedProfilePage(page)` wraps a single page's fetch+map in `unstable_cache`, keyed by page number. Each page (~100 profiles, ~70KB mapped) is comfortably under the 2MB limit. `getCachedProfiles()` walks pages calling this cached fetcher instead of a raw one.
+- Households don't need chunking — without embedded members (see above), the whole collection maps to roughly 1MB even at 3,883 households, safely under the limit as a single `unstable_cache` entry.
+- Cache invalidation on write went back to `revalidateTag("subsplash-profiles")` / `revalidateTag("subsplash-households")`, which correctly invalidates every chunk sharing that tag, not just one.
+
+This supersedes the "Implementation note" and part of "Consequences" above: `unstable_cache` was rejected too hastily on the first pass, for hitting a size limit that was a consequence of the specific payload shape (whole collection, and households embedding full member profiles) rather than an inherent limit of `unstable_cache` itself. Chunking and de-duplicating the households payload (see the "no `include=members`" note above) both independently fix the size problem, and together they let the intended tool for this job — a cache that actually persists on serverless — work as intended.
+
+### Two more real-data bugs found in the same round of reports
+
+Not caching-related, but surfaced by the same "why is real data still wrong" investigation, so noted here for the record:
+
+- **Campus filtering returned zero results for every campus.** `extractCampus`/`extractCustomFieldValue` assumed a custom field's selected value lives at `value.choice` (singular). The real org's Campus field is multi-select and returns `value.choices` (an array) — confirmed a profile can even have both Arlington and Leesburg selected simultaneously. `value.choice` was never populated for any real profile, so `campus` was silently `undefined` everywhere, and filtering by campus matched nothing.
+- **Every household member showed "Visitor" regardless of actual status**, even after the `include=latest-membership-status-change` fix on the profiles walk. `getHousehold()`'s `include=members` embed (confirmed via direct API calls, including nested-include attempts like `include=members,members.latest-membership-status-change`) never carries that embed on the member stubs it returns. Fixed by enriching `getHousehold()`'s members from the (already-correct, already-cached) profiles list by id, the same join pattern `listHouseholds()` already used.
+
+### Three more real-data bugs found verifying the Edit Profile save flow end-to-end
+
+Found and fixed together, verified with a real (reversible) write against a real profile with the profile owner's explicit go-ahead:
+
+- **`getHousehold()` never requested `include=address`**, so any household with a real address on file showed it as blank in the app (both the Household Detail page and the Edit Profile form's address field) — confirmed against a household that had a real address dating to 2024 that the app had never once displayed. `fetchAllHouseholdsFromSubsplash` had the same gap for the Households list. Fixed by adding `include=address` (or `include=members,address` for the single-item fetch) alongside the existing `include=members`.
+- **Editing a profile always failed, regardless of which field actually changed.** Root cause was two stacked bugs: (1) the Campus `<select>` always submits a defined value (it has a default), and `updateProfile`'s real-mode branch throws for any defined campus value since real campus edits aren't implemented yet — so saving name/email/phone/address all failed with a generic error even when campus was untouched. Fixed by only including `campus` in the PATCH body when it actually changed. (2) Once campus was correctly omitted, `editProfileSchema`'s `campus` field (a non-optional `z.enum`) rejected the *absence* of campus as invalid input — the schema was never built to allow an omitted campus. Fixed by making it `.optional()`.
+- **Even with both of those fixed, any save that included a phone number still 400'd against Subsplash specifically** (not our own validation). `phone_number` in Subsplash's `ProfileRequest` PATCH schema is `PhoneNumberWithCountryCode` (`{ significant, country: { calling_code, region_code } }`), not the formatted display string ("(215) 940-5960") the UI shows and edits. `updateProfile` was sending the display string straight through. Fixed with `phoneNumberForSubsplash()`, which parses the 10-digit US number back into the structured shape before the real-mode PATCH (this app's users are all in one US-based church, so no other formats are handled — an unrecognized digit count throws rather than guessing a country code).

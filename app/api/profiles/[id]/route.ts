@@ -21,7 +21,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   try {
     const updated = await updateProfile(params.id, parsed.data);
     return NextResponse.json(updated);
-  } catch {
-    return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  } catch (err) {
+    // Surface the real failure (e.g. "campus updates aren't implemented
+    // yet") instead of a blanket "not found" that masked it before.
+    const message = err instanceof Error ? err.message : "Failed to update profile";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

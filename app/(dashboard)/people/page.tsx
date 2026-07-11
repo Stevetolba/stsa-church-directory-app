@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Plus, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import { SearchBar } from "@/components/SearchBar";
 import { PersonCard } from "@/components/PersonCard";
 import { PersonCardSkeleton } from "@/components/PersonCardSkeleton";
@@ -112,14 +112,6 @@ export default function PeoplePage() {
             </option>
           ))}
         </select>
-
-        <button
-          type="button"
-          className="ml-auto flex items-center gap-2 whitespace-nowrap rounded-[10px] bg-brand-navy px-5 py-[11px] text-[14px] font-semibold text-brand-cream"
-        >
-          <Plus className="h-3.5 w-3.5 text-brand-sky" />
-          Add Person
-        </button>
       </div>
 
       {isLoading ? (

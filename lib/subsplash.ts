@@ -2,14 +2,12 @@
 // between the mock fixtures (lib/mockData.ts) and real Subsplash calls —
 // see the tech spec's "mock data first, wire the real API last" build
 // strategy and ADR-0004's amendment for why filtering happens here rather
-// than via Subsplash query params. ADR-0009 covers the in-memory caching
-// below — the real org has thousands of profiles, so walking every page
-// on every request (as ADR-0004 originally did) is a 15-40s
-// production-breaking cost; caching the full walk's result is what makes
-// that approach viable at real scale. (unstable_cache was tried first but
-// hits Next's 2MB per-entry Data Cache limit at this data size — see
-// ADR-0009's revision note.)
+// than via Subsplash query params. ADR-0009 covers the caching below — the
+// real org has thousands of profiles, so walking every page on every
+// request (as ADR-0004 originally did) is a 15-40s production-breaking
+// cost; caching the walk is what makes that approach viable at real scale.
 
+import { revalidateTag, unstable_cache } from "next/cache";
 import type { Campus, MemberStatus, Profile } from "@/types/profile";
 import type { Household } from "@/types/household";
 import { getServiceToken } from "./subsplashToken";
@@ -36,7 +34,10 @@ const CACHE_REVALIDATE_SECONDS = 300;
 
 interface RawCustomFieldValue {
   custom_field_definition: { id: string; name: string };
-  value: { text?: string; choice?: { id: string; name: string } };
+  // Confirmed against the live org: multi-select fields (e.g. Campus) use
+  // `choices` (array), not the singular `choice` this originally assumed
+  // — every campus lookup silently returned undefined as a result.
+  value: { text?: string; choice?: { id: string; name: string }; choices?: { id: string; name: string }[] };
 }
 
 interface RawMembershipStatusChange {
@@ -131,15 +132,21 @@ const MEMBERSHIP_STATUS_MAP: Record<string, MemberStatus> = {
 const CAMPUS_FIELD_NAME = "campus";
 
 function extractCustomFieldValue(field: RawCustomFieldValue): string | undefined {
+  if (field.value.choices?.length) {
+    return field.value.choices.map((c) => c.name).join(", ");
+  }
   return field.value.choice?.name ?? field.value.text;
 }
 
 function extractCampus(customFields: RawCustomFieldValue[] | undefined): Campus | undefined {
   const field = customFields?.find(
-    (f) => f.custom_field_definition.name.toLowerCase() === CAMPUS_FIELD_NAME
+    (f) => f.custom_field_definition.name.trim().toLowerCase() === CAMPUS_FIELD_NAME
   );
-  const value = field ? extractCustomFieldValue(field) : undefined;
-  return value === "Arlington" || value === "Leesburg" ? value : undefined;
+  // A profile can have multiple campus choices selected at once (confirmed
+  // against the live org) — our model only supports one, so pick the first
+  // recognized value rather than requiring an exact single-choice match.
+  const choiceNames = field?.value.choices?.map((c) => c.name) ?? (field?.value.choice ? [field.value.choice.name] : []);
+  return choiceNames.find((v): v is Campus => v === "Arlington" || v === "Leesburg");
 }
 
 function formatPhone(phone: RawProfile["phone_number"]): string | undefined {
@@ -212,94 +219,58 @@ function mapHousehold(raw: RawHousehold): Household {
 // fields (ADR-0004 amendment), so we fetch what it can page/sort for us
 // and filter here.
 
-async function fetchAllProfilesFromSubsplash(): Promise<Profile[]> {
-  const profiles: Profile[] = [];
-  for (let page = 1; page <= MAX_SUBSPLASH_PAGES; page++) {
-    // include=latest-membership-status-change: without it this embed is
-    // always absent (confirmed against the live API), so every profile
-    // would silently fall back to the "Visitor" default in mapProfile.
+// ADR-0009 (amended): cache each page individually via unstable_cache
+// rather than a plain in-memory variable. A plain module-level cache
+// doesn't survive across Vercel serverless invocations — confirmed in
+// production ("still there is API latency" after the first cache
+// implementation shipped) — whereas unstable_cache's Data Cache does.
+// Caching the *whole* mapped profiles list in one entry was tried first
+// and rejected: it's ~3MB at this org's size, over unstable_cache's 2MB
+// per-entry limit. Caching per-page (each ~70KB) stays well under that.
+const getCachedProfilePage = unstable_cache(
+  async (page: number) => {
     const data = await subsplashFetch<HalCollection<RawProfile>>(
       `/people/v1/profiles?sort=last_name&page[number]=${page}&page[size]=${MAX_SUBSPLASH_PAGE_SIZE}&include=latest-membership-status-change`
     );
-    profiles.push(...data._embedded.profiles.map(mapProfile));
-    if (profiles.length >= data.total || data._embedded.profiles.length < MAX_SUBSPLASH_PAGE_SIZE) {
-      break;
-    }
+    return data._embedded.profiles.map(mapProfile);
+  },
+  ["subsplash-profiles-page"],
+  { revalidate: CACHE_REVALIDATE_SECONDS, tags: ["subsplash-profiles"] }
+);
+
+async function getCachedProfiles(): Promise<Profile[]> {
+  const profiles: Profile[] = [];
+  for (let page = 1; page <= MAX_SUBSPLASH_PAGES; page++) {
+    const pageProfiles = await getCachedProfilePage(page);
+    profiles.push(...pageProfiles);
+    if (pageProfiles.length < MAX_SUBSPLASH_PAGE_SIZE) break;
   }
   return profiles;
 }
 
-async function fetchAllHouseholdsFromSubsplash(): Promise<Household[]> {
-  // Deliberately no include=members here: embedding every member's full
-  // profile inside every household blew past unstable_cache's 2MB
-  // per-entry limit (confirmed — this list's cached payload hit ~2.9MB
-  // against the real org). Members are joined from the (separately
-  // cached) profiles walk in listHouseholds() instead — same data, no
-  // duplication. getHousehold()'s single-item fetch still uses
-  // include=members since fetching one household's members is cheap.
-  const households: Household[] = [];
-  for (let page = 1; page <= MAX_SUBSPLASH_PAGES; page++) {
-    const data = await subsplashFetch<HalCollection<RawHousehold>>(
-      `/people/v1/households?sort=name&page[number]=${page}&page[size]=${MAX_SUBSPLASH_PAGE_SIZE}`
-    );
-    households.push(...data._embedded.households.map(mapHousehold));
-    if (households.length >= data.total || data._embedded.households.length < MAX_SUBSPLASH_PAGE_SIZE) {
-      break;
+// Households (without embedded members — see listHouseholds) map to a much
+// smaller payload than profiles, comfortably under the 2MB limit as one
+// entry, so this doesn't need per-page chunking.
+const getCachedHouseholds = unstable_cache(
+  async () => {
+    const households: Household[] = [];
+    for (let page = 1; page <= MAX_SUBSPLASH_PAGES; page++) {
+      // include=address: same stub-by-default issue as members — without
+      // it, household.address is always undefined even when a real
+      // address exists (confirmed against the live org).
+      const data = await subsplashFetch<HalCollection<RawHousehold>>(
+        `/people/v1/households?sort=name&page[number]=${page}&page[size]=${MAX_SUBSPLASH_PAGE_SIZE}&include=address`
+      );
+      households.push(...data._embedded.households.map(mapHousehold));
+      if (households.length >= data.total || data._embedded.households.length < MAX_SUBSPLASH_PAGE_SIZE) {
+        break;
+      }
     }
-  }
-  return households;
-}
-
-// ADR-0009: cache the full walk rather than re-fetching thousands of
-// records on every request. Plain in-memory TTL cache (same pattern as
-// subsplashToken.ts's token cache) rather than Next's unstable_cache — the
-// real profiles list is ~3MB mapped, over unstable_cache's 2MB per-entry
-// Data Cache limit, which fails silently-ish (throws async, doesn't block
-// the response, but never actually caches) at this org's real size.
-interface CachedCollection<T> {
-  data: T[];
-  expiresAt: number;
-}
-
-let cachedProfiles: CachedCollection<Profile> | null = null;
-let cachedHouseholds: CachedCollection<Household> | null = null;
-// In-flight promises so concurrent requests during a cold cache (e.g. right
-// after a restart, or once the 5-minute TTL lapses under real traffic)
-// share one walk instead of each independently re-fetching thousands of
-// records — confirmed happening in practice (one request took 25s despite
-// another having just warmed the cache moments earlier).
-let profilesInFlight: Promise<Profile[]> | null = null;
-let householdsInFlight: Promise<Household[]> | null = null;
-
-async function getCachedProfiles(): Promise<Profile[]> {
-  const now = Date.now();
-  if (cachedProfiles && cachedProfiles.expiresAt > now) {
-    return cachedProfiles.data;
-  }
-  if (!profilesInFlight) {
-    profilesInFlight = fetchAllProfilesFromSubsplash().finally(() => {
-      profilesInFlight = null;
-    });
-  }
-  const data = await profilesInFlight;
-  cachedProfiles = { data, expiresAt: now + CACHE_REVALIDATE_SECONDS * 1000 };
-  return data;
-}
-
-async function getCachedHouseholds(): Promise<Household[]> {
-  const now = Date.now();
-  if (cachedHouseholds && cachedHouseholds.expiresAt > now) {
-    return cachedHouseholds.data;
-  }
-  if (!householdsInFlight) {
-    householdsInFlight = fetchAllHouseholdsFromSubsplash().finally(() => {
-      householdsInFlight = null;
-    });
-  }
-  const data = await householdsInFlight;
-  cachedHouseholds = { data, expiresAt: now + CACHE_REVALIDATE_SECONDS * 1000 };
-  return data;
-}
+    return households;
+  },
+  ["subsplash-all-households"],
+  { revalidate: CACHE_REVALIDATE_SECONDS, tags: ["subsplash-households"] }
+);
 
 // --- In-memory search/filter/paginate (shared by mock and real modes) ---
 
@@ -415,6 +386,24 @@ export type UpdateProfileInput = Partial<
   Pick<Profile, "first_name" | "last_name" | "email" | "phone_number" | "campus">
 >;
 
+// Subsplash's PATCH body wants phone_number as PhoneNumberWithCountryCode
+// ({ significant, country: { calling_code, region_code } }), not the
+// formatted display string ("(215) 940-5960") our UI shows and edits —
+// confirmed against the live API (a PATCH with the formatted string
+// always 400s, regardless of what else is in the body). Only handles
+// 10-digit US numbers, matching formatPhone()'s only well-formed output;
+// this app's users are all in one US-based church.
+function phoneNumberForSubsplash(
+  formatted: string
+): { significant: string; country: { calling_code: string; region_code: string } } | null {
+  const digits = formatted.replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.length !== 10) {
+    throw new Error("Phone number must be a 10-digit US number.");
+  }
+  return { significant: digits, country: { calling_code: "+1", region_code: "US" } };
+}
+
 export async function updateProfile(id: string, patch: UpdateProfileInput): Promise<Profile> {
   const { campus, ...topLevelPatch } = patch;
 
@@ -452,6 +441,12 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
   if (!ORG_KEY) {
     throw new Error("Missing SUBSPLASH_ORG_KEY — required as filter[org_key] on every request.");
   }
+
+  const body: Record<string, unknown> = { ...topLevelPatch };
+  if (topLevelPatch.phone_number !== undefined) {
+    body.phone_number = phoneNumberForSubsplash(topLevelPatch.phone_number);
+  }
+
   const token = await getServiceToken();
   const res = await fetch(`${BASE_URL}/people/v1/profiles/${id}?filter[org_key]=${ORG_KEY}`, {
     method: "PATCH",
@@ -459,14 +454,14 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(topLevelPatch),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     throw new Error(`Subsplash API error: ${res.status} PATCH /people/v1/profiles/${id}`);
   }
   // Otherwise the People list would show stale data for up to
   // CACHE_REVALIDATE_SECONDS after a save (ADR-0009).
-  cachedProfiles = null;
+  revalidateTag("subsplash-profiles");
   return mapProfile((await res.json()) as RawProfile);
 }
 
@@ -498,8 +493,19 @@ export async function getHousehold(id: string): Promise<Household | null> {
     return { ...household, members: mockProfiles.filter((p) => p.household_id === id) };
   }
   try {
-    const raw = await subsplashFetch<RawHousehold>(`/people/v1/households/${id}?include=members`);
-    return mapHousehold(raw);
+    const raw = await subsplashFetch<RawHousehold>(`/people/v1/households/${id}?include=members,address`);
+    const household = mapHousehold(raw);
+    if (household.members?.length) {
+      // include=members never embeds a member's latest-membership-status-
+      // change (confirmed against the live API, including nested include
+      // attempts), so every member showed as "Visitor" via mapProfile's
+      // fallback. The (separately cached) profiles walk already has the
+      // correct status for each — swap in that copy where available.
+      const cachedProfiles = await getCachedProfiles();
+      const byId = new Map(cachedProfiles.map((p) => [p.id, p]));
+      household.members = household.members.map((m) => byId.get(m.id) ?? m);
+    }
+    return household;
   } catch {
     return null;
   }
@@ -537,6 +543,6 @@ export async function updateHousehold(id: string, patch: UpdateHouseholdInput): 
   if (!res.ok) {
     throw new Error(`Subsplash API error: ${res.status} PATCH /people/v1/households/${id}`);
   }
-  cachedHouseholds = null;
+  revalidateTag("subsplash-households");
   return mapHousehold((await res.json()) as RawHousehold);
 }

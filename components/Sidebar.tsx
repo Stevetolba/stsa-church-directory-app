@@ -14,7 +14,7 @@ import type { Role } from "@/types/auth";
 
 const NAV_ITEMS = [
   { href: "/people", label: "People", icon: Users },
-  { href: "/households", label: "Families & Households", icon: Home },
+  { href: "/households", label: "Households", icon: Home },
 ];
 
 const ROLE_LABEL: Record<Role, string> = {

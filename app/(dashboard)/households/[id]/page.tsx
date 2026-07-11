@@ -40,7 +40,7 @@ export default async function HouseholdDetailPage({ params }: { params: { id: st
         className="mb-6 inline-flex items-center gap-1.5 text-[13.5px] font-semibold text-[#5B7185] hover:text-brand-navy"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
-        Families & Households
+        Households
       </Link>
 
       <div className="overflow-hidden rounded-[14px] border border-[#EAE2D0] bg-white shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
@@ -82,6 +82,7 @@ export default async function HouseholdDetailPage({ params }: { params: { id: st
                 <CopyableField
                   icon={<MapPin className="h-4 w-4 shrink-0 text-[#97A9B8]" />}
                   value={household.address}
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(household.address)}`}
                 />
               </Section>
               <div className="h-px bg-[#F0EBDF]" />
