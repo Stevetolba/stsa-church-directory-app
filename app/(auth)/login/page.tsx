@@ -2,11 +2,12 @@ import Image from "next/image";
 import { signInWithGoogle } from "./actions";
 
 // NextAuth appends ?error=<code> to pages.signIn on failure. AccessDenied
-// is what our signIn callback (lib/auth.ts) produces for a non-Workspace
-// account, since it returns false rather than throwing.
+// is what our signIn callback (lib/auth.ts) produces when an account is
+// neither on the church Workspace domain nor an approved volunteer
+// (ADR-0010), since it returns false rather than throwing.
 const ERROR_MESSAGES: Record<string, string> = {
   AccessDenied:
-    "That Google account isn't part of the church's Workspace. Please sign in with your church email address.",
+    "That Google account isn't recognized. Staff should sign in with their church Workspace email; volunteers need directory access enabled by the church office first.",
   Configuration:
     "Sign-in isn't configured correctly right now. Contact the church office if this keeps happening.",
   Default: "Something went wrong signing in. Please try again.",
@@ -49,7 +50,9 @@ export default function LoginPage({
         </form>
 
         <p className="mt-6 text-xs text-muted-foreground">
-          Staff only — sign in with your church Google Workspace account.
+          Staff — sign in with your church Google Workspace email.
+          <br />
+          Volunteers — sign in with your personal email address.
         </p>
       </div>
     </main>

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/rbac";
-import { updateProfile } from "@/lib/subsplash";
+import { CampusUpdateError, updateProfile } from "@/lib/subsplash";
 import { editProfileSchema } from "@/lib/validation/profile";
 
 // ADR-0005: the admin check happens here, independent of the UI — a
@@ -21,10 +21,14 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   try {
     const updated = await updateProfile(params.id, parsed.data);
     return NextResponse.json(updated);
-  } catch (err) {
-    // Surface the real failure (e.g. "campus updates aren't implemented
-    // yet") instead of a blanket "not found" that masked it before.
-    const message = err instanceof Error ? err.message : "Failed to update profile";
+  } catch (error) {
+    // A resolvable-but-unmet campus write (e.g. an unknown dropdown choice) is
+    // a 422, distinct from any other failure.
+    if (error instanceof CampusUpdateError) {
+      return NextResponse.json({ error: error.message }, { status: 422 });
+    }
+    // Surface the real failure instead of a blanket "not found" that masks it.
+    const message = error instanceof Error ? error.message : "Failed to update profile";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

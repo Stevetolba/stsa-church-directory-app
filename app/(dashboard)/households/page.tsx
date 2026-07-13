@@ -81,7 +81,7 @@ export default function HouseholdsPage() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-[18px]">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(320px,100%),1fr))] gap-[18px]">
           {Array.from({ length: 6 }).map((_, index) => (
             <HouseholdCardSkeleton key={index} />
           ))}
@@ -89,7 +89,7 @@ export default function HouseholdsPage() {
       ) : households.length === 0 ? (
         <EmptyState icon={<Home className="h-6 w-6" />} message={`No households match "${search}".`} />
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-[18px]">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(320px,100%),1fr))] gap-[18px]">
           {households.map((household) => (
             <HouseholdCard key={household.id} household={household} />
           ))}

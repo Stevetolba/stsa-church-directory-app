@@ -133,11 +133,13 @@ const SEED_PROFILES: Profile[] = [
     status: "Member",
     campus: "Arlington",
     baptism_date: "1985-06-02",
-    // "Directory Access" flags this person as an approved read-only volunteer
+    // Directory access flags this person as an approved read-only volunteer
     // (ADR-0010) — lets the volunteer sign-in path be exercised in mock mode.
+    // Field label matches this project's configured
+    // SUBSPLASH_ACCESS_FIELD_NAME (.env.local), not the code's fallback default.
     custom_fields: [
       { id: "cf-campus", label: "Campus", value: "Arlington" },
-      { id: "cf-access", label: "Directory Access", value: "Yes" },
+      { id: "cf-access", label: "DirectoryAccess", value: "Yes" },
     ],
     created_at: "2019-03-11T14:00:00Z",
     updated_at: "2025-11-02T09:30:00Z",
@@ -218,7 +220,15 @@ const SEED_PROFILES: Profile[] = [
     household_role: "guardian",
     status: "Regular Attendee",
     campus: "Arlington",
-    custom_fields: [{ id: "cf-campus", label: "Campus", value: "Arlington" }],
+    // Personal gmail address + directory access: exercises the volunteer
+    // sign-in path (ADR-0010) against mock data — Priya isn't on the church
+    // Workspace domain but is an approved volunteer. Field label matches
+    // this project's configured SUBSPLASH_ACCESS_FIELD_NAME (.env.local),
+    // not necessarily the code's fallback default.
+    custom_fields: [
+      { id: "cf-campus", label: "Campus", value: "Arlington" },
+      { id: "cf-directory-access", label: "DirectoryAccess", value: "Yes" },
+    ],
     created_at: "2021-01-22T14:00:00Z",
     updated_at: "2025-09-30T09:30:00Z",
   },
