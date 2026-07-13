@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      # Build in mock mode with throwaway auth config so the compile/type-check
+      # runs without any real secrets. Production secrets live in Vercel, not CI.
+      - run: npm run build
+        env:
+          SUBSPLASH_USE_MOCK: "true"
+          AUTH_SECRET: ci-build-only-placeholder-secret-not-used
+          AUTH_GOOGLE_ID: ci-placeholder
+          AUTH_GOOGLE_SECRET: ci-placeholder
+          CHURCH_GOOGLE_WORKSPACE_DOMAIN: example.com
+          ADMIN_EMAILS: admin@example.com
+          NEXT_PUBLIC_APP_NAME: Church Directory

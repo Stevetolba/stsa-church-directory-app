@@ -6,8 +6,8 @@ import type { ProfileSearchResult } from "@/lib/subsplash";
 
 export interface UsePeopleParams {
   search?: string;
-  status?: MemberStatus;
-  campus?: Campus;
+  status?: MemberStatus[];
+  campus?: Campus[];
   gradeFrom?: number;
   gradeTo?: number;
   page?: number;
@@ -24,8 +24,8 @@ async function fetcher(url: string): Promise<ProfileSearchResult> {
 export function usePeople({ search, status, campus, gradeFrom, gradeTo, page = 1 }: UsePeopleParams) {
   const params = new URLSearchParams();
   if (search) params.set("search", search);
-  if (status) params.set("status", status);
-  if (campus) params.set("campus", campus);
+  status?.forEach((s) => params.append("status", s));
+  campus?.forEach((c) => params.append("campus", c));
   if (gradeFrom !== undefined) params.set("gradeFrom", String(gradeFrom));
   if (gradeTo !== undefined) params.set("gradeTo", String(gradeTo));
   params.set("page", String(page));

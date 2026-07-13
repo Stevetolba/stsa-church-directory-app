@@ -6,6 +6,12 @@
       "runtimeExecutable": "/Users/tolbas/.nvm/versions/node/v24.18.0/bin/node",
       "runtimeArgs": ["node_modules/.bin/next", "dev"],
       "port": 3000
+    },
+    {
+      "name": "prod",
+      "runtimeExecutable": "/Users/tolbas/.nvm/versions/node/v24.18.0/bin/node",
+      "runtimeArgs": ["node_modules/.bin/next", "start", "-p", "3001"],
+      "port": 3001
     }
   ]
 }

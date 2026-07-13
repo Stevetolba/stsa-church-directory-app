@@ -14,8 +14,7 @@ import type { Campus, MemberStatus } from "@/types/profile";
 // Newcomer, etc.), and "Member" specifically means status === "Member".
 // See ADR-0008.
 
-const STATUS_OPTIONS: Array<MemberStatus | "All"> = [
-  "All",
+const STATUS_OPTIONS: MemberStatus[] = [
   "Member",
   "Regular Attendee",
   "Visitor",
@@ -23,7 +22,7 @@ const STATUS_OPTIONS: Array<MemberStatus | "All"> = [
   "Former Attender",
 ];
 
-const CAMPUS_OPTIONS: Array<Campus | "All Campuses"> = ["All Campuses", "Arlington", "Leesburg"];
+const CAMPUS_OPTIONS: Campus[] = ["Arlington", "Leesburg"];
 
 export default function PeoplePage() {
   const router = useRouter();
@@ -31,8 +30,8 @@ export default function PeoplePage() {
   const searchParams = useSearchParams();
 
   const search = searchParams.get("search") ?? "";
-  const status = (searchParams.get("status") as MemberStatus | null) ?? undefined;
-  const campus = (searchParams.get("campus") as Campus | null) ?? undefined;
+  const status = searchParams.getAll("status") as MemberStatus[];
+  const campus = searchParams.getAll("campus") as Campus[];
   const gradeFromRaw = searchParams.get("gradeFrom");
   const gradeToRaw = searchParams.get("gradeTo");
   const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
@@ -50,6 +49,26 @@ export default function PeoplePage() {
         params.set(key, value);
       }
     }
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  }
+
+  // Toggles `value` in a multi-select query param (e.g. status/campus),
+  // resetting to page 1 the same way single-value filters already do.
+  function toggleListParam(key: "status" | "campus", value: string, current: string[]) {
+    const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete(key);
+    next.forEach((v) => params.append(key, v));
+    params.delete("page");
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  }
+
+  function clearListParam(key: "status" | "campus") {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete(key);
+    params.delete("page");
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname);
   }
@@ -81,36 +100,69 @@ export default function PeoplePage() {
           placeholder="Search by name, email, or phone"
         />
 
-        <select
-          value={status ?? "All"}
-          onChange={(e) =>
-            updateParams({ status: e.target.value === "All" ? null : e.target.value, page: null })
-          }
-          className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
-        >
-          {STATUS_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => clearListParam("status")}
+            className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
+              status.length === 0
+                ? "border border-brand-navy bg-brand-navy text-brand-cream"
+                : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
+            }`}
+          >
+            All
+          </button>
+          {STATUS_OPTIONS.map((option) => {
+            const active = status.includes(option);
+            return (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={active}
+                onClick={() => toggleListParam("status", option, status)}
+                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
+                  active
+                    ? "border border-brand-navy bg-brand-navy text-brand-cream"
+                    : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
+                }`}
+              >
+                {option}
+              </button>
+            );
+          })}
+        </div>
 
-        <select
-          value={campus ?? "All Campuses"}
-          onChange={(e) =>
-            updateParams({
-              campus: e.target.value === "All Campuses" ? null : e.target.value,
-              page: null,
-            })
-          }
-          className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
-        >
-          {CAMPUS_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => clearListParam("campus")}
+            className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
+              campus.length === 0
+                ? "border border-brand-navy bg-brand-navy text-brand-cream"
+                : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
+            }`}
+          >
+            All Campuses
+          </button>
+          {CAMPUS_OPTIONS.map((option) => {
+            const active = campus.includes(option);
+            return (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={active}
+                onClick={() => toggleListParam("campus", option, campus)}
+                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
+                  active
+                    ? "border border-brand-navy bg-brand-navy text-brand-cream"
+                    : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
+                }`}
+              >
+                {option}
+              </button>
+            );
+          })}
+        </div>
 
         <div className="flex items-center gap-1.5">
           <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
@@ -147,7 +199,7 @@ export default function PeoplePage() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-[18px]">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(320px,100%),1fr))] gap-[18px]">
           {Array.from({ length: 6 }).map((_, index) => (
             <PersonCardSkeleton key={index} />
           ))}
@@ -155,7 +207,7 @@ export default function PeoplePage() {
       ) : profiles.length === 0 ? (
         <EmptyState icon={<Users className="h-6 w-6" />} message={`No people match "${search}".`} />
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-[18px]">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(320px,100%),1fr))] gap-[18px]">
           {profiles.map((profile, index) => (
             <PersonCard key={profile.id} profile={profile} index={index} />
           ))}

@@ -16,8 +16,8 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search") ?? undefined;
-  const status = (searchParams.get("status") as MemberStatus | null) ?? undefined;
-  const campus = (searchParams.get("campus") as Campus | null) ?? undefined;
+  const status = searchParams.getAll("status") as MemberStatus[];
+  const campus = searchParams.getAll("campus") as Campus[];
   const gradeFromRaw = searchParams.get("gradeFrom");
   const gradeToRaw = searchParams.get("gradeTo");
   const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;

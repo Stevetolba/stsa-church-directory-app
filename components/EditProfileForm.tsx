@@ -13,10 +13,12 @@ import { updateHouseholdSchema } from "@/lib/validation/household";
 import { z } from "zod";
 import { StatusBadge } from "@/components/StatusBadge";
 
-const editFormSchema = editProfileSchema.extend({
-  address: updateHouseholdSchema.shape.address,
-});
+// Profile fields plus the household's structured address (street/city/state/
+// postal_code) — the address maps to Subsplash's _embedded.address on save.
+const editFormSchema = editProfileSchema.extend(updateHouseholdSchema.shape);
 type EditFormValues = z.infer<typeof editFormSchema>;
+
+const ADDRESS_KEYS = ["street", "city", "state", "postal_code"] as const;
 
 export function EditProfileForm({
   profile,
@@ -40,19 +42,21 @@ export function EditProfileForm({
       email: profile.email,
       phone_number: profile.phone_number ?? "",
       campus: profile.campus ?? "Arlington",
-      address: household?.address ?? "",
+      street: household?.address_parts?.street ?? "",
+      city: household?.address_parts?.city ?? "",
+      state: household?.address_parts?.state ?? "",
+      postal_code: household?.address_parts?.postal_code ?? "",
     },
   });
 
   async function onSubmit(values: EditFormValues) {
     setSubmitError(null);
-    const { address, campus, ...restProfileValues } = values;
-    // Campus is a controlled <select> with a default, so it's always
-    // present in `values` even when unchanged. Real-mode campus updates
-    // aren't implemented yet (lib/subsplash.ts throws clearly if asked to
-    // change it) — only include it in the PATCH if it actually changed,
-    // so saving name/email/phone doesn't fail just because the select's
-    // default value is technically "defined".
+    const { street, city, state, postal_code, campus, ...restProfileValues } = values;
+    const addressValues = { street, city, state, postal_code };
+    // Campus is a controlled <select> with a default, so it's always present
+    // in `values` even when unchanged — only include it in the PATCH if it
+    // actually changed, so saving name/email/phone doesn't trigger a
+    // needless custom-field write.
     const profileValues =
       campus !== (profile.campus ?? "Arlington") ? { ...restProfileValues, campus } : restProfileValues;
 
@@ -73,11 +77,15 @@ export function EditProfileForm({
       return;
     }
 
-    if (household && address !== (household.address ?? "")) {
+    const current = household?.address_parts ?? {};
+    const addressChanged = ADDRESS_KEYS.some(
+      (key) => (addressValues[key] ?? "") !== (current[key] ?? "")
+    );
+    if (household && addressChanged) {
       const householdRes = await fetch(`/api/households/${household.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address }),
+        body: JSON.stringify(addressValues),
       });
 
       if (!householdRes.ok) {
@@ -138,11 +146,35 @@ export function EditProfileForm({
         <>
           <div className="my-6 h-px bg-[#F0EBDF]" />
           <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#8A94A0]">
-            Household
+            Household Address
           </div>
-          <Field label="Address" htmlFor="address" error={errors.address?.message}>
-            <input id="address" {...register("address")} className={inputClass(!!errors.address)} />
-          </Field>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <Field
+              label="Street"
+              htmlFor="street"
+              error={errors.street?.message}
+              className="sm:col-span-2"
+            >
+              <input id="street" {...register("street")} className={inputClass(!!errors.street)} />
+            </Field>
+            <Field label="City" htmlFor="city" error={errors.city?.message}>
+              <input id="city" {...register("city")} className={inputClass(!!errors.city)} />
+            </Field>
+            <Field label="State" htmlFor="state" error={errors.state?.message}>
+              <input id="state" {...register("state")} className={inputClass(!!errors.state)} />
+            </Field>
+            <Field
+              label="Postal Code"
+              htmlFor="postal_code"
+              error={errors.postal_code?.message}
+            >
+              <input
+                id="postal_code"
+                {...register("postal_code")}
+                className={inputClass(!!errors.postal_code)}
+              />
+            </Field>
+          </div>
         </>
       )}
 

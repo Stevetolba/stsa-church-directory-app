@@ -1,4 +1,8 @@
 // Server only — ADR-0002. Roles live here, not in any external token.
+// ADR-0010: a third role, "volunteer", covers personal-Google-account
+// sign-ins authorized via Subsplash (lib/auth.ts's signIn callback already
+// confirmed access before this ever runs) — anyone not on the church
+// Workspace domain and not an admin falls here.
 
 import type { Role } from "@/types/auth";
 

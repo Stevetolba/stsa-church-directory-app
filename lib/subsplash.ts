@@ -9,10 +9,10 @@
 
 import { revalidateTag, unstable_cache } from "next/cache";
 import type { Campus, MemberStatus, Profile } from "@/types/profile";
-import type { Household } from "@/types/household";
+import type { Household, HouseholdAddress } from "@/types/household";
 import { getServiceToken } from "./subsplashToken";
 import { mockHouseholds, mockProfiles } from "./mockData";
-import { householdCampus } from "./household";
+import { formatAddressParts, householdCampus, parseAddressString } from "./household";
 import { MAX_GRADE_VALUE, MIN_GRADE_VALUE } from "./grades";
 
 const USE_MOCK_DATA = process.env.SUBSPLASH_USE_MOCK !== "false";
@@ -34,7 +34,11 @@ const CACHE_REVALIDATE_SECONDS = 300;
 // --- Raw Subsplash response shapes (only the fields we consume) ---
 
 interface RawCustomFieldValue {
-  custom_field_definition: { id: string; name: string };
+  // revision_id + type are present on reads and required when writing the
+  // field back (openapi.yaml → CustomFieldValueInput) — used by the Campus
+  // write path below, since there's no custom-field-definitions endpoint to
+  // look them up directly.
+  custom_field_definition: { id: string; name: string; revision_id?: string; type?: string };
   // Confirmed against the live org: multi-select fields (e.g. Campus) use
   // `choices` (array), not the singular `choice` this originally assumed
   // — every campus lookup silently returned undefined as a result.
@@ -157,15 +161,61 @@ function extractCustomFieldValue(field: RawCustomFieldValue): string | undefined
   return field.value.choice?.name ?? field.value.text;
 }
 
-function extractCampus(customFields: RawCustomFieldValue[] | undefined): Campus | undefined {
-  const field = customFields?.find(
+function findCampusField(
+  customFields: RawCustomFieldValue[] | undefined
+): RawCustomFieldValue | undefined {
+  return customFields?.find(
     (f) => f.custom_field_definition.name.trim().toLowerCase() === CAMPUS_FIELD_NAME
   );
+}
+
+function extractCampus(customFields: RawCustomFieldValue[] | undefined): Campus | undefined {
+  const field = findCampusField(customFields);
   // A profile can have multiple campus choices selected at once (confirmed
   // against the live org) — our model only supports one, so pick the first
   // recognized value rather than requiring an exact single-choice match.
-  const choiceNames = field?.value.choices?.map((c) => c.name) ?? (field?.value.choice ? [field.value.choice.name] : []);
+  const choiceNames =
+    field?.value.choices?.map((c) => c.name) ?? (field?.value.choice ? [field.value.choice.name] : []);
   return choiceNames.find((v): v is Campus => v === "Arlington" || v === "Leesburg");
+}
+
+// The Campus custom field's write metadata (definition id, revision id, and
+// dropdown choice ids), learned from real profile data since Subsplash has
+// no custom-field-definitions endpoint to look it up directly.
+interface CampusFieldMeta {
+  definitionId: string;
+  revisionId?: string;
+  type?: string;
+  choiceIds: Partial<Record<Campus, string>>;
+}
+
+function mergeCampusFieldMeta(
+  existing: CampusFieldMeta | null,
+  field: RawCustomFieldValue
+): CampusFieldMeta {
+  const def = field.custom_field_definition;
+  const meta: CampusFieldMeta = existing ?? { definitionId: def.id, choiceIds: {} };
+  meta.definitionId = def.id;
+  if (def.revision_id) meta.revisionId = def.revision_id;
+  if (def.type) meta.type = def.type;
+  const choices = field.value.choices?.length
+    ? field.value.choices
+    : field.value.choice
+      ? [field.value.choice]
+      : [];
+  for (const choice of choices) {
+    if (choice.name === "Arlington" || choice.name === "Leesburg") {
+      meta.choiceIds[choice.name] = choice.id;
+    }
+  }
+  return meta;
+}
+
+// A dropdown campus field needs the target choice's id; a text field just
+// takes the name. We treat the field as a dropdown when the definition says
+// so or when we've observed any choice value for it.
+function campusUsesChoices(meta: CampusFieldMeta): boolean {
+  return meta.type === "dropdown" || Object.keys(meta.choiceIds).length > 0;
 }
 
 function formatPhone(phone: RawProfile["phone_number"]): string | undefined {
@@ -212,21 +262,26 @@ function mapProfile(raw: RawProfile): Profile {
   };
 }
 
-function formatAddress(address: RawAddress | undefined): string | undefined {
+function mapAddressParts(address: RawAddress | undefined): HouseholdAddress | undefined {
   if (!address) return undefined;
-  const cityStateZip = [address.city, [address.state, address.postal_code].filter(Boolean).join(" ")]
-    .filter(Boolean)
-    .join(", ");
-  return [address.street, cityStateZip].filter(Boolean).join(", ") || undefined;
+  const parts: HouseholdAddress = {
+    street: address.street,
+    city: address.city,
+    state: address.state,
+    postal_code: address.postal_code,
+  };
+  return Object.values(parts).some(Boolean) ? parts : undefined;
 }
 
 function mapHousehold(raw: RawHousehold): Household {
+  const address_parts = mapAddressParts(raw._embedded?.address);
   return {
     id: raw.id,
     name: raw.name,
     primary_email: raw.primary_email,
     primary_phone: raw.primary_phone,
-    address: formatAddress(raw._embedded?.address),
+    address: formatAddressParts(address_parts),
+    address_parts,
     status: raw.status,
     members: raw._embedded?.members?.map(mapProfile),
     created_at: raw.created_at,
@@ -292,12 +347,35 @@ const getCachedHouseholds = unstable_cache(
   { revalidate: CACHE_REVALIDATE_SECONDS, tags: ["subsplash-households"] }
 );
 
+// ADR-0010-adjacent: like ACCESS_FIELD_NAME, there's no custom-field-
+// definitions endpoint to look up the Campus field's write metadata
+// (definition id, revision id, dropdown choice ids), so we learn it by
+// sampling real profile data — one page (not the full profiles walk),
+// cached via unstable_cache so it survives across serverless invocations
+// the same way the profiles/households caches do (see ADR-0009's revision
+// note on why a plain module variable doesn't).
+const getCampusFieldMetaCached = unstable_cache(
+  async (): Promise<CampusFieldMeta | null> => {
+    const data = await subsplashFetch<HalCollection<RawProfile>>(
+      `/people/v1/profiles?page[number]=1&page[size]=${MAX_SUBSPLASH_PAGE_SIZE}`
+    );
+    let meta: CampusFieldMeta | null = null;
+    for (const raw of data._embedded.profiles) {
+      const field = findCampusField(raw.custom_fields);
+      if (field) meta = mergeCampusFieldMeta(meta, field);
+    }
+    return meta;
+  },
+  ["subsplash-campus-field-meta"],
+  { revalidate: CACHE_REVALIDATE_SECONDS, tags: ["subsplash-campus-meta"] }
+);
+
 // --- In-memory search/filter/paginate (shared by mock and real modes) ---
 
 export interface SearchProfilesParams {
   search?: string;
-  status?: MemberStatus;
-  campus?: Campus;
+  status?: MemberStatus[];
+  campus?: Campus[];
   gradeFrom?: number;
   gradeTo?: number;
   page?: number;
@@ -330,8 +408,8 @@ function filterAndPaginateProfiles(
   const upperGrade = gradeTo ?? MAX_GRADE_VALUE;
 
   const filtered = all.filter((p) => {
-    const matchesStatus = !status || p.status === status;
-    const matchesCampus = !campus || p.campus === campus;
+    const matchesStatus = !status?.length || status.includes(p.status);
+    const matchesCampus = !campus?.length || (!!p.campus && campus.includes(p.campus));
     const matchesGrade =
       !gradeFilterActive ||
       (p.academic_grade_value !== undefined &&
@@ -467,6 +545,11 @@ export type UpdateProfileInput = Partial<
   Pick<Profile, "first_name" | "last_name" | "email" | "phone_number" | "campus">
 >;
 
+// Distinguishes "campus write couldn't be resolved" (a 422-worthy
+// client-ish situation) from an unexpected failure, so the API route can
+// respond meaningfully rather than a blanket error.
+export class CampusUpdateError extends Error {}
+
 // Subsplash's PATCH body wants phone_number as PhoneNumberWithCountryCode
 // ({ significant, country: { calling_code, region_code } }), not the
 // formatted display string ("(215) 940-5960") our UI shows and edits —
@@ -483,6 +566,56 @@ function phoneNumberForSubsplash(
     throw new Error("Phone number must be a 10-digit US number.");
   }
   return { significant: digits, country: { calling_code: "+1", region_code: "US" } };
+}
+
+// Builds the custom_fields entry that sets a profile's campus, discovering
+// the field's definition/revision (and dropdown choice id) from real
+// profile data — first the profile being edited (freshest revision_id),
+// falling back to the cached sample when that profile hasn't set campus
+// yet or is missing a choice id we need. Throws CampusUpdateError when the
+// write can't be resolved so the caller can report a clear reason.
+async function buildCampusFieldInput(
+  profileId: string,
+  campus: Campus
+): Promise<{ custom_field_definition: { id: string; revision_id?: string }; value: object }> {
+  const currentRaw = await subsplashFetch<RawProfile>(`/people/v1/profiles/${profileId}`).catch(
+    () => null
+  );
+  const fromProfile = currentRaw ? findCampusField(currentRaw.custom_fields) : undefined;
+  let meta = fromProfile ? mergeCampusFieldMeta(null, fromProfile) : null;
+
+  if (!meta || !meta.revisionId || (campusUsesChoices(meta) && !meta.choiceIds[campus])) {
+    const sampled = await getCampusFieldMetaCached();
+    if (sampled) {
+      meta = meta
+        ? { ...sampled, ...meta, choiceIds: { ...sampled.choiceIds, ...meta.choiceIds } }
+        : sampled;
+    }
+  }
+
+  if (!meta || !meta.revisionId) {
+    throw new CampusUpdateError(
+      "Could not resolve the Campus custom field's write metadata from Subsplash — it may not be configured."
+    );
+  }
+
+  let value: { choice: { id: string } } | { text: string };
+  if (campusUsesChoices(meta)) {
+    const choiceId = meta.choiceIds[campus];
+    if (!choiceId) {
+      throw new CampusUpdateError(
+        `No known Subsplash dropdown choice id for campus "${campus}" — it hasn't appeared on any sampled profile yet.`
+      );
+    }
+    value = { choice: { id: choiceId } };
+  } else {
+    value = { text: campus };
+  }
+
+  return {
+    custom_field_definition: { id: meta.definitionId, revision_id: meta.revisionId },
+    value,
+  };
 }
 
 export async function updateProfile(id: string, patch: UpdateProfileInput): Promise<Profile> {
@@ -507,18 +640,6 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
     return existing;
   }
 
-  if (campus !== undefined) {
-    // Updating a custom field for real requires the Campus field's
-    // custom_field_definition id/revision_id and, since it's a dropdown,
-    // the target choice's id — none of which are hardcodable (they're
-    // org-specific and would need a GET /people/v1/custom-field-definitions
-    // lookup this app doesn't make yet). Stopping here rather than
-    // guessing and risking a bad write against real data.
-    throw new Error(
-      "Updating campus against the real Subsplash API isn't implemented yet — requires looking up the Campus custom field's definition and choice IDs first."
-    );
-  }
-
   if (!ORG_KEY) {
     throw new Error("Missing SUBSPLASH_ORG_KEY — required as filter[org_key] on every request.");
   }
@@ -526,6 +647,12 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
   const body: Record<string, unknown> = { ...topLevelPatch };
   if (topLevelPatch.phone_number !== undefined) {
     body.phone_number = phoneNumberForSubsplash(topLevelPatch.phone_number);
+  }
+  // Campus lives in a custom field, not a top-level column, so it rides
+  // along in the same PATCH via the custom_fields array (openapi.yaml →
+  // CustomFieldValueInput).
+  if (campus !== undefined) {
+    body.custom_fields = [await buildCampusFieldInput(id, campus)];
   }
 
   const token = await getServiceToken();
@@ -551,10 +678,11 @@ export async function listHouseholds(params: ListHouseholdsParams): Promise<Hous
   // (lib/household.ts), so members are joined in here even though this is
   // the "list" fetch. Real mode joins from the (separately cached)
   // profiles walk rather than requesting include=members on the household
-  // walk itself — see fetchAllHouseholdsFromSubsplash for why.
+  // walk itself — see getCachedHouseholds for why.
   const all = USE_MOCK_DATA
     ? mockHouseholds.map((h) => ({
         ...h,
+        address_parts: h.address_parts ?? parseAddressString(h.address),
         members: mockProfiles.filter((p) => p.household_id === h.id),
       }))
     : await (async () => {
@@ -571,7 +699,11 @@ export async function getHousehold(id: string): Promise<Household | null> {
   if (USE_MOCK_DATA) {
     const household = mockHouseholds.find((h) => h.id === id);
     if (!household) return null;
-    return { ...household, members: mockProfiles.filter((p) => p.household_id === id) };
+    return {
+      ...household,
+      address_parts: household.address_parts ?? parseAddressString(household.address),
+      members: mockProfiles.filter((p) => p.household_id === id),
+    };
   }
   try {
     const raw = await subsplashFetch<RawHousehold>(`/people/v1/households/${id}?include=members,address`);
@@ -592,13 +724,19 @@ export async function getHousehold(id: string): Promise<Household | null> {
   }
 }
 
-export type UpdateHouseholdInput = Partial<Pick<Household, "address">>;
+export type UpdateHouseholdInput = Partial<HouseholdAddress>;
 
 export async function updateHousehold(id: string, patch: UpdateHouseholdInput): Promise<Household> {
   if (USE_MOCK_DATA) {
     const existing = mockHouseholds.find((h) => h.id === id);
     if (!existing) throw new Error(`Household not found: ${id}`);
-    Object.assign(existing, patch, { updated_at: new Date().toISOString() });
+    const mergedParts: HouseholdAddress = {
+      ...(existing.address_parts ?? parseAddressString(existing.address) ?? {}),
+      ...patch,
+    };
+    existing.address_parts = mergedParts;
+    existing.address = formatAddressParts(mergedParts);
+    existing.updated_at = new Date().toISOString();
     return existing;
   }
 
@@ -613,13 +751,9 @@ export async function updateHousehold(id: string, patch: UpdateHouseholdInput): 
       Authorization: `Bearer ${token}`,
     },
     // Subsplash wants a structured _embedded.address (street/city/state/
-    // postal_code) — confirmed in openapi.yaml's household PATCH request
-    // body. Our display model stores one formatted string, so putting the
-    // whole thing in `street` is a best-effort stopgap; proper structured
-    // address input fields are needed before this is production-ready.
-    body: JSON.stringify(
-      patch.address !== undefined ? { _embedded: { address: { street: patch.address } } } : {}
-    ),
+    // postal_code) — confirmed in openapi.yaml's Address schema. We carry
+    // those parts through the whole edit flow, so send them directly.
+    body: JSON.stringify(Object.keys(patch).length > 0 ? { _embedded: { address: patch } } : {}),
   });
   if (!res.ok) {
     throw new Error(`Subsplash API error: ${res.status} PATCH /people/v1/households/${id}`);
