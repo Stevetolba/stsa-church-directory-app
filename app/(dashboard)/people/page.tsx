@@ -8,6 +8,8 @@ import { SearchBar } from "@/components/SearchBar";
 import { PersonCard } from "@/components/PersonCard";
 import { PersonCardSkeleton } from "@/components/PersonCardSkeleton";
 import { EmptyState } from "@/components/EmptyState";
+import { FilterPill } from "@/components/FilterPill";
+import { AddFilterMenu } from "@/components/AddFilterMenu";
 import { usePeople } from "@/hooks/usePeople";
 import { GRADE_LEVELS } from "@/lib/grades";
 import { downloadCsv, PROFILE_EXPORT_COLUMNS, profileToExportRow, toCsv } from "@/lib/csv";
@@ -17,6 +19,12 @@ import type { Campus, MemberStatus } from "@/types/profile";
 // "People", not "Members" — the section covers every status (Visitor,
 // Newcomer, etc.), and "Member" specifically means status === "Member".
 // See ADR-0008.
+//
+// Filters are "dynamic" (Subsplash's own People page pattern): rather than
+// always rendering every filter dimension inline, only *active* dimensions
+// show as a pill (value summary + a popover to edit it); inactive ones live
+// behind "+ Filter". Space scales with how many filters are actually set,
+// not with how many filter types exist.
 
 const STATUS_OPTIONS: MemberStatus[] = [
   "Member",
@@ -28,10 +36,30 @@ const STATUS_OPTIONS: MemberStatus[] = [
 
 const CAMPUS_OPTIONS: Campus[] = ["Arlington", "Leesburg"];
 
-const SORT_OPTIONS: Array<{ value: NonNullable<SearchProfilesParams["sortBy"]>; label: string }> = [
-  { value: "last_name", label: "Last Name" },
-  { value: "first_name", label: "First Name" },
-];
+type FilterKey = "status" | "campus" | "grade";
+const ALL_FILTER_KEYS: FilterKey[] = ["status", "campus", "grade"];
+const FILTER_LABELS: Record<FilterKey, string> = { status: "Status", campus: "Campus", grade: "Grade" };
+
+function summarizeStatus(status: MemberStatus[]): string {
+  if (status.length === 0) return "Status";
+  if (status.length > 2) return `Status: ${status.length} selected`;
+  return `Status: ${status.join(", ")}`;
+}
+
+function summarizeCampus(campus: Campus[]): string {
+  if (campus.length === 0) return "Campus";
+  return `Campus: ${campus.join(", ")}`;
+}
+
+function summarizeGrade(gradeFrom?: number, gradeTo?: number): string {
+  if (gradeFrom === undefined && gradeTo === undefined) return "Grade";
+  const from = GRADE_LEVELS.find((g) => g.value === gradeFrom)?.label;
+  const to = GRADE_LEVELS.find((g) => g.value === gradeTo)?.label;
+  if (from && to) return `Grade: ${from} – ${to}`;
+  if (from) return `Grade: ${from}+`;
+  if (to) return `Grade: up to ${to}`;
+  return "Grade";
+}
 
 export default function PeoplePage() {
   const router = useRouter();
@@ -50,6 +78,17 @@ export default function PeoplePage() {
   const page = Number(searchParams.get("page") ?? "1");
 
   const { data, isLoading } = usePeople({ search, status, campus, gradeFrom, gradeTo, sortBy, page });
+
+  // Dimensions with a real value are always "active" (so reloading a filtered
+  // URL still shows the right pills); manuallyAdded additionally keeps a
+  // just-added-but-not-yet-configured pill visible (e.g. clicked "+ Filter" →
+  // Grade but haven't picked Min/Max yet) until it's given a value or removed.
+  const [manuallyAdded, setManuallyAdded] = useState<Set<FilterKey>>(new Set());
+  const [openFilter, setOpenFilter] = useState<FilterKey | null>(null);
+  const activeFilters = new Set<FilterKey>(manuallyAdded);
+  if (status.length > 0) activeFilters.add("status");
+  if (campus.length > 0) activeFilters.add("campus");
+  if (gradeFrom !== undefined || gradeTo !== undefined) activeFilters.add("grade");
 
   const hasActiveFilter =
     !!search || status.length > 0 || campus.length > 0 || gradeFrom !== undefined || gradeTo !== undefined;
@@ -105,12 +144,27 @@ export default function PeoplePage() {
     router.replace(query ? `${pathname}?${query}` : pathname);
   }
 
-  function clearListParam(key: "status" | "campus") {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete(key);
-    params.delete("page");
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname);
+  function handleAddFilter(key: FilterKey) {
+    setManuallyAdded((prev) => new Set(prev).add(key));
+    setOpenFilter(key);
+  }
+
+  function handleRemoveFilter(key: FilterKey) {
+    setManuallyAdded((prev) => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    if (openFilter === key) setOpenFilter(null);
+    if (key === "status") updateParams({ status: null, page: null });
+    else if (key === "campus") updateParams({ campus: null, page: null });
+    else updateParams({ gradeFrom: null, gradeTo: null, page: null });
+  }
+
+  function handleClearAll() {
+    setManuallyAdded(new Set());
+    setOpenFilter(null);
+    updateParams({ status: null, campus: null, gradeFrom: null, gradeTo: null, page: null });
   }
 
   const profiles = data?.profiles ?? [];
@@ -145,7 +199,7 @@ export default function PeoplePage() {
         </div>
       </div>
 
-      <div className="mb-7 flex flex-wrap items-center gap-3.5">
+      <div className="mb-7 flex flex-col gap-3">
         <SearchBar
           defaultValue={search}
           onDebouncedChange={(value) => updateParams({ search: value || null, page: null })}
@@ -153,125 +207,140 @@ export default function PeoplePage() {
         />
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => clearListParam("status")}
-            className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
-              status.length === 0
-                ? "border border-brand-navy bg-brand-navy text-brand-cream"
-                : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
-            }`}
-          >
-            All
-          </button>
-          {STATUS_OPTIONS.map((option) => {
-            const active = status.includes(option);
-            return (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={active}
-                onClick={() => toggleListParam("status", option, status)}
-                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
-                  active
-                    ? "border border-brand-navy bg-brand-navy text-brand-cream"
-                    : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
-                }`}
-              >
-                {option}
-              </button>
-            );
-          })}
-        </div>
+          {activeFilters.has("status") && (
+            <FilterPill
+              label={summarizeStatus(status)}
+              active={status.length > 0}
+              open={openFilter === "status"}
+              onOpenChange={(open) => setOpenFilter(open ? "status" : null)}
+              onRemove={() => handleRemoveFilter("status")}
+            >
+              <div className="flex flex-col gap-1.5">
+                {STATUS_OPTIONS.map((option) => (
+                  <label
+                    key={option}
+                    className="flex cursor-pointer items-center gap-2 text-[13.5px] text-brand-navy"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={status.includes(option)}
+                      onChange={() => toggleListParam("status", option, status)}
+                      className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                    />
+                    {option}
+                  </label>
+                ))}
+              </div>
+            </FilterPill>
+          )}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => clearListParam("campus")}
-            className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
-              campus.length === 0
-                ? "border border-brand-navy bg-brand-navy text-brand-cream"
-                : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
-            }`}
-          >
-            All Campuses
-          </button>
-          {CAMPUS_OPTIONS.map((option) => {
-            const active = campus.includes(option);
-            return (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={active}
-                onClick={() => toggleListParam("campus", option, campus)}
-                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
-                  active
-                    ? "border border-brand-navy bg-brand-navy text-brand-cream"
-                    : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
-                }`}
-              >
-                {option}
-              </button>
-            );
-          })}
-        </div>
+          {activeFilters.has("campus") && (
+            <FilterPill
+              label={summarizeCampus(campus)}
+              active={campus.length > 0}
+              open={openFilter === "campus"}
+              onOpenChange={(open) => setOpenFilter(open ? "campus" : null)}
+              onRemove={() => handleRemoveFilter("campus")}
+            >
+              <div className="flex flex-col gap-1.5">
+                {CAMPUS_OPTIONS.map((option) => (
+                  <label
+                    key={option}
+                    className="flex cursor-pointer items-center gap-2 text-[13.5px] text-brand-navy"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={campus.includes(option)}
+                      onChange={() => toggleListParam("campus", option, campus)}
+                      className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                    />
+                    {option}
+                  </label>
+                ))}
+              </div>
+            </FilterPill>
+          )}
 
-        <div className="flex items-center gap-1.5">
-          <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
-            Sort by
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            {SORT_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                aria-pressed={sortBy === option.value}
-                onClick={() =>
-                  updateParams({ sortBy: option.value === "last_name" ? null : option.value, page: null })
-                }
-                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
-                  sortBy === option.value
-                    ? "border border-brand-navy bg-brand-navy text-brand-cream"
-                    : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
+          {activeFilters.has("grade") && (
+            <FilterPill
+              label={summarizeGrade(gradeFrom, gradeTo)}
+              active={gradeFrom !== undefined || gradeTo !== undefined}
+              open={openFilter === "grade"}
+              onOpenChange={(open) => setOpenFilter(open ? "grade" : null)}
+              onRemove={() => handleRemoveFilter("grade")}
+            >
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                    Min
+                  </label>
+                  <select
+                    value={gradeFromRaw ?? ""}
+                    onChange={(e) => updateParams({ gradeFrom: e.target.value || null, page: null })}
+                    className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                  >
+                    <option value="">None</option>
+                    {GRADE_LEVELS.map((grade) => (
+                      <option key={grade.value} value={grade.value}>
+                        {grade.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                    Max
+                  </label>
+                  <select
+                    value={gradeToRaw ?? ""}
+                    onChange={(e) => updateParams({ gradeTo: e.target.value || null, page: null })}
+                    className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                  >
+                    <option value="">None</option>
+                    {GRADE_LEVELS.map((grade) => (
+                      <option key={grade.value} value={grade.value}>
+                        {grade.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </FilterPill>
+          )}
+
+          <AddFilterMenu
+            options={ALL_FILTER_KEYS.filter((key) => !activeFilters.has(key)).map((key) => ({
+              key,
+              label: FILTER_LABELS[key],
+            }))}
+            onSelect={(key) => handleAddFilter(key as FilterKey)}
+          />
+
+          {activeFilters.size > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              className="whitespace-nowrap text-[13px] font-semibold text-[#5B7185] underline-offset-2 hover:underline"
+            >
+              Clear all
+            </button>
+          )}
+
+          <div className="ml-auto flex items-center gap-1.5">
+            <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+              Sort
+            </span>
+            <select
+              value={sortBy}
+              onChange={(e) =>
+                updateParams({ sortBy: e.target.value === "last_name" ? null : e.target.value, page: null })
+              }
+              className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
+            >
+              <option value="last_name">Last Name</option>
+              <option value="first_name">First Name</option>
+            </select>
           </div>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
-            Grade Min
-          </span>
-          <select
-            value={gradeFromRaw ?? ""}
-            onChange={(e) => updateParams({ gradeFrom: e.target.value || null, page: null })}
-            className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
-          >
-            <option value="">None</option>
-            {GRADE_LEVELS.map((grade) => (
-              <option key={grade.value} value={grade.value}>
-                {grade.label}
-              </option>
-            ))}
-          </select>
-          <span className="ml-1 text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
-            Max
-          </span>
-          <select
-            value={gradeToRaw ?? ""}
-            onChange={(e) => updateParams({ gradeTo: e.target.value || null, page: null })}
-            className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
-          >
-            <option value="">None</option>
-            {GRADE_LEVELS.map((grade) => (
-              <option key={grade.value} value={grade.value}>
-                {grade.label}
-              </option>
-            ))}
-          </select>
         </div>
       </div>
 

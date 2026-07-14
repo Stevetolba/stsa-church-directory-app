@@ -8,6 +8,8 @@ import { SearchBar } from "@/components/SearchBar";
 import { PersonCard } from "@/components/PersonCard";
 import { PersonCardSkeleton } from "@/components/PersonCardSkeleton";
 import { EmptyState } from "@/components/EmptyState";
+import { FilterPill } from "@/components/FilterPill";
+import { AddFilterMenu } from "@/components/AddFilterMenu";
 import { useChildren } from "@/hooks/useChildren";
 import { GRADE_LEVELS } from "@/lib/grades";
 import { downloadCsv, PROFILE_EXPORT_COLUMNS, profileToExportRow, toCsv } from "@/lib/csv";
@@ -15,11 +17,12 @@ import type { ChildrenMemberType, ProfileSearchResult, SearchProfilesParams } fr
 import type { Campus, MemberStatus } from "@/types/profile";
 
 // Children directory (ADR-0011) — a People clone scoped to child-bearing
-// households. This is the only directory surface volunteers can reach; grade
-// range is the most relevant filter here, so status pills are omitted to keep
-// it focused. Campus + search mirror the People page.
+// households. This is the only directory surface volunteers can reach.
 //
-// The member-type filter defaults to "Child" (unchanged out-of-the-box
+// Filters are "dynamic" (Subsplash's own People page pattern, mirrored on
+// app/(dashboard)/people/page.tsx): only *active* dimensions show as a pill
+// (value summary + a popover to edit it); inactive ones live behind
+// "+ Filter". Family scope defaults to "Child" (unchanged out-of-the-box
 // behavior) and can widen to a child's guardians/parents ("Adult") or both
 // ("All") — always still scoped to child-bearing households only, per
 // searchChildren's server-side default.
@@ -40,10 +43,41 @@ const MEMBER_TYPE_OPTIONS: Array<{ value: ChildrenMemberType; label: string }> =
   { value: "All", label: "All Family" },
 ];
 
-const SORT_OPTIONS: Array<{ value: NonNullable<SearchProfilesParams["sortBy"]>; label: string }> = [
-  { value: "last_name", label: "Last Name" },
-  { value: "first_name", label: "First Name" },
-];
+type FilterKey = "status" | "campus" | "grade" | "memberType";
+const ALL_FILTER_KEYS: FilterKey[] = ["status", "campus", "grade", "memberType"];
+const FILTER_LABELS: Record<FilterKey, string> = {
+  status: "Status",
+  campus: "Campus",
+  grade: "Grade",
+  memberType: "Family",
+};
+
+function summarizeStatus(status: MemberStatus[]): string {
+  if (status.length === 0) return "Status";
+  if (status.length > 2) return `Status: ${status.length} selected`;
+  return `Status: ${status.join(", ")}`;
+}
+
+function summarizeCampus(campus: Campus[]): string {
+  if (campus.length === 0) return "Campus";
+  return `Campus: ${campus.join(", ")}`;
+}
+
+function summarizeGrade(gradeFrom?: number, gradeTo?: number): string {
+  if (gradeFrom === undefined && gradeTo === undefined) return "Grade";
+  const from = GRADE_LEVELS.find((g) => g.value === gradeFrom)?.label;
+  const to = GRADE_LEVELS.find((g) => g.value === gradeTo)?.label;
+  if (from && to) return `Grade: ${from} – ${to}`;
+  if (from) return `Grade: ${from}+`;
+  if (to) return `Grade: up to ${to}`;
+  return "Grade";
+}
+
+function summarizeMemberType(memberType: ChildrenMemberType): string {
+  if (memberType === "Child") return "Family";
+  const found = MEMBER_TYPE_OPTIONS.find((o) => o.value === memberType);
+  return `Family: ${found?.label ?? memberType}`;
+}
 
 export default function ChildrenPage() {
   const router = useRouter();
@@ -72,6 +106,18 @@ export default function ChildrenPage() {
     sortBy,
     page,
   });
+
+  // Dimensions with a real (non-default) value are always "active" (so
+  // reloading a filtered URL still shows the right pills); manuallyAdded
+  // additionally keeps a just-added-but-not-yet-configured pill visible
+  // until it's given a value or removed.
+  const [manuallyAdded, setManuallyAdded] = useState<Set<FilterKey>>(new Set());
+  const [openFilter, setOpenFilter] = useState<FilterKey | null>(null);
+  const activeFilters = new Set<FilterKey>(manuallyAdded);
+  if (status.length > 0) activeFilters.add("status");
+  if (campus.length > 0) activeFilters.add("campus");
+  if (gradeFrom !== undefined || gradeTo !== undefined) activeFilters.add("grade");
+  if (memberType !== "Child") activeFilters.add("memberType");
 
   const hasActiveFilter =
     !!search ||
@@ -134,12 +180,35 @@ export default function ChildrenPage() {
     router.replace(query ? `${pathname}?${query}` : pathname);
   }
 
-  function clearListParam(key: "status" | "campus") {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete(key);
-    params.delete("page");
-    const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname);
+  function handleAddFilter(key: FilterKey) {
+    setManuallyAdded((prev) => new Set(prev).add(key));
+    setOpenFilter(key);
+  }
+
+  function handleRemoveFilter(key: FilterKey) {
+    setManuallyAdded((prev) => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    if (openFilter === key) setOpenFilter(null);
+    if (key === "status") updateParams({ status: null, page: null });
+    else if (key === "campus") updateParams({ campus: null, page: null });
+    else if (key === "grade") updateParams({ gradeFrom: null, gradeTo: null, page: null });
+    else updateParams({ memberType: null, page: null });
+  }
+
+  function handleClearAll() {
+    setManuallyAdded(new Set());
+    setOpenFilter(null);
+    updateParams({
+      status: null,
+      campus: null,
+      gradeFrom: null,
+      gradeTo: null,
+      memberType: null,
+      page: null,
+    });
   }
 
   const profiles = data?.profiles ?? [];
@@ -171,7 +240,7 @@ export default function ChildrenPage() {
         </button>
       </div>
 
-      <div className="mb-7 flex flex-wrap items-center gap-3.5">
+      <div className="mb-7 flex flex-col gap-3">
         <SearchBar
           defaultValue={search}
           onDebouncedChange={(value) => updateParams({ search: value || null, page: null })}
@@ -179,145 +248,169 @@ export default function ChildrenPage() {
         />
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => clearListParam("status")}
-            className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
-              status.length === 0
-                ? "border border-brand-navy bg-brand-navy text-brand-cream"
-                : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
-            }`}
-          >
-            All
-          </button>
-          {STATUS_OPTIONS.map((option) => {
-            const active = status.includes(option);
-            return (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={active}
-                onClick={() => toggleListParam("status", option, status)}
-                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
-                  active
-                    ? "border border-brand-navy bg-brand-navy text-brand-cream"
-                    : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
-                }`}
-              >
-                {option}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {MEMBER_TYPE_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={memberType === option.value}
-              onClick={() =>
-                updateParams({ memberType: option.value === "Child" ? null : option.value, page: null })
-              }
-              className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
-                memberType === option.value
-                  ? "border border-brand-navy bg-brand-navy text-brand-cream"
-                  : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
-              }`}
+          {activeFilters.has("status") && (
+            <FilterPill
+              label={summarizeStatus(status)}
+              active={status.length > 0}
+              open={openFilter === "status"}
+              onOpenChange={(open) => setOpenFilter(open ? "status" : null)}
+              onRemove={() => handleRemoveFilter("status")}
             >
-              {option.label}
+              <div className="flex flex-col gap-1.5">
+                {STATUS_OPTIONS.map((option) => (
+                  <label
+                    key={option}
+                    className="flex cursor-pointer items-center gap-2 text-[13.5px] text-brand-navy"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={status.includes(option)}
+                      onChange={() => toggleListParam("status", option, status)}
+                      className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                    />
+                    {option}
+                  </label>
+                ))}
+              </div>
+            </FilterPill>
+          )}
+
+          {activeFilters.has("campus") && (
+            <FilterPill
+              label={summarizeCampus(campus)}
+              active={campus.length > 0}
+              open={openFilter === "campus"}
+              onOpenChange={(open) => setOpenFilter(open ? "campus" : null)}
+              onRemove={() => handleRemoveFilter("campus")}
+            >
+              <div className="flex flex-col gap-1.5">
+                {CAMPUS_OPTIONS.map((option) => (
+                  <label
+                    key={option}
+                    className="flex cursor-pointer items-center gap-2 text-[13.5px] text-brand-navy"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={campus.includes(option)}
+                      onChange={() => toggleListParam("campus", option, campus)}
+                      className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                    />
+                    {option}
+                  </label>
+                ))}
+              </div>
+            </FilterPill>
+          )}
+
+          {activeFilters.has("grade") && (
+            <FilterPill
+              label={summarizeGrade(gradeFrom, gradeTo)}
+              active={gradeFrom !== undefined || gradeTo !== undefined}
+              open={openFilter === "grade"}
+              onOpenChange={(open) => setOpenFilter(open ? "grade" : null)}
+              onRemove={() => handleRemoveFilter("grade")}
+            >
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                    Min
+                  </label>
+                  <select
+                    value={gradeFromRaw ?? ""}
+                    onChange={(e) => updateParams({ gradeFrom: e.target.value || null, page: null })}
+                    className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                  >
+                    <option value="">None</option>
+                    {GRADE_LEVELS.map((grade) => (
+                      <option key={grade.value} value={grade.value}>
+                        {grade.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                    Max
+                  </label>
+                  <select
+                    value={gradeToRaw ?? ""}
+                    onChange={(e) => updateParams({ gradeTo: e.target.value || null, page: null })}
+                    className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                  >
+                    <option value="">None</option>
+                    {GRADE_LEVELS.map((grade) => (
+                      <option key={grade.value} value={grade.value}>
+                        {grade.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </FilterPill>
+          )}
+
+          {activeFilters.has("memberType") && (
+            <FilterPill
+              label={summarizeMemberType(memberType)}
+              active={memberType !== "Child"}
+              open={openFilter === "memberType"}
+              onOpenChange={(open) => setOpenFilter(open ? "memberType" : null)}
+              onRemove={() => handleRemoveFilter("memberType")}
+            >
+              <div className="flex flex-col gap-1">
+                {MEMBER_TYPE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() =>
+                      updateParams({ memberType: option.value === "Child" ? null : option.value, page: null })
+                    }
+                    className={`rounded-md px-2.5 py-1.5 text-left text-[13.5px] transition-colors ${
+                      memberType === option.value
+                        ? "bg-brand-cream font-semibold text-brand-navy"
+                        : "text-brand-navy hover:bg-brand-cream/60"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </FilterPill>
+          )}
+
+          <AddFilterMenu
+            options={ALL_FILTER_KEYS.filter((key) => !activeFilters.has(key)).map((key) => ({
+              key,
+              label: FILTER_LABELS[key],
+            }))}
+            onSelect={(key) => handleAddFilter(key as FilterKey)}
+          />
+
+          {activeFilters.size > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              className="whitespace-nowrap text-[13px] font-semibold text-[#5B7185] underline-offset-2 hover:underline"
+            >
+              Clear all
             </button>
-          ))}
-        </div>
+          )}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => clearListParam("campus")}
-            className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
-              campus.length === 0
-                ? "border border-brand-navy bg-brand-navy text-brand-cream"
-                : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
-            }`}
-          >
-            All Campuses
-          </button>
-          {CAMPUS_OPTIONS.map((option) => {
-            const active = campus.includes(option);
-            return (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={active}
-                onClick={() => toggleListParam("campus", option, campus)}
-                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
-                  active
-                    ? "border border-brand-navy bg-brand-navy text-brand-cream"
-                    : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
-                }`}
-              >
-                {option}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
-            Sort by
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            {SORT_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                aria-pressed={sortBy === option.value}
-                onClick={() =>
-                  updateParams({ sortBy: option.value === "last_name" ? null : option.value, page: null })
-                }
-                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
-                  sortBy === option.value
-                    ? "border border-brand-navy bg-brand-navy text-brand-cream"
-                    : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
+          <div className="ml-auto flex items-center gap-1.5">
+            <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+              Sort
+            </span>
+            <select
+              value={sortBy}
+              onChange={(e) =>
+                updateParams({ sortBy: e.target.value === "last_name" ? null : e.target.value, page: null })
+              }
+              className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
+            >
+              <option value="last_name">Last Name</option>
+              <option value="first_name">First Name</option>
+            </select>
           </div>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
-            Grade Min
-          </span>
-          <select
-            value={gradeFromRaw ?? ""}
-            onChange={(e) => updateParams({ gradeFrom: e.target.value || null, page: null })}
-            className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
-          >
-            <option value="">None</option>
-            {GRADE_LEVELS.map((grade) => (
-              <option key={grade.value} value={grade.value}>
-                {grade.label}
-              </option>
-            ))}
-          </select>
-          <span className="ml-1 text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
-            Max
-          </span>
-          <select
-            value={gradeToRaw ?? ""}
-            onChange={(e) => updateParams({ gradeTo: e.target.value || null, page: null })}
-            className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
-          >
-            <option value="">None</option>
-            {GRADE_LEVELS.map((grade) => (
-              <option key={grade.value} value={grade.value}>
-                {grade.label}
-              </option>
-            ))}
-          </select>
         </div>
       </div>
 
