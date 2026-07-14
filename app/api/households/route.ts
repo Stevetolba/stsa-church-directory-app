@@ -1,16 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
+import { requireStaffOrAdmin } from "@/lib/rbac";
 import { listHouseholds } from "@/lib/subsplash";
 import type { Campus } from "@/types/profile";
 
-// Same session-gating rationale as /api/profiles — this is a read
-// endpoint, but the data is staff-only PII (ADR-0005's "app is the only
-// guard" isn't just about mutations).
+// Same gating rationale as /api/profiles — read endpoint over staff-only PII
+// (ADR-0005). Volunteers are scoped to children only (ADR-0011), so they're
+// blocked here.
 export async function GET(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const forbidden = await requireStaffOrAdmin();
+  if (forbidden) return forbidden;
 
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search") ?? undefined;

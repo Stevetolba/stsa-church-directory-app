@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, LogOut, Menu, Users, X } from "lucide-react";
+import { Baby, Home, LogOut, Menu, Users, X } from "lucide-react";
 import { signOutAction } from "@/app/(dashboard)/actions";
 import type { Role } from "@/types/auth";
 
@@ -18,9 +18,12 @@ import type { Role } from "@/types/auth";
 // visible desktop rail — a stopgap responsive treatment, not a mobile
 // redesign.
 
-const NAV_ITEMS = [
-  { href: "/people", label: "People", icon: Users },
-  { href: "/households", label: "Households", icon: Home },
+// ADR-0011: nav is role-scoped. Volunteers only ever see Children; staff/admin
+// get the full directory plus Children.
+const NAV_ITEMS: Array<{ href: string; label: string; icon: typeof Users; roles: Role[] }> = [
+  { href: "/people", label: "People", icon: Users, roles: ["admin", "staff"] },
+  { href: "/households", label: "Households", icon: Home, roles: ["admin", "staff"] },
+  { href: "/children", label: "Children", icon: Baby, roles: ["admin", "staff", "volunteer"] },
 ];
 
 const ROLE_LABEL: Record<Role, string> = {
@@ -70,7 +73,7 @@ function SidebarContent({
         Directory
       </div>
       <nav>
-        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+        {NAV_ITEMS.filter((item) => item.roles.includes(user.role)).map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href);
           return (
             <Link

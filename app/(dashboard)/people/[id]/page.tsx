@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Mail, MapPin, Phone, Pencil } from "lucide-react";
 import { auth } from "@/lib/auth";
-import { getHousehold, getProfile } from "@/lib/subsplash";
+import { getHousehold, getProfile, profileVisibleToVolunteer } from "@/lib/subsplash";
 import { avatarTintForId, initialsOf } from "@/lib/avatar";
 import { formatDate } from "@/lib/utils";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -49,10 +49,20 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
     notFound();
   }
 
+  // ADR-0011: volunteers may only open children and their family members
+  // (people who share a child-bearing household). Anyone else redirects back
+  // to the children directory rather than leaking that the profile exists.
+  const isVolunteer = session?.user.role === "volunteer";
+  if (isVolunteer && !(await profileVisibleToVolunteer(profile.id))) {
+    redirect("/children");
+  }
+
   const household = profile.household_id ? await getHousehold(profile.household_id) : null;
   const otherMembers = household?.members?.filter((m) => m.id !== profile.id) ?? [];
 
   const isAdmin = session?.user.role === "admin";
+  const backHref = isVolunteer ? "/children" : "/people";
+  const backLabel = isVolunteer ? "Children" : "People";
   const tint = avatarTintForId(profile.id);
   const emails = [profile.email, ...(profile.emails ?? [])];
   const phones = [profile.phone_number, ...(profile.phones ?? [])].filter(
@@ -62,11 +72,11 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
   return (
     <div className="mx-auto max-w-[640px]">
       <Link
-        href="/people"
+        href={backHref}
         className="mb-6 inline-flex items-center gap-1.5 text-[13.5px] font-semibold text-[#5B7185] hover:text-brand-navy"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
-        People
+        {backLabel}
       </Link>
 
       <div className="rounded-[14px] border border-[#EAE2D0] bg-white p-6 shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
@@ -124,6 +134,13 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
                   value={phone}
                 />
               ))}
+              {household?.address && (
+                <CopyableField
+                  icon={<MapPin className="h-4 w-4 shrink-0 text-[#97A9B8]" />}
+                  value={household.address}
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(household.address)}`}
+                />
+              )}
             </div>
           </Section>
 
@@ -168,16 +185,6 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
                     {profile.household_role === "child" && (
                       <Field label="Grade" value={profile.academic_grade} />
                     )}
-                  </div>
-                )}
-
-                {household?.address && (
-                  <div className="mt-3">
-                    <CopyableField
-                      icon={<MapPin className="h-4 w-4 shrink-0 text-[#97A9B8]" />}
-                      value={household.address}
-                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(household.address)}`}
-                    />
                   </div>
                 )}
 

@@ -403,6 +403,10 @@ function filterAndPaginateProfiles(
   }: SearchProfilesParams
 ): ProfileSearchResult {
   const needle = search?.trim().toLowerCase();
+  // Phone numbers are also matched digit-only, so a search like "2159405960"
+  // finds a profile displayed/stored as "(215) 940-5960" — formatting
+  // shouldn't matter when searching by phone.
+  const needleDigits = needle?.replace(/\D/g, "") ?? "";
   const gradeFilterActive = gradeFrom !== undefined || gradeTo !== undefined;
   const lowerGrade = gradeFrom ?? MIN_GRADE_VALUE;
   const upperGrade = gradeTo ?? MAX_GRADE_VALUE;
@@ -417,9 +421,12 @@ function filterAndPaginateProfiles(
         p.academic_grade_value <= upperGrade);
     const matchesSearch =
       !needle ||
-      [`${p.first_name ?? ""} ${p.last_name ?? ""}`, p.email ?? "", p.phone_number ?? ""].some(
-        (field) => field.toLowerCase().includes(needle)
-      );
+      [`${p.first_name ?? ""} ${p.last_name ?? ""}`, p.email ?? ""].some((field) =>
+        field.toLowerCase().includes(needle)
+      ) ||
+      (!!p.phone_number &&
+        (p.phone_number.toLowerCase().includes(needle) ||
+          (needleDigits.length > 0 && p.phone_number.replace(/\D/g, "").includes(needleDigits))));
     return matchesStatus && matchesCampus && matchesGrade && matchesSearch;
   });
 
@@ -477,6 +484,56 @@ function filterAndPaginateHouseholds(
 export async function searchProfiles(params: SearchProfilesParams): Promise<ProfileSearchResult> {
   const all = USE_MOCK_DATA ? mockProfiles : await getCachedProfiles();
   return filterAndPaginateProfiles(all, params);
+}
+
+// The full profile set (mock fixtures or the cached Subsplash walk). Shared by
+// searchChildren and the volunteer-visibility helpers below so they all reason
+// over the same data — ADR-0011.
+async function allProfiles(): Promise<Profile[]> {
+  return USE_MOCK_DATA ? mockProfiles : getCachedProfiles();
+}
+
+// The authoritative child marker is household_role === "child" (ADR-0011 /
+// ADR-0006), not academic_grade — grades only cover Pre-K–12th and aren't a
+// reliable child detector.
+function isChild(profile: Profile): boolean {
+  return profile.household_role === "child";
+}
+
+// Children directory (ADR-0011): same filter/paginate/search as searchProfiles,
+// but the base set is only children — so overallTotal reports total children,
+// and no adult can ever appear regardless of the other filters.
+export async function searchChildren(params: SearchProfilesParams): Promise<ProfileSearchResult> {
+  const children = (await allProfiles()).filter(isChild);
+  return filterAndPaginateProfiles(children, params);
+}
+
+// A household is "child-bearing" if any member is a child. This is the single
+// predicate the whole volunteer-scoping model is built on (ADR-0011).
+export async function householdHasChild(householdId: string): Promise<boolean> {
+  if (!householdId) return false;
+  const all = await allProfiles();
+  return all.some((p) => p.household_id === householdId && isChild(p));
+}
+
+// Volunteer read scope: a profile is visible iff it is a child, or it shares a
+// (child-bearing) household with a child — i.e. a child's parents/guardians and
+// siblings are visible, but unrelated adults are not. Returns false for an
+// unknown id (fail closed — this gates member PII).
+export async function profileVisibleToVolunteer(profileId: string): Promise<boolean> {
+  const all = await allProfiles();
+  const profile = all.find((p) => p.id === profileId);
+  if (!profile) return false;
+  if (isChild(profile)) return true;
+  return (
+    !!profile.household_id &&
+    all.some((p) => p.household_id === profile.household_id && isChild(p))
+  );
+}
+
+// Volunteer read scope for a household: visible iff it contains a child.
+export function householdVisibleToVolunteer(householdId: string): Promise<boolean> {
+  return householdHasChild(householdId);
 }
 
 export async function getProfile(id: string): Promise<Profile | null> {
