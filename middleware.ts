@@ -7,8 +7,17 @@
 import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig } from "@/lib/auth.config";
+import { resolveRole } from "@/lib/roles";
 
 const { auth } = NextAuth(authConfig);
+
+// ADR-0011: volunteers are scoped to the Children directory. This is the
+// coarse gate — it keeps them off the browse surfaces (dashboard stats + the
+// full People/Households lists); per-record visibility on the detail pages is
+// enforced in those server components. Only the list/root paths are blocked so
+// a volunteer can still reach a child's family via /people/[id] and
+// /households/[id], which self-guard.
+const VOLUNTEER_BLOCKED_PATHS = new Set(["/", "/people", "/households"]);
 
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
@@ -20,6 +29,22 @@ export default auth((req) => {
   if (isLoggedIn && isLoginPage) {
     return NextResponse.redirect(new URL("/", req.nextUrl.origin));
   }
+
+  if (isLoggedIn && VOLUNTEER_BLOCKED_PATHS.has(req.nextUrl.pathname)) {
+    // authConfig has no session callback, so req.auth doesn't carry `role` —
+    // but it carries the (verified) email, and resolveRole is pure env+string
+    // logic (Edge-safe), giving the same tier as the stored token. Only
+    // redirect when we positively identify a volunteer: this gate is UX/
+    // defense-in-depth, and the real enforcement is the API 403
+    // (requireStaffOrAdmin) plus the detail-page guards — so if the email is
+    // somehow absent we let the request through rather than risk bouncing a
+    // staff/admin, and the hard guards still protect the data.
+    const email = req.auth?.user?.email;
+    if (email && resolveRole(email) === "volunteer") {
+      return NextResponse.redirect(new URL("/children", req.nextUrl.origin));
+    }
+  }
+
   return NextResponse.next();
 });
 

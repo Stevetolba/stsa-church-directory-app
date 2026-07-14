@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, Mail, MapPin, Phone } from "lucide-react";
-import { getHousehold } from "@/lib/subsplash";
+import { auth } from "@/lib/auth";
+import { getHousehold, householdVisibleToVolunteer } from "@/lib/subsplash";
 import { avatarTintForId, initialsOf } from "@/lib/avatar";
 import { householdCampus } from "@/lib/household";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -24,23 +25,33 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 }
 
 export default async function HouseholdDetailPage({ params }: { params: { id: string } }) {
-  const household = await getHousehold(params.id);
+  const [session, household] = await Promise.all([auth(), getHousehold(params.id)]);
 
   if (!household) {
     notFound();
   }
 
+  // ADR-0011: volunteers may only open households that contain a child (the
+  // family of a child they can already see). Others redirect to the children
+  // directory.
+  const isVolunteer = session?.user.role === "volunteer";
+  if (isVolunteer && !(await householdVisibleToVolunteer(household.id))) {
+    redirect("/children");
+  }
+
   const campus = householdCampus(household);
   const members = household.members ?? [];
+  const backHref = isVolunteer ? "/children" : "/households";
+  const backLabel = isVolunteer ? "Children" : "Households";
 
   return (
     <div className="mx-auto max-w-[640px]">
       <Link
-        href="/households"
+        href={backHref}
         className="mb-6 inline-flex items-center gap-1.5 text-[13.5px] font-semibold text-[#5B7185] hover:text-brand-navy"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
-        Households
+        {backLabel}
       </Link>
 
       <div className="overflow-hidden rounded-[14px] border border-[#EAE2D0] bg-white shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
