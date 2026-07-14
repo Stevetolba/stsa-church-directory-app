@@ -11,7 +11,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { usePeople } from "@/hooks/usePeople";
 import { GRADE_LEVELS } from "@/lib/grades";
 import { downloadCsv, PROFILE_EXPORT_COLUMNS, profileToExportRow, toCsv } from "@/lib/csv";
-import type { ProfileSearchResult } from "@/lib/subsplash";
+import type { ProfileSearchResult, SearchProfilesParams } from "@/lib/subsplash";
 import type { Campus, MemberStatus } from "@/types/profile";
 
 // "People", not "Members" — the section covers every status (Visitor,
@@ -28,6 +28,11 @@ const STATUS_OPTIONS: MemberStatus[] = [
 
 const CAMPUS_OPTIONS: Campus[] = ["Arlington", "Leesburg"];
 
+const SORT_OPTIONS: Array<{ value: NonNullable<SearchProfilesParams["sortBy"]>; label: string }> = [
+  { value: "last_name", label: "Last Name" },
+  { value: "first_name", label: "First Name" },
+];
+
 export default function PeoplePage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -40,9 +45,11 @@ export default function PeoplePage() {
   const gradeToRaw = searchParams.get("gradeTo");
   const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
   const gradeTo = gradeToRaw ? Number(gradeToRaw) : undefined;
+  const sortBy =
+    (searchParams.get("sortBy") as NonNullable<SearchProfilesParams["sortBy"]> | null) ?? "last_name";
   const page = Number(searchParams.get("page") ?? "1");
 
-  const { data, isLoading } = usePeople({ search, status, campus, gradeFrom, gradeTo, page });
+  const { data, isLoading } = usePeople({ search, status, campus, gradeFrom, gradeTo, sortBy, page });
 
   const hasActiveFilter =
     !!search || status.length > 0 || campus.length > 0 || gradeFrom !== undefined || gradeTo !== undefined;
@@ -59,6 +66,7 @@ export default function PeoplePage() {
       campus.forEach((c) => params.append("campus", c));
       if (gradeFrom !== undefined) params.set("gradeFrom", String(gradeFrom));
       if (gradeTo !== undefined) params.set("gradeTo", String(gradeTo));
+      params.set("sortBy", sortBy);
       params.set("pageSize", "5000");
       const res = await fetch(`/api/profiles?${params.toString()}`);
       if (!res.ok) throw new Error(`Export failed: ${res.status}`);
@@ -206,6 +214,31 @@ export default function PeoplePage() {
               </button>
             );
           })}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+            Sort by
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            {SORT_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={sortBy === option.value}
+                onClick={() =>
+                  updateParams({ sortBy: option.value === "last_name" ? null : option.value, page: null })
+                }
+                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
+                  sortBy === option.value
+                    ? "border border-brand-navy bg-brand-navy text-brand-cream"
+                    : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5">

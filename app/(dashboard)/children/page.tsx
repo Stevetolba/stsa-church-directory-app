@@ -11,7 +11,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { useChildren } from "@/hooks/useChildren";
 import { GRADE_LEVELS } from "@/lib/grades";
 import { downloadCsv, PROFILE_EXPORT_COLUMNS, profileToExportRow, toCsv } from "@/lib/csv";
-import type { ChildrenMemberType, ProfileSearchResult } from "@/lib/subsplash";
+import type { ChildrenMemberType, ProfileSearchResult, SearchProfilesParams } from "@/lib/subsplash";
 import type { Campus, MemberStatus } from "@/types/profile";
 
 // Children directory (ADR-0011) — a People clone scoped to child-bearing
@@ -40,6 +40,11 @@ const MEMBER_TYPE_OPTIONS: Array<{ value: ChildrenMemberType; label: string }> =
   { value: "All", label: "All Family" },
 ];
 
+const SORT_OPTIONS: Array<{ value: NonNullable<SearchProfilesParams["sortBy"]>; label: string }> = [
+  { value: "last_name", label: "Last Name" },
+  { value: "first_name", label: "First Name" },
+];
+
 export default function ChildrenPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -53,9 +58,20 @@ export default function ChildrenPage() {
   const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
   const gradeTo = gradeToRaw ? Number(gradeToRaw) : undefined;
   const memberType = (searchParams.get("memberType") as ChildrenMemberType | null) ?? "Child";
+  const sortBy =
+    (searchParams.get("sortBy") as NonNullable<SearchProfilesParams["sortBy"]> | null) ?? "last_name";
   const page = Number(searchParams.get("page") ?? "1");
 
-  const { data, isLoading } = useChildren({ search, status, campus, gradeFrom, gradeTo, memberType, page });
+  const { data, isLoading } = useChildren({
+    search,
+    status,
+    campus,
+    gradeFrom,
+    gradeTo,
+    memberType,
+    sortBy,
+    page,
+  });
 
   const hasActiveFilter =
     !!search ||
@@ -79,6 +95,7 @@ export default function ChildrenPage() {
       if (gradeFrom !== undefined) params.set("gradeFrom", String(gradeFrom));
       if (gradeTo !== undefined) params.set("gradeTo", String(gradeTo));
       params.set("memberType", memberType);
+      params.set("sortBy", sortBy);
       params.set("pageSize", "5000");
       const res = await fetch(`/api/children?${params.toString()}`);
       if (!res.ok) throw new Error(`Export failed: ${res.status}`);
@@ -243,6 +260,31 @@ export default function ChildrenPage() {
               </button>
             );
           })}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+            Sort by
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            {SORT_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={sortBy === option.value}
+                onClick={() =>
+                  updateParams({ sortBy: option.value === "last_name" ? null : option.value, page: null })
+                }
+                className={`whitespace-nowrap rounded-full px-3.5 py-2 text-[13px] font-semibold transition-colors ${
+                  sortBy === option.value
+                    ? "border border-brand-navy bg-brand-navy text-brand-cream"
+                    : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5">
