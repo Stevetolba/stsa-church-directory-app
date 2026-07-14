@@ -55,7 +55,7 @@ function SidebarContent({
 }) {
   return (
     <>
-      <div className="mb-9 flex items-center gap-2.5 px-1">
+      <Link href="/" onClick={onNavigate} className="mb-9 flex items-center gap-2.5 px-1">
         <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full bg-white">
           <Image src="/stsa-logo.png" alt="STSA Church" fill sizes="36px" className="object-cover" />
         </div>
@@ -67,7 +67,7 @@ function SidebarContent({
             People Directory
           </div>
         </div>
-      </div>
+      </Link>
 
       <div className="mb-2.5 ml-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7C8FA0]">
         Directory
@@ -132,14 +132,14 @@ export function Sidebar({ user }: { user: { name: string; role: Role } }) {
     <>
       {/* Mobile top bar — replaces the desktop rail below `lg`. */}
       <header className="flex items-center justify-between bg-brand-navy px-4 py-3 lg:hidden">
-        <div className="flex items-center gap-2.5">
+        <Link href="/" className="flex items-center gap-2.5">
           <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-white">
             <Image src="/stsa-logo.png" alt="STSA Church" fill sizes="32px" className="object-cover" />
           </div>
           <div className="font-heading text-[15px] font-semibold leading-tight text-brand-cream">
             {appName}
           </div>
-        </div>
+        </Link>
         <button
           type="button"
           aria-label="Open menu"

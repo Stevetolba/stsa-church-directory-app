@@ -1,13 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Users } from "lucide-react";
+import { Download, Users } from "lucide-react";
+import { toast } from "sonner";
 import { SearchBar } from "@/components/SearchBar";
 import { PersonCard } from "@/components/PersonCard";
 import { PersonCardSkeleton } from "@/components/PersonCardSkeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { usePeople } from "@/hooks/usePeople";
 import { GRADE_LEVELS } from "@/lib/grades";
+import { downloadCsv, PROFILE_EXPORT_COLUMNS, profileToExportRow, toCsv } from "@/lib/csv";
+import type { ProfileSearchResult } from "@/lib/subsplash";
 import type { Campus, MemberStatus } from "@/types/profile";
 
 // "People", not "Members" — the section covers every status (Visitor,
@@ -39,6 +43,34 @@ export default function PeoplePage() {
   const page = Number(searchParams.get("page") ?? "1");
 
   const { data, isLoading } = usePeople({ search, status, campus, gradeFrom, gradeTo, page });
+
+  const hasActiveFilter =
+    !!search || status.length > 0 || campus.length > 0 || gradeFrom !== undefined || gradeTo !== undefined;
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Exports the currently filtered result set (not just the visible page) —
+  // gated on hasActiveFilter so a click can't dump the whole directory.
+  async function handleExport() {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (search) params.set("search", search);
+      status.forEach((s) => params.append("status", s));
+      campus.forEach((c) => params.append("campus", c));
+      if (gradeFrom !== undefined) params.set("gradeFrom", String(gradeFrom));
+      if (gradeTo !== undefined) params.set("gradeTo", String(gradeTo));
+      params.set("pageSize", "5000");
+      const res = await fetch(`/api/profiles?${params.toString()}`);
+      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+      const result: ProfileSearchResult = await res.json();
+      const csv = toCsv(result.profiles.map(profileToExportRow), PROFILE_EXPORT_COLUMNS);
+      downloadCsv(`people-export-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+    } catch {
+      toast.error("Export failed. Please try again.");
+    } finally {
+      setIsExporting(false);
+    }
+  }
 
   function updateParams(updates: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -88,8 +120,20 @@ export default function PeoplePage() {
             {total} of {overallTotal} people
           </p>
         </div>
-        <div className="flex h-[34px] items-center rounded-full border border-[#C7E9F7] bg-[#E4F4FC] px-3 text-[12px] font-bold text-[#1B6E93]">
-          Staff only
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={!hasActiveFilter || isExporting}
+            title={hasActiveFilter ? undefined : "Apply a filter to export"}
+            className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {isExporting ? "Exporting…" : "Export CSV"}
+          </button>
+          <div className="flex h-[34px] items-center rounded-full border border-[#C7E9F7] bg-[#E4F4FC] px-3 text-[12px] font-bold text-[#1B6E93]">
+            Staff only
+          </div>
         </div>
       </div>
 

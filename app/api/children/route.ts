@@ -1,12 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
-import { searchChildren } from "@/lib/subsplash";
+import { searchChildren, type ChildrenMemberType } from "@/lib/subsplash";
 import type { Campus, MemberStatus } from "@/types/profile";
+
+const VALID_MEMBER_TYPES: ChildrenMemberType[] = ["Child", "Adult", "All"];
 
 // ADR-0011: the children-scoped read endpoint. Unlike /api/profiles this is
 // open to any authenticated role (volunteers included) — the scoping to
-// household_role === "child" happens server-side in searchChildren, so a
-// volunteer can never coax an adult profile out of it regardless of params.
+// child-bearing-household members happens server-side in searchChildren
+// (defaulting to children only unless memberType asks to widen to family),
+// so a volunteer can never coax an unrelated adult out of it regardless of
+// params.
 export async function GET(request: NextRequest) {
   const session = await auth();
   if (!session?.user) {
@@ -21,8 +25,25 @@ export async function GET(request: NextRequest) {
   const gradeToRaw = searchParams.get("gradeTo");
   const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
   const gradeTo = gradeToRaw ? Number(gradeToRaw) : undefined;
+  const memberTypeRaw = searchParams.get("memberType");
+  const memberType = VALID_MEMBER_TYPES.includes(memberTypeRaw as ChildrenMemberType)
+    ? (memberTypeRaw as ChildrenMemberType)
+    : undefined;
   const page = Number(searchParams.get("page") ?? "1");
+  // Callers (e.g. CSV export) can ask for more than the default page — capped
+  // so a client can't force an unbounded in-memory scan.
+  const pageSizeRaw = searchParams.get("pageSize");
+  const pageSize = pageSizeRaw ? Math.min(Number(pageSizeRaw), 5000) : undefined;
 
-  const result = await searchChildren({ search, status, campus, gradeFrom, gradeTo, page });
+  const result = await searchChildren({
+    search,
+    status,
+    campus,
+    gradeFrom,
+    gradeTo,
+    memberType,
+    page,
+    pageSize,
+  });
   return NextResponse.json(result);
 }

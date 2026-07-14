@@ -12,7 +12,7 @@ import type { Campus, MemberStatus, Profile } from "@/types/profile";
 import type { Household, HouseholdAddress } from "@/types/household";
 import { getServiceToken } from "./subsplashToken";
 import { mockHouseholds, mockProfiles } from "./mockData";
-import { formatAddressParts, householdCampus, parseAddressString } from "./household";
+import { formatAddressParts, householdCampus, householdMemberType, parseAddressString } from "./household";
 import { MAX_GRADE_VALUE, MIN_GRADE_VALUE } from "./grades";
 
 const USE_MOCK_DATA = process.env.SUBSPLASH_USE_MOCK !== "false";
@@ -81,6 +81,10 @@ interface RawProfile {
     household?: RawHouseholdEmbed;
     "latest-membership-status-change"?: RawMembershipStatusChange;
     photo?: { _links?: { self?: { href: string } } };
+    // A profile's own linked address, independent of the household's
+    // (openapi.yaml → ProfileRequest._embedded.address). Most profiles don't
+    // have one set — display code falls back to the household's address.
+    address?: RawAddress;
   };
 }
 
@@ -230,6 +234,7 @@ function formatPhone(phone: RawProfile["phone_number"]): string | undefined {
 function mapProfile(raw: RawProfile): Profile {
   const statusRaw = raw._embedded?.["latest-membership-status-change"]?.status;
   const household = raw._embedded?.household;
+  const address_parts = mapAddressParts(raw._embedded?.address);
 
   return {
     id: raw.id,
@@ -250,6 +255,8 @@ function mapProfile(raw: RawProfile): Profile {
     graduation_year: raw.graduation_year ?? undefined,
     status: statusRaw ? MEMBERSHIP_STATUS_MAP[statusRaw] : "Visitor",
     campus: extractCampus(raw.custom_fields),
+    address: formatAddressParts(address_parts),
+    address_parts,
     baptism_date: raw.baptism_date ?? undefined,
     photo_url: raw._embedded?.photo?._links?.self?.href,
     custom_fields: raw.custom_fields?.map((f) => ({
@@ -305,7 +312,7 @@ function mapHousehold(raw: RawHousehold): Household {
 const getCachedProfilePage = unstable_cache(
   async (page: number) => {
     const data = await subsplashFetch<HalCollection<RawProfile>>(
-      `/people/v1/profiles?sort=last_name&page[number]=${page}&page[size]=${MAX_SUBSPLASH_PAGE_SIZE}&include=latest-membership-status-change`
+      `/people/v1/profiles?sort=last_name&page[number]=${page}&page[size]=${MAX_SUBSPLASH_PAGE_SIZE}&include=latest-membership-status-change,address`
     );
     return data._embedded.profiles.map(mapProfile);
   },
@@ -500,12 +507,44 @@ function isChild(profile: Profile): boolean {
   return profile.household_role === "child";
 }
 
-// Children directory (ADR-0011): same filter/paginate/search as searchProfiles,
-// but the base set is only children — so overallTotal reports total children,
-// and no adult can ever appear regardless of the other filters.
-export async function searchChildren(params: SearchProfilesParams): Promise<ProfileSearchResult> {
-  const children = (await allProfiles()).filter(isChild);
-  return filterAndPaginateProfiles(children, params);
+// Every profile belonging to a child-bearing household — children plus their
+// guardians/parents/siblings. This is the pool the Children directory draws
+// from and exactly matches profileVisibleToVolunteer's rule below, so
+// broadening the list via memberType never exposes anyone a volunteer
+// couldn't already reach by opening a child's household (ADR-0011).
+async function childFamilyMembers(): Promise<Profile[]> {
+  const all = await allProfiles();
+  const childBearingHouseholdIds = new Set(
+    all.filter(isChild).map((p) => p.household_id).filter((id): id is string => !!id)
+  );
+  return all.filter((p) => !!p.household_id && childBearingHouseholdIds.has(p.household_id));
+}
+
+export type ChildrenMemberType = "Child" | "Adult" | "All";
+
+export interface SearchChildrenParams extends SearchProfilesParams {
+  // Which members of child-bearing households to include. Defaults to
+  // "Child" so the page's out-of-the-box behavior is unchanged — it only
+  // broadens to guardians/parents when a caller explicitly asks.
+  memberType?: ChildrenMemberType;
+}
+
+function matchesMemberType(profile: Profile, memberType: ChildrenMemberType): boolean {
+  if (memberType === "All") return true;
+  const type = householdMemberType(profile.household_role);
+  return memberType === "Child" ? type === "Child" : type !== "Child";
+}
+
+// Children directory (ADR-0011): same filter/paginate/search as
+// searchProfiles, but the base set is a child-bearing household's members
+// (scoped further by memberType) — so overallTotal reports that scoped
+// count, and no unrelated adult can ever appear regardless of the other
+// filters.
+export async function searchChildren(params: SearchChildrenParams): Promise<ProfileSearchResult> {
+  const pool = await childFamilyMembers();
+  const memberType = params.memberType ?? "Child";
+  const scoped = pool.filter((p) => matchesMemberType(p, memberType));
+  return filterAndPaginateProfiles(scoped, params);
 }
 
 // A household is "child-bearing" if any member is a child. This is the single
@@ -542,7 +581,7 @@ export async function getProfile(id: string): Promise<Profile | null> {
   }
   try {
     const raw = await subsplashFetch<RawProfile>(
-      `/people/v1/profiles/${id}?include=latest-membership-status-change`
+      `/people/v1/profiles/${id}?include=latest-membership-status-change,address`
     );
     return mapProfile(raw);
   } catch {

@@ -1,3 +1,5 @@
+import type { HouseholdAddress } from "./household";
+
 // Mirrors Subsplash's latest-membership-status-change enum 1:1 — see ADR-0006.
 export type MemberStatus =
   | "Visitor"
@@ -41,6 +43,11 @@ export interface Profile {
   graduation_year?: number;
   status: MemberStatus;
   campus?: Campus;
+  // A profile can have its own linked address in Subsplash, independent of
+  // the household's — most people don't have one set (the household address
+  // is the norm), so display code should fall back to the household's.
+  address?: string;
+  address_parts?: HouseholdAddress;
   baptism_date?: string;
   photo_url?: string;
   custom_fields?: CustomField[];

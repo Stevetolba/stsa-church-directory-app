@@ -8,18 +8,10 @@ import { formatDate } from "@/lib/utils";
 import { StatusBadge } from "@/components/StatusBadge";
 import { CopyableField } from "@/components/CopyableField";
 import { HouseholdTypeBadge } from "@/components/HouseholdTypeBadge";
-import type { HouseholdRole } from "@/types/profile";
+import { householdMemberType } from "@/lib/household";
 
 // No mockup exists for this screen — matches the card/typography treatment
 // established by the People list and Dashboard.
-
-const HOUSEHOLD_ROLE_LABELS: Record<HouseholdRole, string> = {
-  guardian: "Guardian",
-  parent: "Parent",
-  child: "Child",
-  other: "Other",
-  unknown: "Unknown",
-};
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -68,6 +60,13 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
   const phones = [profile.phone_number, ...(profile.phones ?? [])].filter(
     (p): p is string => !!p
   );
+  // The profile's own address if Subsplash has one linked, else the shared
+  // household address most people rely on.
+  const address = profile.address ?? household?.address;
+  // Coarse Adult/Child grouping (not the granular guardian/parent/child/
+  // other/unknown household_role) — matches what HouseholdTypeBadge shows
+  // for other household members below.
+  const householdType = householdMemberType(profile.household_role);
 
   return (
     <div className="mx-auto max-w-[640px]">
@@ -134,11 +133,11 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
                   value={phone}
                 />
               ))}
-              {household?.address && (
+              {address && (
                 <CopyableField
                   icon={<MapPin className="h-4 w-4 shrink-0 text-[#97A9B8]" />}
-                  value={household.address}
-                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(household.address)}`}
+                  value={address}
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`}
                 />
               )}
             </div>
@@ -174,15 +173,8 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
 
                 {profile.household_role && (
                   <div className="mt-3 grid grid-cols-2 gap-4">
-                    <Field
-                      label="Role"
-                      value={
-                        profile.household_role
-                          ? HOUSEHOLD_ROLE_LABELS[profile.household_role]
-                          : undefined
-                      }
-                    />
-                    {profile.household_role === "child" && (
+                    <Field label="Household Type" value={householdType} />
+                    {householdType === "Child" && (
                       <Field label="Grade" value={profile.academic_grade} />
                     )}
                   </div>
