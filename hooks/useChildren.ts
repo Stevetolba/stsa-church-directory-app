@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import type { Campus, MemberStatus } from "@/types/profile";
-import type { ChildrenMemberType, ProfileSearchResult } from "@/lib/subsplash";
+import type { ChildrenMemberType, ProfileSearchResult, SearchProfilesParams } from "@/lib/subsplash";
 
 // ADR-0011: same shape as usePeople, but hits /api/children — a separate
 // endpoint so volunteers (blocked from /api/profiles) can still load the
@@ -14,6 +14,7 @@ export interface UseChildrenParams {
   gradeFrom?: number;
   gradeTo?: number;
   memberType?: ChildrenMemberType;
+  sortBy?: SearchProfilesParams["sortBy"];
   page?: number;
 }
 
@@ -32,6 +33,7 @@ export function useChildren({
   gradeFrom,
   gradeTo,
   memberType,
+  sortBy,
   page = 1,
 }: UseChildrenParams) {
   const params = new URLSearchParams();
@@ -41,6 +43,7 @@ export function useChildren({
   if (gradeFrom !== undefined) params.set("gradeFrom", String(gradeFrom));
   if (gradeTo !== undefined) params.set("gradeTo", String(gradeTo));
   if (memberType) params.set("memberType", memberType);
+  if (sortBy) params.set("sortBy", sortBy);
   params.set("page", String(page));
 
   const { data, error, isLoading } = useSWR<ProfileSearchResult>(

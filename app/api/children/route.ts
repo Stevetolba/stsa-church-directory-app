@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
-import { searchChildren, type ChildrenMemberType } from "@/lib/subsplash";
+import { searchChildren, type ChildrenMemberType, type SearchProfilesParams } from "@/lib/subsplash";
 import type { Campus, MemberStatus } from "@/types/profile";
 
 const VALID_MEMBER_TYPES: ChildrenMemberType[] = ["Child", "Adult", "All"];
+const VALID_SORT_BY: NonNullable<SearchProfilesParams["sortBy"]>[] = ["first_name", "last_name"];
 
 // ADR-0011: the children-scoped read endpoint. Unlike /api/profiles this is
 // open to any authenticated role (volunteers included) — the scoping to
@@ -29,6 +30,10 @@ export async function GET(request: NextRequest) {
   const memberType = VALID_MEMBER_TYPES.includes(memberTypeRaw as ChildrenMemberType)
     ? (memberTypeRaw as ChildrenMemberType)
     : undefined;
+  const sortByRaw = searchParams.get("sortBy");
+  const sortBy = VALID_SORT_BY.includes(sortByRaw as NonNullable<SearchProfilesParams["sortBy"]>)
+    ? (sortByRaw as SearchProfilesParams["sortBy"])
+    : undefined;
   const page = Number(searchParams.get("page") ?? "1");
   // Callers (e.g. CSV export) can ask for more than the default page — capped
   // so a client can't force an unbounded in-memory scan.
@@ -42,6 +47,7 @@ export async function GET(request: NextRequest) {
     gradeFrom,
     gradeTo,
     memberType,
+    sortBy,
     page,
     pageSize,
   });

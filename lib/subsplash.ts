@@ -385,6 +385,7 @@ export interface SearchProfilesParams {
   campus?: Campus[];
   gradeFrom?: number;
   gradeTo?: number;
+  sortBy?: "first_name" | "last_name";
   page?: number;
   pageSize?: number;
 }
@@ -405,6 +406,7 @@ function filterAndPaginateProfiles(
     campus,
     gradeFrom,
     gradeTo,
+    sortBy,
     page = 1,
     pageSize = DEFAULT_PAGE_SIZE,
   }: SearchProfilesParams
@@ -436,6 +438,18 @@ function filterAndPaginateProfiles(
           (needleDigits.length > 0 && p.phone_number.replace(/\D/g, "").includes(needleDigits))));
     return matchesStatus && matchesCampus && matchesGrade && matchesSearch;
   });
+
+  // Defaults to last_name to match the order the real-mode walk already
+  // fetches in (sort=last_name — see fetchAllProfilesFromSubsplash), so
+  // omitting sortBy doesn't change today's behavior. The other name field is
+  // a tiebreaker for people who share the primary sort field.
+  const primaryKey = sortBy ?? "last_name";
+  const secondaryKey = primaryKey === "last_name" ? "first_name" : "last_name";
+  filtered.sort(
+    (a, b) =>
+      (a[primaryKey] ?? "").localeCompare(b[primaryKey] ?? "") ||
+      (a[secondaryKey] ?? "").localeCompare(b[secondaryKey] ?? "")
+  );
 
   const start = (page - 1) * pageSize;
   return {
