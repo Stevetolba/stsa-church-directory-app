@@ -16,6 +16,10 @@ export interface UseChildrenParams {
   memberType?: ChildrenMemberType;
   sortBy?: SearchProfilesParams["sortBy"];
   page?: number;
+  // Callers that need every match at once (e.g. the birthday agenda, which
+  // can't sanely paginate a chronological list) can ask for a bigger page —
+  // capped server-side the same way CSV export already is.
+  pageSize?: number;
 }
 
 async function fetcher(url: string): Promise<ProfileSearchResult> {
@@ -35,6 +39,7 @@ export function useChildren({
   memberType,
   sortBy,
   page = 1,
+  pageSize,
 }: UseChildrenParams) {
   const params = new URLSearchParams();
   if (search) params.set("search", search);
@@ -44,6 +49,7 @@ export function useChildren({
   if (gradeTo !== undefined) params.set("gradeTo", String(gradeTo));
   if (memberType) params.set("memberType", memberType);
   if (sortBy) params.set("sortBy", sortBy);
+  if (pageSize !== undefined) params.set("pageSize", String(pageSize));
   params.set("page", String(page));
 
   const { data, error, isLoading } = useSWR<ProfileSearchResult>(

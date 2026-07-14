@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Baby, Download } from "lucide-react";
+import { Baby, Cake, Download } from "lucide-react";
 import { toast } from "sonner";
 import { SearchBar } from "@/components/SearchBar";
 import { PersonCard } from "@/components/PersonCard";
 import { PersonCardSkeleton } from "@/components/PersonCardSkeleton";
 import { EmptyState } from "@/components/EmptyState";
+import { BirthdayAgenda } from "@/components/BirthdayAgenda";
 import { FilterPill } from "@/components/FilterPill";
 import { AddFilterMenu } from "@/components/AddFilterMenu";
 import { useChildren } from "@/hooks/useChildren";
@@ -95,6 +96,9 @@ export default function ChildrenPage() {
   const sortBy =
     (searchParams.get("sortBy") as NonNullable<SearchProfilesParams["sortBy"]> | null) ?? "last_name";
   const page = Number(searchParams.get("page") ?? "1");
+  // Birthdays is an agenda (scrolled, not paged), so it fetches every match
+  // in one shot instead of paginating — same technique as CSV export.
+  const view = (searchParams.get("view") as "directory" | "birthdays" | null) ?? "directory";
 
   const { data, isLoading } = useChildren({
     search,
@@ -105,6 +109,7 @@ export default function ChildrenPage() {
     memberType,
     sortBy,
     page,
+    pageSize: view === "birthdays" ? 5000 : undefined,
   });
 
   // Dimensions with a real (non-default) value are always "active" (so
@@ -218,26 +223,52 @@ export default function ChildrenPage() {
   const hasMultiplePages = total > pageSize;
   const memberTypeNoun =
     memberType === "Child" ? "children" : memberType === "Adult" ? "parents/guardians" : "family members";
+  const withBirthday = profiles.filter((p) => p.date_of_birth).length;
 
   return (
     <div>
       <div className="mb-7 flex flex-wrap items-start justify-between gap-6">
         <div>
-          <h1 className="font-heading text-3xl font-semibold text-brand-navy">Children</h1>
+          <h1 className="font-heading text-3xl font-semibold text-brand-navy">Children and Youth</h1>
           <p className="mt-1 text-[14.5px] text-[#5B7185]">
-            {total} of {overallTotal} {memberTypeNoun}
+            {view === "birthdays"
+              ? `${withBirthday} of ${total} ${memberTypeNoun} have a birthday on file`
+              : `${total} of ${overallTotal} ${memberTypeNoun}`}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={!hasActiveFilter || isExporting}
-          title={hasActiveFilter ? undefined : "Apply a filter to export"}
-          className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <Download className="h-3.5 w-3.5" />
-          {isExporting ? "Exporting…" : "Export CSV"}
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center rounded-full border border-[#E5DCC8] bg-white p-0.5">
+            <button
+              type="button"
+              onClick={() => updateParams({ view: null, page: null })}
+              className={`rounded-full px-3 py-1.5 text-[13px] font-semibold transition-colors ${
+                view === "directory" ? "bg-brand-navy text-brand-cream" : "text-[#5B7185]"
+              }`}
+            >
+              Directory
+            </button>
+            <button
+              type="button"
+              onClick={() => updateParams({ view: "birthdays", page: null })}
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold transition-colors ${
+                view === "birthdays" ? "bg-brand-navy text-brand-cream" : "text-[#5B7185]"
+              }`}
+            >
+              <Cake className="h-3.5 w-3.5" />
+              Birthdays
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={!hasActiveFilter || isExporting}
+            title={hasActiveFilter ? undefined : "Apply a filter to export"}
+            className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {isExporting ? "Exporting…" : "Export CSV"}
+          </button>
+        </div>
       </div>
 
       <div className="mb-7 flex flex-col gap-3">
@@ -396,30 +427,38 @@ export default function ChildrenPage() {
             </button>
           )}
 
-          <div className="ml-auto flex items-center gap-1.5">
-            <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
-              Sort
-            </span>
-            <select
-              value={sortBy}
-              onChange={(e) =>
-                updateParams({ sortBy: e.target.value === "last_name" ? null : e.target.value, page: null })
-              }
-              className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
-            >
-              <option value="last_name">Last Name</option>
-              <option value="first_name">First Name</option>
-            </select>
-          </div>
+          {view === "directory" && (
+            <div className="ml-auto flex items-center gap-1.5">
+              <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                Sort
+              </span>
+              <select
+                value={sortBy}
+                onChange={(e) =>
+                  updateParams({ sortBy: e.target.value === "last_name" ? null : e.target.value, page: null })
+                }
+                className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
+              >
+                <option value="last_name">Last Name</option>
+                <option value="first_name">First Name</option>
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(320px,100%),1fr))] gap-[18px]">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <PersonCardSkeleton key={index} />
-          ))}
-        </div>
+        view === "birthdays" ? (
+          <div className="py-[60px] text-center text-[14.5px] text-[#8A94A0]">Loading birthdays…</div>
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(320px,100%),1fr))] gap-[18px]">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <PersonCardSkeleton key={index} />
+            ))}
+          </div>
+        )
+      ) : view === "birthdays" ? (
+        <BirthdayAgenda profiles={profiles} />
       ) : profiles.length === 0 ? (
         <EmptyState icon={<Baby className="h-6 w-6" />} message={`No ${memberTypeNoun} match "${search}".`} />
       ) : (
@@ -430,7 +469,7 @@ export default function ChildrenPage() {
         </div>
       )}
 
-      {hasMultiplePages && (
+      {view === "directory" && hasMultiplePages && (
         <div className="mt-7 flex items-center justify-center gap-3">
           <button
             type="button"
