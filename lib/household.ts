@@ -1,5 +1,18 @@
-import type { Campus } from "@/types/profile";
+import type { Campus, HouseholdRole } from "@/types/profile";
 import type { Household, HouseholdAddress } from "@/types/household";
+
+// Coarser Adult/Child/Unknown grouping — guardian/parent/other all collapse
+// to "Adult", distinct from the granular household_role itself
+// (guardian/parent/child/other/unknown). Shared by HouseholdTypeBadge (UI)
+// and the Children directory's member-type filter (ADR-0011), so both
+// agree on exactly the same categorization.
+export type HouseholdMemberType = "Adult" | "Child" | "Unknown";
+
+export function householdMemberType(role: HouseholdRole | undefined): HouseholdMemberType {
+  if (role === "child") return "Child";
+  if (!role || role === "unknown") return "Unknown";
+  return "Adult";
+}
 
 // Single-line display string from structured parts, e.g.
 // "142 Maple Street, Arlington, VA 22201". Matches the format the mock

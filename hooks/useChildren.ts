@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import type { Campus, MemberStatus } from "@/types/profile";
-import type { ProfileSearchResult } from "@/lib/subsplash";
+import type { ChildrenMemberType, ProfileSearchResult } from "@/lib/subsplash";
 
 // ADR-0011: same shape as usePeople, but hits /api/children — a separate
 // endpoint so volunteers (blocked from /api/profiles) can still load the
@@ -13,6 +13,7 @@ export interface UseChildrenParams {
   campus?: Campus[];
   gradeFrom?: number;
   gradeTo?: number;
+  memberType?: ChildrenMemberType;
   page?: number;
 }
 
@@ -24,13 +25,22 @@ async function fetcher(url: string): Promise<ProfileSearchResult> {
   return res.json();
 }
 
-export function useChildren({ search, status, campus, gradeFrom, gradeTo, page = 1 }: UseChildrenParams) {
+export function useChildren({
+  search,
+  status,
+  campus,
+  gradeFrom,
+  gradeTo,
+  memberType,
+  page = 1,
+}: UseChildrenParams) {
   const params = new URLSearchParams();
   if (search) params.set("search", search);
   status?.forEach((s) => params.append("status", s));
   campus?.forEach((c) => params.append("campus", c));
   if (gradeFrom !== undefined) params.set("gradeFrom", String(gradeFrom));
   if (gradeTo !== undefined) params.set("gradeTo", String(gradeTo));
+  if (memberType) params.set("memberType", memberType);
   params.set("page", String(page));
 
   const { data, error, isLoading } = useSWR<ProfileSearchResult>(

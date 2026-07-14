@@ -21,7 +21,11 @@ export async function GET(request: NextRequest) {
   const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
   const gradeTo = gradeToRaw ? Number(gradeToRaw) : undefined;
   const page = Number(searchParams.get("page") ?? "1");
+  // Callers (e.g. CSV export) can ask for more than the default page — capped
+  // so a client can't force an unbounded in-memory scan.
+  const pageSizeRaw = searchParams.get("pageSize");
+  const pageSize = pageSizeRaw ? Math.min(Number(pageSizeRaw), 5000) : undefined;
 
-  const result = await searchProfiles({ search, status, campus, gradeFrom, gradeTo, page });
+  const result = await searchProfiles({ search, status, campus, gradeFrom, gradeTo, page, pageSize });
   return NextResponse.json(result);
 }
