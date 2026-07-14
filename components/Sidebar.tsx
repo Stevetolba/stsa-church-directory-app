@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Baby, Home, LogOut, Menu, Users, X } from "lucide-react";
+import { Baby, Cake, Home, LogOut, Menu, Users, X } from "lucide-react";
 import { signOutAction } from "@/app/(dashboard)/actions";
 import type { Role } from "@/types/auth";
 
@@ -23,7 +23,8 @@ import type { Role } from "@/types/auth";
 const NAV_ITEMS: Array<{ href: string; label: string; icon: typeof Users; roles: Role[] }> = [
   { href: "/people", label: "People", icon: Users, roles: ["admin", "staff"] },
   { href: "/households", label: "Households", icon: Home, roles: ["admin", "staff"] },
-  { href: "/children", label: "Children", icon: Baby, roles: ["admin", "staff", "volunteer"] },
+  { href: "/birthdays", label: "Birthdays", icon: Cake, roles: ["admin", "staff"] },
+  { href: "/children", label: "Children and Youth", icon: Baby, roles: ["admin", "staff", "volunteer"] },
 ];
 
 const ROLE_LABEL: Record<Role, string> = {
