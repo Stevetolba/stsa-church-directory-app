@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, Mail, MapPin, Phone, Pencil } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Mail, MapPin, Phone, Pencil } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getHousehold, getProfile, profileVisibleToVolunteer } from "@/lib/subsplash";
 import { avatarTintForId, initialsOf } from "@/lib/avatar";
@@ -67,6 +67,9 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
   // other/unknown household_role) — matches what HouseholdTypeBadge shows
   // for other household members below.
   const householdType = householdMemberType(profile.household_role);
+  // care_notes is child-only in Subsplash (ADR-0012); gate its display on the
+  // same Adult/Child grouping the Household section uses.
+  const isChild = householdType === "Child";
 
   return (
     <div className="mx-auto max-w-[640px]">
@@ -159,6 +162,41 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
               />
             </div>
           </Section>
+
+          {/* Care & Safety (ADR-0012): allergy notes for anyone; care notes
+              only for children (Subsplash-"private", child-only). Both are
+              viewable by anyone who can reach this page — the volunteer
+              visibility guard above already governs that. */}
+          {(profile.allergy_notes || (isChild && profile.care_notes)) && (
+            <>
+              <div className="h-px bg-[#F0EBDF]" />
+              <Section label="Care & Safety">
+                <div className="flex flex-col gap-3">
+                  {profile.allergy_notes && (
+                    <div className="rounded-[10px] border border-[#F0D9A6] bg-[#FDF6E7] px-4 py-3">
+                      <div className="mb-1 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.04em] text-[#946200]">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        Allergies
+                      </div>
+                      <div className="whitespace-pre-wrap text-[14px] text-[#5A4210]">
+                        {profile.allergy_notes}
+                      </div>
+                    </div>
+                  )}
+                  {isChild && profile.care_notes && (
+                    <div className="rounded-[10px] border border-[#E5DCC8] bg-[#FBF9F4] px-4 py-3">
+                      <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                        Care Notes · Private
+                      </div>
+                      <div className="whitespace-pre-wrap text-[14px] text-[#3E5670]">
+                        {profile.care_notes}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Section>
+            </>
+          )}
 
           {profile.household_id && (
             <>

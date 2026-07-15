@@ -49,6 +49,11 @@ export interface Profile {
   address?: string;
   address_parts?: HouseholdAddress;
   baptism_date?: string;
+  // Free-text safety fields (ADR-0012). allergy_notes applies to anyone;
+  // care_notes is flagged "private" in Subsplash and only populated for
+  // child profiles.
+  allergy_notes?: string;
+  care_notes?: string;
   photo_url?: string;
   custom_fields?: CustomField[];
   created_at: string;

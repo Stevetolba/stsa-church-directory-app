@@ -133,6 +133,10 @@ const SEED_PROFILES: Profile[] = [
     status: "Member",
     campus: "Arlington",
     baptism_date: "1985-06-02",
+    // allergy_notes applies to any profile (not just children); no care_notes
+    // here so the adult-vs-child rendering (Care shown only for children) is
+    // exercisable in mock mode — ADR-0012.
+    allergy_notes: "Latex allergy.",
     // Directory access flags this person as an approved read-only volunteer
     // (ADR-0010) — lets the volunteer sign-in path be exercised in mock mode.
     // Field label matches this project's configured
@@ -183,6 +187,9 @@ const SEED_PROFILES: Profile[] = [
     status: "Member",
     campus: "Arlington",
     baptism_date: "2016-08-21",
+    // Safety fields (ADR-0012) — care_notes is child-only + "private".
+    allergy_notes: "Severe peanut allergy — carries an EpiPen.",
+    care_notes: "Needs quiet space if overstimulated. Pickup by parent or grandmother only.",
     custom_fields: [{ id: "cf-campus", label: "Campus", value: "Arlington" }],
     created_at: "2019-03-11T14:00:00Z",
     updated_at: "2025-11-02T09:30:00Z",

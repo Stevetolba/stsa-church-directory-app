@@ -42,6 +42,8 @@ export function EditProfileForm({
       email: profile.email,
       phone_number: profile.phone_number ?? "",
       campus: profile.campus ?? "Arlington",
+      allergy_notes: profile.allergy_notes ?? "",
+      care_notes: profile.care_notes ?? "",
       street: household?.address_parts?.street ?? "",
       city: household?.address_parts?.city ?? "",
       state: household?.address_parts?.state ?? "",
@@ -140,6 +142,36 @@ export function EditProfileForm({
             <option value="Leesburg">Leesburg</option>
           </select>
         </Field>
+      </div>
+
+      <div className="my-6 h-px bg-[#F0EBDF]" />
+      <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#8A94A0]">
+        Care &amp; Safety
+      </div>
+      <div className="grid grid-cols-1 gap-5">
+        <Field label="Allergy Notes" htmlFor="allergy_notes" error={errors.allergy_notes?.message}>
+          <textarea
+            id="allergy_notes"
+            rows={2}
+            {...register("allergy_notes")}
+            className={inputClass(!!errors.allergy_notes)}
+          />
+        </Field>
+        {/* care_notes is child-only + "private" in Subsplash (ADR-0012). */}
+        {profile.household_role === "child" && (
+          <Field
+            label="Care Notes (private)"
+            htmlFor="care_notes"
+            error={errors.care_notes?.message}
+          >
+            <textarea
+              id="care_notes"
+              rows={2}
+              {...register("care_notes")}
+              className={inputClass(!!errors.care_notes)}
+            />
+          </Field>
+        )}
       </div>
 
       {household && (

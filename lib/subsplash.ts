@@ -69,6 +69,10 @@ interface RawProfile {
   academic_grade?: { name: string; value: number } | null;
   graduation_year?: number | null;
   baptism_date?: string | null;
+  // Plain top-level string fields (openapi.yaml → Profile, maxLength 1500).
+  // care_notes is child-only + flagged "private" — see ADR-0012.
+  allergy_notes?: string | null;
+  care_notes?: string | null;
   custom_fields?: RawCustomFieldValue[];
   // Lifecycle status (active/archived/merged/gdpr/fraud) — distinct from the
   // membership status in `_embedded.latest-membership-status-change`. Only
@@ -258,6 +262,8 @@ function mapProfile(raw: RawProfile): Profile {
     address: formatAddressParts(address_parts),
     address_parts,
     baptism_date: raw.baptism_date ?? undefined,
+    allergy_notes: raw.allergy_notes ?? undefined,
+    care_notes: raw.care_notes ?? undefined,
     photo_url: raw._embedded?.photo?._links?.self?.href,
     custom_fields: raw.custom_fields?.map((f) => ({
       id: f.custom_field_definition.id,
@@ -652,7 +658,10 @@ export async function hasDirectoryAccess(email: string): Promise<boolean> {
 // (Member/Visitor/etc.) is a separate Subsplash resource entirely — see
 // ADR-0007.
 export type UpdateProfileInput = Partial<
-  Pick<Profile, "first_name" | "last_name" | "email" | "phone_number" | "campus">
+  Pick<
+    Profile,
+    "first_name" | "last_name" | "email" | "phone_number" | "campus" | "allergy_notes" | "care_notes"
+  >
 >;
 
 // Distinguishes "campus write couldn't be resolved" (a 422-worthy
