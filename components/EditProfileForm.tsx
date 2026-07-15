@@ -8,17 +8,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import type { Profile } from "@/types/profile";
 import type { Household } from "@/types/household";
-import { editProfileSchema } from "@/lib/validation/profile";
-import { updateHouseholdSchema } from "@/lib/validation/household";
+import { editProfileWithAddressSchema } from "@/lib/validation/profile";
 import { z } from "zod";
 import { StatusBadge } from "@/components/StatusBadge";
 
-// Profile fields plus the household's structured address (street/city/state/
-// postal_code) — the address maps to Subsplash's _embedded.address on save.
-const editFormSchema = editProfileSchema.extend(updateHouseholdSchema.shape);
-type EditFormValues = z.infer<typeof editFormSchema>;
-
-const ADDRESS_KEYS = ["street", "city", "state", "postal_code"] as const;
+// Profile fields plus the profile's own structured address (street/city/
+// state/postal_code) — the address maps to Subsplash's _embedded.address on
+// save, independent of the household's shared address.
+type EditFormValues = z.infer<typeof editProfileWithAddressSchema>;
 
 export function EditProfileForm({
   profile,
@@ -30,37 +27,43 @@ export function EditProfileForm({
   const router = useRouter();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Most profiles don't have their own address override yet — prefill from
+  // the shared household address (same fallback the read-only profile page
+  // uses) so the fields aren't blank, even though saving now always writes
+  // to the person's own address, not the household's.
+  const addressDefaults = profile.address_parts ?? household?.address_parts;
+
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<EditFormValues>({
-    resolver: zodResolver(editFormSchema),
+    resolver: zodResolver(editProfileWithAddressSchema),
     defaultValues: {
       first_name: profile.first_name,
       last_name: profile.last_name,
       email: profile.email,
       phone_number: profile.phone_number ?? "",
       campus: profile.campus ?? "Arlington",
+      date_of_birth: profile.date_of_birth ?? "",
       allergy_notes: profile.allergy_notes ?? "",
       care_notes: profile.care_notes ?? "",
-      street: household?.address_parts?.street ?? "",
-      city: household?.address_parts?.city ?? "",
-      state: household?.address_parts?.state ?? "",
-      postal_code: household?.address_parts?.postal_code ?? "",
+      street: addressDefaults?.street ?? "",
+      city: addressDefaults?.city ?? "",
+      state: addressDefaults?.state ?? "",
+      postal_code: addressDefaults?.postal_code ?? "",
     },
   });
 
   async function onSubmit(values: EditFormValues) {
     setSubmitError(null);
-    const { street, city, state, postal_code, campus, ...restProfileValues } = values;
-    const addressValues = { street, city, state, postal_code };
+    const { campus, ...restValues } = values;
     // Campus is a controlled <select> with a default, so it's always present
     // in `values` even when unchanged — only include it in the PATCH if it
     // actually changed, so saving name/email/phone doesn't trigger a
     // needless custom-field write.
     const profileValues =
-      campus !== (profile.campus ?? "Arlington") ? { ...restProfileValues, campus } : restProfileValues;
+      campus !== (profile.campus ?? "Arlington") ? { ...restValues, campus } : restValues;
 
     const profileRes = await fetch(`/api/profiles/${profile.id}`, {
       method: "PATCH",
@@ -77,27 +80,6 @@ export function EditProfileForm({
       setSubmitError(message);
       toast.error(message);
       return;
-    }
-
-    const current = household?.address_parts ?? {};
-    const addressChanged = ADDRESS_KEYS.some(
-      (key) => (addressValues[key] ?? "") !== (current[key] ?? "")
-    );
-    if (household && addressChanged) {
-      const householdRes = await fetch(`/api/households/${household.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(addressValues),
-      });
-
-      if (!householdRes.ok) {
-        const body = await householdRes.json().catch(() => null);
-        const detail = (body?.error as string | undefined) ?? "Please try again.";
-        const message = `Profile saved, but the household address couldn't be updated. ${detail}`;
-        setSubmitError(message);
-        toast.error(message);
-        return;
-      }
     }
 
     toast.success("Profile updated");
@@ -142,6 +124,14 @@ export function EditProfileForm({
             <option value="Leesburg">Leesburg</option>
           </select>
         </Field>
+        <Field label="Date of Birth" htmlFor="date_of_birth" error={errors.date_of_birth?.message}>
+          <input
+            id="date_of_birth"
+            type="date"
+            {...register("date_of_birth")}
+            className={inputClass(!!errors.date_of_birth)}
+          />
+        </Field>
       </div>
 
       <div className="my-6 h-px bg-[#F0EBDF]" />
@@ -174,41 +164,37 @@ export function EditProfileForm({
         )}
       </div>
 
-      {household && (
-        <>
-          <div className="my-6 h-px bg-[#F0EBDF]" />
-          <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#8A94A0]">
-            Household Address
-          </div>
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <Field
-              label="Street"
-              htmlFor="street"
-              error={errors.street?.message}
-              className="sm:col-span-2"
-            >
-              <input id="street" {...register("street")} className={inputClass(!!errors.street)} />
-            </Field>
-            <Field label="City" htmlFor="city" error={errors.city?.message}>
-              <input id="city" {...register("city")} className={inputClass(!!errors.city)} />
-            </Field>
-            <Field label="State" htmlFor="state" error={errors.state?.message}>
-              <input id="state" {...register("state")} className={inputClass(!!errors.state)} />
-            </Field>
-            <Field
-              label="Postal Code"
-              htmlFor="postal_code"
-              error={errors.postal_code?.message}
-            >
-              <input
-                id="postal_code"
-                {...register("postal_code")}
-                className={inputClass(!!errors.postal_code)}
-              />
-            </Field>
-          </div>
-        </>
-      )}
+      <div className="my-6 h-px bg-[#F0EBDF]" />
+      <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#8A94A0]">
+        Address
+      </div>
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <Field
+          label="Street"
+          htmlFor="street"
+          error={errors.street?.message}
+          className="sm:col-span-2"
+        >
+          <input id="street" {...register("street")} className={inputClass(!!errors.street)} />
+        </Field>
+        <Field label="City" htmlFor="city" error={errors.city?.message}>
+          <input id="city" {...register("city")} className={inputClass(!!errors.city)} />
+        </Field>
+        <Field label="State" htmlFor="state" error={errors.state?.message}>
+          <input id="state" {...register("state")} className={inputClass(!!errors.state)} />
+        </Field>
+        <Field
+          label="Postal Code"
+          htmlFor="postal_code"
+          error={errors.postal_code?.message}
+        >
+          <input
+            id="postal_code"
+            {...register("postal_code")}
+            className={inputClass(!!errors.postal_code)}
+          />
+        </Field>
+      </div>
 
       {submitError && (
         <p className="mt-5 rounded-lg bg-destructive/10 px-4 py-3 text-[13.5px] text-destructive">

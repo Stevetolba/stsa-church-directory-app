@@ -397,7 +397,7 @@ export interface SearchProfilesParams {
   // either can be used alone or combined.
   ageFrom?: number;
   ageTo?: number;
-  sortBy?: "first_name" | "last_name";
+  sortBy?: "first_name" | "last_name" | "updated_at" | "created_at";
   page?: number;
   pageSize?: number;
 }
@@ -466,12 +466,23 @@ function filterAndPaginateProfiles(
   // omitting sortBy doesn't change today's behavior. The other name field is
   // a tiebreaker for people who share the primary sort field.
   const primaryKey = sortBy ?? "last_name";
-  const secondaryKey = primaryKey === "last_name" ? "first_name" : "last_name";
-  filtered.sort(
-    (a, b) =>
-      (a[primaryKey] ?? "").localeCompare(b[primaryKey] ?? "") ||
-      (a[secondaryKey] ?? "").localeCompare(b[secondaryKey] ?? "")
-  );
+  if (primaryKey === "updated_at" || primaryKey === "created_at") {
+    // Newest first — ISO 8601 timestamps compare correctly as plain strings.
+    // Name is the tiebreaker for two profiles touched at the same instant.
+    filtered.sort(
+      (a, b) =>
+        (b[primaryKey] ?? "").localeCompare(a[primaryKey] ?? "") ||
+        (a.last_name ?? "").localeCompare(b.last_name ?? "") ||
+        (a.first_name ?? "").localeCompare(b.first_name ?? "")
+    );
+  } else {
+    const secondaryKey = primaryKey === "last_name" ? "first_name" : "last_name";
+    filtered.sort(
+      (a, b) =>
+        (a[primaryKey] ?? "").localeCompare(b[primaryKey] ?? "") ||
+        (a[secondaryKey] ?? "").localeCompare(b[secondaryKey] ?? "")
+    );
+  }
 
   const start = (page - 1) * pageSize;
   return {
@@ -722,14 +733,22 @@ export async function hasDirectoryAccess(email: string): Promise<boolean> {
 }
 
 // Only the fields actually editable via PATCH /people/v1/profiles/{id} at
-// the top level, plus campus (handled separately below — it lives in
-// custom_fields, not as a top-level field). Membership status
-// (Member/Visitor/etc.) is a separate Subsplash resource entirely — see
-// ADR-0007.
+// the top level, plus campus and address_parts (handled separately below —
+// campus lives in custom_fields, address_parts under _embedded.address, not
+// as top-level fields). Membership status (Member/Visitor/etc.) is a
+// separate Subsplash resource entirely — see ADR-0007.
 export type UpdateProfileInput = Partial<
   Pick<
     Profile,
-    "first_name" | "last_name" | "email" | "phone_number" | "campus" | "allergy_notes" | "care_notes"
+    | "first_name"
+    | "last_name"
+    | "email"
+    | "phone_number"
+    | "campus"
+    | "allergy_notes"
+    | "care_notes"
+    | "date_of_birth"
+    | "address_parts"
   >
 >;
 
@@ -807,12 +826,15 @@ async function buildCampusFieldInput(
 }
 
 export async function updateProfile(id: string, patch: UpdateProfileInput): Promise<Profile> {
-  const { campus, ...topLevelPatch } = patch;
+  const { campus, address_parts, date_of_birth, ...topLevelPatch } = patch;
 
   if (USE_MOCK_DATA) {
     const existing = mockProfiles.find((p) => p.id === id);
     if (!existing) throw new Error(`Profile not found: ${id}`);
     Object.assign(existing, topLevelPatch, { updated_at: new Date().toISOString() });
+    if (date_of_birth !== undefined) {
+      existing.date_of_birth = date_of_birth || undefined;
+    }
     if (campus !== undefined) {
       existing.campus = campus;
       const campusField = existing.custom_fields?.find((f) => f.label.toLowerCase() === "campus");
@@ -825,6 +847,11 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
         ];
       }
     }
+    if (address_parts !== undefined) {
+      const mergedParts: HouseholdAddress = { ...(existing.address_parts ?? {}), ...address_parts };
+      existing.address_parts = mergedParts;
+      existing.address = formatAddressParts(mergedParts);
+    }
     return existing;
   }
 
@@ -836,11 +863,22 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
   if (topLevelPatch.phone_number !== undefined) {
     body.phone_number = phoneNumberForSubsplash(topLevelPatch.phone_number);
   }
+  if (date_of_birth !== undefined) {
+    // Subsplash's date_of_birth is a nullable date field — an empty string
+    // isn't a valid date, so clearing the field means sending null.
+    body.date_of_birth = date_of_birth || null;
+  }
   // Campus lives in a custom field, not a top-level column, so it rides
   // along in the same PATCH via the custom_fields array (openapi.yaml →
   // CustomFieldValueInput).
   if (campus !== undefined) {
     body.custom_fields = [await buildCampusFieldInput(id, campus)];
+  }
+  // A profile's own address (independent of the household's) lives under
+  // _embedded.address, same shape as the household write (openapi.yaml →
+  // ProfileRequest._embedded.address).
+  if (address_parts !== undefined) {
+    body._embedded = { address: address_parts };
   }
 
   const token = await getServiceToken();

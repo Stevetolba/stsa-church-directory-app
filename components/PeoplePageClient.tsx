@@ -38,6 +38,11 @@ const STATUS_OPTIONS: MemberStatus[] = [
 
 const CAMPUS_OPTIONS: Campus[] = ["Arlington", "Leesburg"];
 
+// Matches the cap CSV export already uses for "fetch every match" — plenty
+// of headroom for a single church directory without risking an unbounded
+// in-memory scan (lib/subsplash.ts's searchProfiles pageSize cap).
+const SHOW_ALL_PAGE_SIZE = 5000;
+
 type FilterKey = "status" | "campus" | "grade";
 const ALL_FILTER_KEYS: FilterKey[] = ["status", "campus", "grade"];
 const FILTER_LABELS: Record<FilterKey, string> = { status: "Status", campus: "Campus", grade: "Grade" };
@@ -96,8 +101,18 @@ export function PeoplePageClient({
   const sortBy =
     (searchParams.get("sortBy") as NonNullable<SearchProfilesParams["sortBy"]> | null) ?? "last_name";
   const page = Number(searchParams.get("page") ?? "1");
+  const showAll = searchParams.get("showAll") === "true";
 
-  const { data, isLoading } = usePeople({ search, status, campus, gradeFrom, gradeTo, sortBy, page });
+  const { data, isLoading } = usePeople({
+    search,
+    status,
+    campus,
+    gradeFrom,
+    gradeTo,
+    sortBy,
+    page: showAll ? 1 : page,
+    pageSize: showAll ? SHOW_ALL_PAGE_SIZE : undefined,
+  });
 
   // Dimensions with a real value are always "active" (so reloading a filtered
   // URL still shows the right pills); manuallyAdded additionally keeps a
@@ -382,6 +397,8 @@ export function PeoplePageClient({
             >
               <option value="last_name">Last Name</option>
               <option value="first_name">First Name</option>
+              <option value="updated_at">Last Updated</option>
+              <option value="created_at">Date Created</option>
             </select>
           </div>
         </div>
@@ -403,27 +420,46 @@ export function PeoplePageClient({
         </div>
       )}
 
-      {hasMultiplePages && (
+      {(hasMultiplePages || showAll) && (
         <div className="mt-7 flex items-center justify-center gap-3">
-          <button
-            type="button"
-            disabled={page <= 1}
-            onClick={() => updateParams({ page: String(page - 1) })}
-            className="rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Previous
-          </button>
-          <span className="text-[13px] text-[#5B7185]">
-            Page {page} of {Math.ceil(total / pageSize)}
-          </span>
-          <button
-            type="button"
-            disabled={page >= Math.ceil(total / pageSize)}
-            onClick={() => updateParams({ page: String(page + 1) })}
-            className="rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Next
-          </button>
+          {showAll ? (
+            <button
+              type="button"
+              onClick={() => updateParams({ showAll: null, page: null })}
+              className="rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30"
+            >
+              Show Paginated View
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => updateParams({ page: String(page - 1) })}
+                className="rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span className="text-[13px] text-[#5B7185]">
+                Page {page} of {Math.ceil(total / pageSize)}
+              </span>
+              <button
+                type="button"
+                disabled={page >= Math.ceil(total / pageSize)}
+                onClick={() => updateParams({ page: String(page + 1) })}
+                className="rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+              <button
+                type="button"
+                onClick={() => updateParams({ showAll: "true", page: null })}
+                className="ml-2 whitespace-nowrap text-[13px] font-semibold text-[#5B7185] underline-offset-2 hover:underline"
+              >
+                Show All {total} Records
+              </button>
+            </>
+          )}
         </div>
       )}
 

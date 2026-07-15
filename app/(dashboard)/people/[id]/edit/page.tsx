@@ -16,6 +16,8 @@ export default async function EditProfilePage({ params }: { params: { id: string
     redirect(`/people/${profile.id}`);
   }
 
+  // Only used to prefill the address fields when the profile has no address
+  // of its own yet — see EditProfileForm's addressDefaults.
   const household = profile.household_id ? await getHousehold(profile.household_id) : null;
 
   return (
