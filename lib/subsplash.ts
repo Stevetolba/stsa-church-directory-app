@@ -567,6 +567,59 @@ export async function searchChildren(params: SearchChildrenParams): Promise<Prof
   return filterAndPaginateProfiles(scoped, params);
 }
 
+export interface ParentContact {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone_number?: string;
+}
+
+export type ChildWithParents = Profile & {
+  parent1?: ParentContact;
+  parent2?: ParentContact;
+};
+
+// Attaches up to two guardian/parent contacts per child, drawn from the same
+// cached profile set the rest of the Children directory reasons over (no new
+// Subsplash calls) — used only by the CSV export, which needs a child's own
+// row plus their parents' contact info together. This doesn't expose
+// anything a volunteer couldn't already see by opening the child's household
+// (ADR-0011's profileVisibleToVolunteer already covers a child's parents).
+// Parents are picked deterministically (sorted by last, then first name) so
+// re-exporting the same filtered set is stable.
+export async function attachParentContacts(children: Profile[]): Promise<ChildWithParents[]> {
+  const all = await allProfiles();
+  const parentsByHousehold = new Map<string, Profile[]>();
+
+  for (const child of children) {
+    if (!child.household_id || parentsByHousehold.has(child.household_id)) continue;
+    const parents = all
+      .filter(
+        (p) =>
+          p.household_id === child.household_id &&
+          (p.household_role === "guardian" || p.household_role === "parent")
+      )
+      .sort((a, b) => a.last_name.localeCompare(b.last_name) || a.first_name.localeCompare(b.first_name));
+    parentsByHousehold.set(child.household_id, parents);
+  }
+
+  const toContact = (p: Profile): ParentContact => ({
+    first_name: p.first_name,
+    last_name: p.last_name,
+    email: p.email,
+    phone_number: p.phone_number,
+  });
+
+  return children.map((child) => {
+    const parents = child.household_id ? (parentsByHousehold.get(child.household_id) ?? []) : [];
+    return {
+      ...child,
+      parent1: parents[0] ? toContact(parents[0]) : undefined,
+      parent2: parents[1] ? toContact(parents[1]) : undefined,
+    };
+  });
+}
+
 // A household is "child-bearing" if any member is a child. This is the single
 // predicate the whole volunteer-scoping model is built on (ADR-0011).
 export async function householdHasChild(householdId: string): Promise<boolean> {

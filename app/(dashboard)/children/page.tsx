@@ -11,10 +11,11 @@ import { EmptyState } from "@/components/EmptyState";
 import { BirthdayAgenda } from "@/components/BirthdayAgenda";
 import { FilterPill } from "@/components/FilterPill";
 import { AddFilterMenu } from "@/components/AddFilterMenu";
+import { SuggestedFilters, type SuggestedFilter } from "@/components/SuggestedFilters";
 import { useChildren } from "@/hooks/useChildren";
 import { GRADE_LEVELS } from "@/lib/grades";
-import { downloadCsv, PROFILE_EXPORT_COLUMNS, profileToExportRow, toCsv } from "@/lib/csv";
-import type { ChildrenMemberType, ProfileSearchResult, SearchProfilesParams } from "@/lib/subsplash";
+import { CHILD_EXPORT_COLUMNS, childProfileToExportRow, downloadCsv, toCsv } from "@/lib/csv";
+import type { ChildrenMemberType, ChildWithParents, SearchProfilesParams } from "@/lib/subsplash";
 import type { Campus, MemberStatus } from "@/types/profile";
 
 // Children directory (ADR-0011) — a People clone scoped to child-bearing
@@ -52,6 +53,31 @@ const FILTER_LABELS: Record<FilterKey, string> = {
   grade: "Grade",
   memberType: "Family",
 };
+
+interface ChildrenPreset {
+  campus: Campus;
+  gradeFrom: number;
+  gradeTo: number;
+}
+
+// Grade values per lib/grades.ts's GRADE_LEVELS (Pre-K=1 ... 12th=14).
+// Tim's Tots ("3-5 years old and Pre-K") maps to Pre-K only — the youngest
+// grade level the system has; kids younger than Pre-K age typically have no
+// academic_grade_value recorded in Subsplash at all, so there's no lower
+// tier this filter can express yet.
+const SUGGESTED_FILTERS: SuggestedFilter<ChildrenPreset>[] = [
+  { label: "Arlington High School (9th–12th)", preset: { campus: "Arlington", gradeFrom: 11, gradeTo: 14 } },
+  { label: "Arlington Middle School (6th–8th)", preset: { campus: "Arlington", gradeFrom: 8, gradeTo: 10 } },
+  { label: "Arlington KATW (4th–5th)", preset: { campus: "Arlington", gradeFrom: 6, gradeTo: 7 } },
+  { label: "Arlington KATW (2nd–3rd)", preset: { campus: "Arlington", gradeFrom: 4, gradeTo: 5 } },
+  { label: "Arlington KATW (K–1st)", preset: { campus: "Arlington", gradeFrom: 2, gradeTo: 3 } },
+  { label: "Arlington Tim's Tots (Pre-K)", preset: { campus: "Arlington", gradeFrom: 1, gradeTo: 1 } },
+  { label: "Leesburg High School (9th–12th)", preset: { campus: "Leesburg", gradeFrom: 11, gradeTo: 14 } },
+  { label: "Leesburg Middle School (6th–8th)", preset: { campus: "Leesburg", gradeFrom: 8, gradeTo: 10 } },
+  { label: "Leesburg KATW (3rd–5th)", preset: { campus: "Leesburg", gradeFrom: 5, gradeTo: 7 } },
+  { label: "Leesburg KATW (K–2nd)", preset: { campus: "Leesburg", gradeFrom: 2, gradeTo: 4 } },
+  { label: "Leesburg Tim's Tots (Pre-K)", preset: { campus: "Leesburg", gradeFrom: 1, gradeTo: 1 } },
+];
 
 function summarizeStatus(status: MemberStatus[]): string {
   if (status.length === 0) return "Status";
@@ -148,10 +174,13 @@ export default function ChildrenPage() {
       params.set("memberType", memberType);
       params.set("sortBy", sortBy);
       params.set("pageSize", "5000");
+      // Adds each row's Parent 1/Parent 2 contact info (name/phone/email) —
+      // computed server-side from the same cached data, no extra requests.
+      params.set("includeParents", "true");
       const res = await fetch(`/api/children?${params.toString()}`);
       if (!res.ok) throw new Error(`Export failed: ${res.status}`);
-      const result: ProfileSearchResult = await res.json();
-      const csv = toCsv(result.profiles.map(profileToExportRow), PROFILE_EXPORT_COLUMNS);
+      const result: { profiles: ChildWithParents[] } = await res.json();
+      const csv = toCsv(result.profiles.map(childProfileToExportRow), CHILD_EXPORT_COLUMNS);
       downloadCsv(`children-export-${new Date().toISOString().slice(0, 10)}.csv`, csv);
     } catch {
       toast.error("Export failed. Please try again.");
@@ -216,6 +245,19 @@ export default function ChildrenPage() {
     });
   }
 
+  // A suggested filter fully sets Campus + Grade to its exact values
+  // (rather than combining with whatever was already selected) — it's meant
+  // as a "jump to this ministry group" shortcut. Search/Status/Family scope
+  // are left alone so a preset can still be combined with them.
+  function applyPreset(preset: ChildrenPreset) {
+    updateParams({
+      campus: preset.campus,
+      gradeFrom: String(preset.gradeFrom),
+      gradeTo: String(preset.gradeTo),
+      page: null,
+    });
+  }
+
   const profiles = data?.profiles ?? [];
   const total = data?.total ?? 0;
   const overallTotal = data?.overallTotal ?? 0;
@@ -269,6 +311,10 @@ export default function ChildrenPage() {
             {isExporting ? "Exporting…" : "Export CSV"}
           </button>
         </div>
+      </div>
+
+      <div className="mb-4">
+        <SuggestedFilters filters={SUGGESTED_FILTERS} onSelect={applyPreset} />
       </div>
 
       <div className="mb-7 flex flex-col gap-3">
