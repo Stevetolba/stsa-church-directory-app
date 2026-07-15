@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { updateHouseholdSchema } from "./household";
 
 // Field lengths mirror openapi.yaml's Profile schema (first_name/last_name
 // maxLength 35, email maxLength 256). Membership status is intentionally
@@ -17,6 +18,12 @@ export const editProfileSchema = z.object({
   // actually changed (real-mode campus updates aren't implemented yet —
   // see updateProfile), so omitting it must still validate.
   campus: z.enum(["Arlington", "Leesburg"]).optional(),
+  date_of_birth: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date")
+    .optional()
+    .or(z.literal("")),
   // Free-text safety fields (ADR-0012). maxLength 1500 mirrors the API's
   // Profile schema. Must be listed here — the PATCH route does
   // editProfileSchema.safeParse(body), and Zod strips keys it doesn't know,
@@ -26,3 +33,11 @@ export const editProfileSchema = z.object({
 });
 
 export type EditProfileValues = z.infer<typeof editProfileSchema>;
+
+// The edit form also collects the profile's own address (street/city/state/
+// postal_code) — same shape households use, reused here rather than
+// duplicated. Kept as a separate schema so API routes that only touch the
+// bare profile fields (if any) aren't forced to carry address fields too.
+export const editProfileWithAddressSchema = editProfileSchema.extend(updateHouseholdSchema.shape);
+
+export type EditProfileWithAddressValues = z.infer<typeof editProfileWithAddressSchema>;

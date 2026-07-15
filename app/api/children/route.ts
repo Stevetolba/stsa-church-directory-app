@@ -9,7 +9,12 @@ import {
 import type { Campus, MemberStatus } from "@/types/profile";
 
 const VALID_MEMBER_TYPES: ChildrenMemberType[] = ["Child", "Adult", "All"];
-const VALID_SORT_BY: NonNullable<SearchProfilesParams["sortBy"]>[] = ["first_name", "last_name"];
+const VALID_SORT_BY: NonNullable<SearchProfilesParams["sortBy"]>[] = [
+  "first_name",
+  "last_name",
+  "updated_at",
+  "created_at",
+];
 
 // ADR-0011: the children-scoped read endpoint. Unlike /api/profiles this is
 // open to any authenticated role (volunteers included) — the scoping to

@@ -3,7 +3,12 @@ import { requireStaffOrAdmin } from "@/lib/rbac";
 import { searchProfiles, type SearchProfilesParams } from "@/lib/subsplash";
 import type { Campus, MemberStatus } from "@/types/profile";
 
-const VALID_SORT_BY: NonNullable<SearchProfilesParams["sortBy"]>[] = ["first_name", "last_name"];
+const VALID_SORT_BY: NonNullable<SearchProfilesParams["sortBy"]>[] = [
+  "first_name",
+  "last_name",
+  "updated_at",
+  "created_at",
+];
 
 // Middleware excludes /api/* from its redirect (a 307 isn't a sane fetch()
 // response), so this route enforces its own check. This is a read endpoint

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/rbac";
-import { CampusUpdateError, updateProfile } from "@/lib/subsplash";
-import { editProfileSchema } from "@/lib/validation/profile";
+import { CampusUpdateError, updateProfile, type UpdateProfileInput } from "@/lib/subsplash";
+import { editProfileWithAddressSchema } from "@/lib/validation/profile";
 
 // ADR-0005: the admin check happens here, independent of the UI — a
 // staff-role session gets 403 regardless of what the client sent.
@@ -10,7 +10,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (forbidden) return forbidden;
 
   const body = await request.json();
-  const parsed = editProfileSchema.safeParse(body);
+  const parsed = editProfileWithAddressSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid input", issues: parsed.error.flatten() },
@@ -18,8 +18,19 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     );
   }
 
+  // street/city/state/postal_code edit the profile's own address (distinct
+  // from the household's shared one) — nest them under address_parts for
+  // updateProfile rather than sending them as top-level profile fields.
+  const { street, city, state, postal_code, ...profileFields } = parsed.data;
+  const hasAddress =
+    street !== undefined || city !== undefined || state !== undefined || postal_code !== undefined;
+  const patch: UpdateProfileInput = {
+    ...profileFields,
+    ...(hasAddress ? { address_parts: { street, city, state, postal_code } } : {}),
+  };
+
   try {
-    const updated = await updateProfile(params.id, parsed.data);
+    const updated = await updateProfile(params.id, patch);
     return NextResponse.json(updated);
   } catch (error) {
     // A resolvable-but-unmet campus write (e.g. an unknown dropdown choice) is
