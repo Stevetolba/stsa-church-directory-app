@@ -42,6 +42,8 @@ export const emailParentsSchema = z
     campus: z.array(z.enum(["Arlington", "Leesburg"])).optional(),
     gradeFrom: z.number().int().optional(),
     gradeTo: z.number().int().optional(),
+    ageFrom: z.number().int().optional(),
+    ageTo: z.number().int().optional(),
     memberType: z.enum(["Child", "Adult", "All"]).optional(),
   })
   .refine(attachmentsWithinLimit, ATTACHMENTS_REFINE_OPTIONS);

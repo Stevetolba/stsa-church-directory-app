@@ -46,14 +46,21 @@ const MEMBER_TYPE_OPTIONS: Array<{ value: ChildrenMemberType; label: string }> =
   { value: "All", label: "All Family" },
 ];
 
-type FilterKey = "status" | "campus" | "grade" | "memberType";
-const ALL_FILTER_KEYS: FilterKey[] = ["status", "campus", "grade", "memberType"];
+type FilterKey = "status" | "campus" | "grade" | "age" | "memberType";
+const ALL_FILTER_KEYS: FilterKey[] = ["status", "campus", "grade", "age", "memberType"];
 const FILTER_LABELS: Record<FilterKey, string> = {
   status: "Status",
   campus: "Campus",
   grade: "Grade",
+  age: "Age",
   memberType: "Family",
 };
+
+// Wide enough to cover Pre-K through a graduated senior without being
+// meaningless (Subsplash doesn't cap age, but the Children directory is
+// scoped to child-bearing households, not adults generally).
+const MIN_AGE = 0;
+const MAX_AGE = 25;
 
 interface ChildrenPreset {
   campus: Campus;
@@ -101,6 +108,13 @@ function summarizeGrade(gradeFrom?: number, gradeTo?: number): string {
   return "Grade";
 }
 
+function summarizeAge(ageFrom?: number, ageTo?: number): string {
+  if (ageFrom === undefined && ageTo === undefined) return "Age";
+  if (ageFrom !== undefined && ageTo !== undefined) return `Age: ${ageFrom} – ${ageTo}`;
+  if (ageFrom !== undefined) return `Age: ${ageFrom}+`;
+  return `Age: up to ${ageTo}`;
+}
+
 function summarizeMemberType(memberType: ChildrenMemberType): string {
   if (memberType === "Child") return "Family";
   const found = MEMBER_TYPE_OPTIONS.find((o) => o.value === memberType);
@@ -127,6 +141,10 @@ export function ChildrenPageClient({
   const gradeToRaw = searchParams.get("gradeTo");
   const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
   const gradeTo = gradeToRaw ? Number(gradeToRaw) : undefined;
+  const ageFromRaw = searchParams.get("ageFrom");
+  const ageToRaw = searchParams.get("ageTo");
+  const ageFrom = ageFromRaw ? Number(ageFromRaw) : undefined;
+  const ageTo = ageToRaw ? Number(ageToRaw) : undefined;
   const memberType = (searchParams.get("memberType") as ChildrenMemberType | null) ?? "Child";
   const sortBy =
     (searchParams.get("sortBy") as NonNullable<SearchProfilesParams["sortBy"]> | null) ?? "last_name";
@@ -141,6 +159,8 @@ export function ChildrenPageClient({
     campus,
     gradeFrom,
     gradeTo,
+    ageFrom,
+    ageTo,
     memberType,
     sortBy,
     page,
@@ -157,6 +177,7 @@ export function ChildrenPageClient({
   if (status.length > 0) activeFilters.add("status");
   if (campus.length > 0) activeFilters.add("campus");
   if (gradeFrom !== undefined || gradeTo !== undefined) activeFilters.add("grade");
+  if (ageFrom !== undefined || ageTo !== undefined) activeFilters.add("age");
   if (memberType !== "Child") activeFilters.add("memberType");
 
   const hasActiveFilter =
@@ -165,6 +186,8 @@ export function ChildrenPageClient({
     campus.length > 0 ||
     gradeFrom !== undefined ||
     gradeTo !== undefined ||
+    ageFrom !== undefined ||
+    ageTo !== undefined ||
     memberType !== "Child";
   const [isExporting, setIsExporting] = useState(false);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
@@ -181,6 +204,8 @@ export function ChildrenPageClient({
       campus.forEach((c) => params.append("campus", c));
       if (gradeFrom !== undefined) params.set("gradeFrom", String(gradeFrom));
       if (gradeTo !== undefined) params.set("gradeTo", String(gradeTo));
+      if (ageFrom !== undefined) params.set("ageFrom", String(ageFrom));
+      if (ageTo !== undefined) params.set("ageTo", String(ageTo));
       params.set("memberType", memberType);
       params.set("sortBy", sortBy);
       params.set("pageSize", "5000");
@@ -239,6 +264,7 @@ export function ChildrenPageClient({
     if (key === "status") updateParams({ status: null, page: null });
     else if (key === "campus") updateParams({ campus: null, page: null });
     else if (key === "grade") updateParams({ gradeFrom: null, gradeTo: null, page: null });
+    else if (key === "age") updateParams({ ageFrom: null, ageTo: null, page: null });
     else updateParams({ memberType: null, page: null });
   }
 
@@ -250,6 +276,8 @@ export function ChildrenPageClient({
       campus: null,
       gradeFrom: null,
       gradeTo: null,
+      ageFrom: null,
+      ageTo: null,
       memberType: null,
       page: null,
     });
@@ -448,6 +476,45 @@ export function ChildrenPageClient({
             </FilterPill>
           )}
 
+          {activeFilters.has("age") && (
+            <FilterPill
+              label={summarizeAge(ageFrom, ageTo)}
+              active={ageFrom !== undefined || ageTo !== undefined}
+              open={openFilter === "age"}
+              onOpenChange={(open) => setOpenFilter(open ? "age" : null)}
+              onRemove={() => handleRemoveFilter("age")}
+            >
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                    Min
+                  </label>
+                  <input
+                    type="number"
+                    min={MIN_AGE}
+                    max={MAX_AGE}
+                    value={ageFromRaw ?? ""}
+                    onChange={(e) => updateParams({ ageFrom: e.target.value || null, page: null })}
+                    className="w-full rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                    Max
+                  </label>
+                  <input
+                    type="number"
+                    min={MIN_AGE}
+                    max={MAX_AGE}
+                    value={ageToRaw ?? ""}
+                    onChange={(e) => updateParams({ ageTo: e.target.value || null, page: null })}
+                    className="w-full rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                  />
+                </div>
+              </div>
+            </FilterPill>
+          )}
+
           {activeFilters.has("memberType") && (
             <FilterPill
               label={summarizeMemberType(memberType)}
@@ -567,7 +634,7 @@ export function ChildrenPageClient({
           onOpenChange={setEmailDialogOpen}
           user={user}
           fromAddress={fromAddress}
-          filters={{ search, status, campus, gradeFrom, gradeTo, memberType }}
+          filters={{ search, status, campus, gradeFrom, gradeTo, ageFrom, ageTo, memberType }}
           childCount={total}
         />
       )}

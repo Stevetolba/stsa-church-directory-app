@@ -13,6 +13,8 @@ export interface UseChildrenParams {
   campus?: Campus[];
   gradeFrom?: number;
   gradeTo?: number;
+  ageFrom?: number;
+  ageTo?: number;
   memberType?: ChildrenMemberType;
   sortBy?: SearchProfilesParams["sortBy"];
   page?: number;
@@ -36,6 +38,8 @@ export function useChildren({
   campus,
   gradeFrom,
   gradeTo,
+  ageFrom,
+  ageTo,
   memberType,
   sortBy,
   page = 1,
@@ -47,6 +51,8 @@ export function useChildren({
   campus?.forEach((c) => params.append("campus", c));
   if (gradeFrom !== undefined) params.set("gradeFrom", String(gradeFrom));
   if (gradeTo !== undefined) params.set("gradeTo", String(gradeTo));
+  if (ageFrom !== undefined) params.set("ageFrom", String(ageFrom));
+  if (ageTo !== undefined) params.set("ageTo", String(ageTo));
   if (memberType) params.set("memberType", memberType);
   if (sortBy) params.set("sortBy", sortBy);
   if (pageSize !== undefined) params.set("pageSize", String(pageSize));

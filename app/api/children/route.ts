@@ -31,6 +31,10 @@ export async function GET(request: NextRequest) {
   const gradeToRaw = searchParams.get("gradeTo");
   const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
   const gradeTo = gradeToRaw ? Number(gradeToRaw) : undefined;
+  const ageFromRaw = searchParams.get("ageFrom");
+  const ageToRaw = searchParams.get("ageTo");
+  const ageFrom = ageFromRaw ? Number(ageFromRaw) : undefined;
+  const ageTo = ageToRaw ? Number(ageToRaw) : undefined;
   const memberTypeRaw = searchParams.get("memberType");
   const memberType = VALID_MEMBER_TYPES.includes(memberTypeRaw as ChildrenMemberType)
     ? (memberTypeRaw as ChildrenMemberType)
@@ -55,6 +59,8 @@ export async function GET(request: NextRequest) {
     campus,
     gradeFrom,
     gradeTo,
+    ageFrom,
+    ageTo,
     memberType,
     sortBy,
     page,

@@ -46,6 +46,8 @@ export interface EmailParentsFilters {
   campus: Campus[];
   gradeFrom?: number;
   gradeTo?: number;
+  ageFrom?: number;
+  ageTo?: number;
   memberType: ChildrenMemberType;
 }
 
@@ -56,6 +58,8 @@ function buildParams(filters: EmailParentsFilters): URLSearchParams {
   filters.campus.forEach((c) => params.append("campus", c));
   if (filters.gradeFrom !== undefined) params.set("gradeFrom", String(filters.gradeFrom));
   if (filters.gradeTo !== undefined) params.set("gradeTo", String(filters.gradeTo));
+  if (filters.ageFrom !== undefined) params.set("ageFrom", String(filters.ageFrom));
+  if (filters.ageTo !== undefined) params.set("ageTo", String(filters.ageTo));
   params.set("memberType", filters.memberType);
   return params;
 }
@@ -195,6 +199,8 @@ export function EmailParentsDialog({
           campus: filters.campus,
           gradeFrom: filters.gradeFrom,
           gradeTo: filters.gradeTo,
+          ageFrom: filters.ageFrom,
+          ageTo: filters.ageTo,
           memberType: filters.memberType,
         }),
       });

@@ -14,6 +14,7 @@ import { getServiceToken } from "./subsplashToken";
 import { mockHouseholds, mockProfiles } from "./mockData";
 import { formatAddressParts, householdCampus, householdMemberType, parseAddressString } from "./household";
 import { MAX_GRADE_VALUE, MIN_GRADE_VALUE } from "./grades";
+import { calculateAge } from "./age";
 
 const USE_MOCK_DATA = process.env.SUBSPLASH_USE_MOCK !== "false";
 const BASE_URL = process.env.SUBSPLASH_BASE_URL ?? "https://core.subsplash.com";
@@ -391,6 +392,11 @@ export interface SearchProfilesParams {
   campus?: Campus[];
   gradeFrom?: number;
   gradeTo?: number;
+  // Currently only surfaced on the Children page — computed from
+  // date_of_birth (see lib/age.ts), independent of gradeFrom/gradeTo so
+  // either can be used alone or combined.
+  ageFrom?: number;
+  ageTo?: number;
   sortBy?: "first_name" | "last_name";
   page?: number;
   pageSize?: number;
@@ -412,6 +418,8 @@ function filterAndPaginateProfiles(
     campus,
     gradeFrom,
     gradeTo,
+    ageFrom,
+    ageTo,
     sortBy,
     page = 1,
     pageSize = DEFAULT_PAGE_SIZE,
@@ -425,6 +433,7 @@ function filterAndPaginateProfiles(
   const gradeFilterActive = gradeFrom !== undefined || gradeTo !== undefined;
   const lowerGrade = gradeFrom ?? MIN_GRADE_VALUE;
   const upperGrade = gradeTo ?? MAX_GRADE_VALUE;
+  const ageFilterActive = ageFrom !== undefined || ageTo !== undefined;
 
   const filtered = all.filter((p) => {
     const matchesStatus = !status?.length || status.includes(p.status);
@@ -434,6 +443,13 @@ function filterAndPaginateProfiles(
       (p.academic_grade_value !== undefined &&
         p.academic_grade_value >= lowerGrade &&
         p.academic_grade_value <= upperGrade);
+    const matchesAge =
+      !ageFilterActive ||
+      (() => {
+        const age = p.date_of_birth ? calculateAge(p.date_of_birth) : null;
+        if (age === null) return false;
+        return (ageFrom === undefined || age >= ageFrom) && (ageTo === undefined || age <= ageTo);
+      })();
     const matchesSearch =
       !needle ||
       [`${p.first_name ?? ""} ${p.last_name ?? ""}`, p.email ?? ""].some((field) =>
@@ -442,7 +458,7 @@ function filterAndPaginateProfiles(
       (!!p.phone_number &&
         (p.phone_number.toLowerCase().includes(needle) ||
           (needleDigits.length > 0 && p.phone_number.replace(/\D/g, "").includes(needleDigits))));
-    return matchesStatus && matchesCampus && matchesGrade && matchesSearch;
+    return matchesStatus && matchesCampus && matchesGrade && matchesAge && matchesSearch;
   });
 
   // Defaults to last_name to match the order the real-mode walk already
