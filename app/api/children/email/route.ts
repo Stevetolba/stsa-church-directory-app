@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid request", issues: parsed.error.issues }, { status: 400 });
   }
-  const { subject, bodyHtml, attachments, search, status, campus, gradeFrom, gradeTo, memberType } =
+  const { subject, bodyHtml, attachments, search, status, campus, gradeFrom, gradeTo, ageFrom, ageTo, memberType } =
     parsed.data;
 
   // Requires at least one real filter, same gate the CSV export button uses
@@ -35,6 +35,8 @@ export async function POST(request: NextRequest) {
     (campus && campus.length > 0) ||
     gradeFrom !== undefined ||
     gradeTo !== undefined ||
+    ageFrom !== undefined ||
+    ageTo !== undefined ||
     (memberType && memberType !== "Child");
   if (!hasActiveFilter) {
     return NextResponse.json({ error: "Apply a filter before emailing parents." }, { status: 400 });
@@ -46,6 +48,8 @@ export async function POST(request: NextRequest) {
     campus,
     gradeFrom,
     gradeTo,
+    ageFrom,
+    ageTo,
     memberType,
     pageSize: 5000,
   });
