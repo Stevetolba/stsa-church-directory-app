@@ -17,6 +17,12 @@ export const editProfileSchema = z.object({
   // actually changed (real-mode campus updates aren't implemented yet —
   // see updateProfile), so omitting it must still validate.
   campus: z.enum(["Arlington", "Leesburg"]).optional(),
+  // Free-text safety fields (ADR-0012). maxLength 1500 mirrors the API's
+  // Profile schema. Must be listed here — the PATCH route does
+  // editProfileSchema.safeParse(body), and Zod strips keys it doesn't know,
+  // so omitting these would silently drop them from the update.
+  allergy_notes: z.string().trim().max(1500, "Too long").optional().or(z.literal("")),
+  care_notes: z.string().trim().max(1500, "Too long").optional().or(z.literal("")),
 });
 
 export type EditProfileValues = z.infer<typeof editProfileSchema>;
