@@ -1,4 +1,5 @@
 import type { Profile } from "@/types/profile";
+import type { ChildWithParents } from "@/lib/subsplash";
 
 // Minimal CSV encoder — no dependency needed for the flat, string-only rows
 // this app exports. RFC 4180: quote a field if it contains a comma, quote,
@@ -57,5 +58,32 @@ export function profileToExportRow(profile: Profile): Record<string, string> {
     household_role: profile.household_role ?? "",
     grade: profile.academic_grade ?? "",
     address: profile.address ?? "",
+  };
+}
+
+// Children and Youth export — adds Parent 1/Parent 2 contact columns
+// alongside the same base fields, so a roster of children also carries who
+// to contact for each. Not a new exposure: a volunteer viewing a child can
+// already see that child's parents by opening the household (ADR-0011) —
+// this just bundles it into the same row for a printable/shareable export.
+export const CHILD_EXPORT_COLUMNS: { key: string; label: string }[] = [
+  ...PROFILE_EXPORT_COLUMNS,
+  { key: "parent1_name", label: "Parent 1 Name" },
+  { key: "parent1_phone", label: "Parent 1 Phone" },
+  { key: "parent1_email", label: "Parent 1 Email" },
+  { key: "parent2_name", label: "Parent 2 Name" },
+  { key: "parent2_phone", label: "Parent 2 Phone" },
+  { key: "parent2_email", label: "Parent 2 Email" },
+];
+
+export function childProfileToExportRow(child: ChildWithParents): Record<string, string> {
+  return {
+    ...profileToExportRow(child),
+    parent1_name: child.parent1 ? `${child.parent1.first_name} ${child.parent1.last_name}` : "",
+    parent1_phone: child.parent1?.phone_number ?? "",
+    parent1_email: child.parent1?.email ?? "",
+    parent2_name: child.parent2 ? `${child.parent2.first_name} ${child.parent2.last_name}` : "",
+    parent2_phone: child.parent2?.phone_number ?? "",
+    parent2_email: child.parent2?.email ?? "",
   };
 }

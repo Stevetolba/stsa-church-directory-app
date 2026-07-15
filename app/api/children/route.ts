@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
-import { searchChildren, type ChildrenMemberType, type SearchProfilesParams } from "@/lib/subsplash";
+import {
+  attachParentContacts,
+  searchChildren,
+  type ChildrenMemberType,
+  type SearchProfilesParams,
+} from "@/lib/subsplash";
 import type { Campus, MemberStatus } from "@/types/profile";
 
 const VALID_MEMBER_TYPES: ChildrenMemberType[] = ["Child", "Adult", "All"];
@@ -39,6 +44,10 @@ export async function GET(request: NextRequest) {
   // so a client can't force an unbounded in-memory scan.
   const pageSizeRaw = searchParams.get("pageSize");
   const pageSize = pageSizeRaw ? Math.min(Number(pageSizeRaw), 5000) : undefined;
+  // Only the CSV export asks for this — attaches each row's parent/guardian
+  // contacts (drawn from the same cached data, no extra Subsplash calls) so
+  // the export can include Parent 1/Parent 2 columns.
+  const includeParents = searchParams.get("includeParents") === "true";
 
   const result = await searchChildren({
     search,
@@ -51,5 +60,10 @@ export async function GET(request: NextRequest) {
     page,
     pageSize,
   });
+
+  if (includeParents) {
+    const profiles = await attachParentContacts(result.profiles);
+    return NextResponse.json({ ...result, profiles });
+  }
   return NextResponse.json(result);
 }

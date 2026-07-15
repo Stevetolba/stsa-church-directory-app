@@ -6,6 +6,7 @@ import { SearchBar } from "@/components/SearchBar";
 import { BirthdayAgenda } from "@/components/BirthdayAgenda";
 import { FilterPill } from "@/components/FilterPill";
 import { AddFilterMenu } from "@/components/AddFilterMenu";
+import { SuggestedFilters, type SuggestedFilter } from "@/components/SuggestedFilters";
 import { usePeople } from "@/hooks/usePeople";
 import { GRADE_LEVELS } from "@/lib/grades";
 import type { Campus, MemberStatus } from "@/types/profile";
@@ -30,6 +31,18 @@ const STATUS_OPTIONS: MemberStatus[] = [
 ];
 
 const CAMPUS_OPTIONS: Campus[] = ["Arlington", "Leesburg"];
+
+interface BirthdaysPreset {
+  campus: Campus;
+  status: MemberStatus;
+}
+
+const SUGGESTED_FILTERS: SuggestedFilter<BirthdaysPreset>[] = [
+  { label: "Arlington Members", preset: { campus: "Arlington", status: "Member" } },
+  { label: "Arlington Regular Attendees", preset: { campus: "Arlington", status: "Regular Attendee" } },
+  { label: "Leesburg Members", preset: { campus: "Leesburg", status: "Member" } },
+  { label: "Leesburg Regular Attendees", preset: { campus: "Leesburg", status: "Regular Attendee" } },
+];
 
 type FilterKey = "status" | "campus" | "grade";
 const ALL_FILTER_KEYS: FilterKey[] = ["status", "campus", "grade"];
@@ -123,6 +136,14 @@ export default function BirthdaysPage() {
     updateParams({ status: null, campus: null, gradeFrom: null, gradeTo: null });
   }
 
+  // A suggested filter fully sets Status + Campus to its exact values
+  // (rather than toggling into whatever was already selected) — it's meant
+  // as a "jump to this segment" shortcut. Search/Grade are left alone so a
+  // preset can still be combined with them.
+  function applyPreset(preset: BirthdaysPreset) {
+    updateParams({ status: preset.status, campus: preset.campus });
+  }
+
   const profiles = data?.profiles ?? [];
   const total = data?.total ?? 0;
   const withBirthday = profiles.filter((p) => p.date_of_birth).length;
@@ -139,6 +160,10 @@ export default function BirthdaysPage() {
         <div className="flex h-[34px] items-center rounded-full border border-[#C7E9F7] bg-[#E4F4FC] px-3 text-[12px] font-bold text-[#1B6E93]">
           Staff only
         </div>
+      </div>
+
+      <div className="mb-4">
+        <SuggestedFilters filters={SUGGESTED_FILTERS} onSelect={applyPreset} />
       </div>
 
       <div className="mb-7 flex flex-col gap-3">
