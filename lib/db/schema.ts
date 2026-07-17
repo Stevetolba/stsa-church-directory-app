@@ -44,8 +44,16 @@ export const checkIns = pgTable(
     sessionId: text("session_id"),
     sessionName: text("session_name"),
     checkedInAt: timestamp("checked_in_at", { withTimezone: true }).notNull().defaultNow(),
-    // User email, or `device:<device_id>` for a kiosk device actor.
+    // User email, or `device:<device_id>` for a kiosk device actor — who
+    // *operated* the check-in, not who brought the child (see below).
     checkedInBy: text("checked_in_by").notNull(),
+    // For a child, the adult household member who dropped them off — distinct
+    // from checked_in_by, which is the staff/volunteer running the screen.
+    // Lets a classroom teacher match drop-off against pickup. Null for an
+    // adult/guest checking themselves in, or when no adult was on the roster
+    // to pick from.
+    droppedOffByProfileId: text("dropped_off_by_profile_id"),
+    droppedOffByName: text("dropped_off_by_name"),
     checkedOutAt: timestamp("checked_out_at", { withTimezone: true }),
     checkedOutBy: text("checked_out_by"),
     method: text("method").notNull().default("live"), // 'live' | 'backfill' | 'kiosk'

@@ -21,6 +21,9 @@ export interface CheckInArgs {
   sessionId?: string;
   isGuest?: boolean;
   guestName?: string;
+  // For a child, the adult household member who dropped them off. Ignored by
+  // the server for a non-child check-in.
+  dropOffProfileId?: string;
   backfill?: boolean;
 }
 

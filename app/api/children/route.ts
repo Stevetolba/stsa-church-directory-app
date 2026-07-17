@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
   // contacts (drawn from the same cached data, no extra Subsplash calls) so
   // the export can include Parent 1/Parent 2 columns.
   const includeParents = searchParams.get("includeParents") === "true";
+  const expandHouseholds = searchParams.get("expandHouseholds") === "true";
 
   const result = await searchChildren({
     search,
@@ -70,6 +71,7 @@ export async function GET(request: NextRequest) {
     sortBy,
     page,
     pageSize,
+    expandHouseholds,
   });
 
   if (includeParents) {

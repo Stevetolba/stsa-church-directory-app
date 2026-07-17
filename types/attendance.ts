@@ -16,7 +16,11 @@ export interface CheckInRecord {
   sessionId?: string | null;
   sessionName?: string | null;
   checkedInAt: string; // ISO 8601
-  checkedInBy: string; // user email or "device:<id>"
+  checkedInBy: string; // user email or "device:<id>" -- who operated the screen
+  // For a child, the adult household member who dropped them off (distinct
+  // from checkedInBy). Null for an adult/guest checking themselves in.
+  droppedOffByProfileId?: string | null;
+  droppedOffByName?: string | null;
   checkedOutAt?: string | null; // ISO 8601, null = still present
   checkedOutBy?: string | null;
   method: CheckInMethod;

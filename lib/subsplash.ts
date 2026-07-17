@@ -448,6 +448,13 @@ export interface SearchProfilesParams {
   sortBy?: "first_name" | "last_name" | "updated_at" | "created_at";
   page?: number;
   pageSize?: number;
+  // Once search text matches a profile, also include every other member of
+  // that profile's household — so searching a parent's own name/email/phone
+  // surfaces their kids too, not just the profile whose own fields matched.
+  // Opt-in (defaults off) so the People/Children directory pages, which
+  // share this function, keep their existing per-profile-only matching.
+  // Expanded members still have to pass the other (non-text) filters below.
+  expandHouseholds?: boolean;
 }
 
 export interface ProfileSearchResult {
@@ -458,7 +465,10 @@ export interface ProfileSearchResult {
   pageSize: number;
 }
 
-function filterAndPaginateProfiles(
+// Exported for direct unit testing (lib/subsplash.filterAndPaginateProfiles.test.ts)
+// — it's pure in-memory filtering, no need to go through mock/live data to
+// exercise it.
+export function filterAndPaginateProfiles(
   all: Profile[],
   {
     search,
@@ -471,6 +481,7 @@ function filterAndPaginateProfiles(
     sortBy,
     page = 1,
     pageSize = DEFAULT_PAGE_SIZE,
+    expandHouseholds,
   }: SearchProfilesParams
 ): ProfileSearchResult {
   const needle = search?.trim().toLowerCase();
@@ -483,7 +494,10 @@ function filterAndPaginateProfiles(
   const upperGrade = gradeTo ?? MAX_GRADE_VALUE;
   const ageFilterActive = ageFrom !== undefined || ageTo !== undefined;
 
-  const filtered = all.filter((p) => {
+  // Split out from the text-match requirement so expandHouseholds can reuse
+  // it: an expanded household member still has to pass status/campus/grade/
+  // age, it's only the search-text requirement that's waived for them.
+  function matchesNonTextFilters(p: Profile): boolean {
     const matchesStatus = !status?.length || status.includes(p.status);
     const matchesCampus = !campus?.length || (!!p.campus && campus.includes(p.campus));
     const matchesGrade =
@@ -498,16 +512,40 @@ function filterAndPaginateProfiles(
         if (age === null) return false;
         return (ageFrom === undefined || age >= ageFrom) && (ageTo === undefined || age <= ageTo);
       })();
-    const matchesSearch =
-      !needle ||
+    return matchesStatus && matchesCampus && matchesGrade && matchesAge;
+  }
+
+  function matchesSearchText(p: Profile): boolean {
+    if (!needle) return true;
+    return (
       [`${p.first_name ?? ""} ${p.last_name ?? ""}`, p.email ?? ""].some((field) =>
         field.toLowerCase().includes(needle)
       ) ||
       (!!p.phone_number &&
         (p.phone_number.toLowerCase().includes(needle) ||
-          (needleDigits.length > 0 && p.phone_number.replace(/\D/g, "").includes(needleDigits))));
-    return matchesStatus && matchesCampus && matchesGrade && matchesAge && matchesSearch;
-  });
+          (needleDigits.length > 0 && p.phone_number.replace(/\D/g, "").includes(needleDigits))))
+    );
+  }
+
+  const filtered = all.filter((p) => matchesNonTextFilters(p) && matchesSearchText(p));
+
+  if (expandHouseholds && needle) {
+    const matchedHouseholdIds = new Set(
+      filtered.map((p) => p.household_id).filter((id): id is string => !!id)
+    );
+    const alreadyIncluded = new Set(filtered.map((p) => p.id));
+    for (const p of all) {
+      if (
+        p.household_id &&
+        matchedHouseholdIds.has(p.household_id) &&
+        !alreadyIncluded.has(p.id) &&
+        matchesNonTextFilters(p)
+      ) {
+        filtered.push(p);
+        alreadyIncluded.add(p.id);
+      }
+    }
+  }
 
   // Defaults to last_name to match the order the real-mode walk already
   // fetches in (sort=last_name — see fetchAllProfilesFromSubsplash), so

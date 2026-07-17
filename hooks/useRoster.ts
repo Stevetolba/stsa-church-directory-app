@@ -30,6 +30,12 @@ export interface UseRosterParams {
 // means a session-type auto-restriction (children-only, etc.) alone must
 // never reveal the whole directory; campus/grade only narrow an existing
 // search, they don't unlock the roster on their own.
+//
+// expandHouseholds=true so a search matching only a parent's own name/email/
+// phone still returns their kids — matching plain per-profile text on the
+// server would otherwise drop household members whose own fields don't
+// happen to contain the search text (opt-in server-side; the People/Children
+// directory pages don't set this and keep today's per-profile-only matching).
 export function useRoster({ role, search, campus, gradeFrom, gradeTo }: UseRosterParams) {
   const isVolunteer = role === "volunteer";
   const hasFilter = !!search?.trim();
@@ -40,6 +46,7 @@ export function useRoster({ role, search, campus, gradeFrom, gradeTo }: UseRoste
   if (gradeFrom !== undefined) params.set("gradeFrom", String(gradeFrom));
   if (gradeTo !== undefined) params.set("gradeTo", String(gradeTo));
   params.set("pageSize", "2000");
+  params.set("expandHouseholds", "true");
   if (isVolunteer) params.set("memberType", "All");
 
   const endpoint = isVolunteer ? "/api/children" : "/api/profiles";

@@ -13,6 +13,11 @@ export const checkInSchema = z.object({
   // Guest walk-in: no directory profile, just a typed name.
   isGuest: z.boolean().optional(),
   guestName: z.string().trim().min(1, "Name is required").max(120).optional(),
+  // For a child, the adult household member who dropped them off. The server
+  // re-derives isChild from the authoritative profile and only persists this
+  // when the checked-in profile actually is a child — a client can't use this
+  // to tag an adult's own check-in.
+  dropOffProfileId: z.string().trim().min(1).optional(),
   // Staff/admin only — records after the fact and bypasses the check-in window.
   backfill: z.boolean().optional(),
 }).refine((d) => d.isGuest ? !!d.guestName : !!d.profileId, {

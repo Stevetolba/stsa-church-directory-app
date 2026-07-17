@@ -26,6 +26,8 @@ function fromRow(row: CheckInRow): CheckInRecord {
     sessionName: row.sessionName,
     checkedInAt: row.checkedInAt.toISOString(),
     checkedInBy: row.checkedInBy,
+    droppedOffByProfileId: row.droppedOffByProfileId,
+    droppedOffByName: row.droppedOffByName,
     checkedOutAt: row.checkedOutAt ? row.checkedOutAt.toISOString() : null,
     checkedOutBy: row.checkedOutBy,
     method: row.method as CheckInMethod,
@@ -53,6 +55,10 @@ export interface RecordCheckInInput {
   sessionId?: string | null;
   sessionName?: string | null;
   checkedInBy: string;
+  // The adult household member who dropped this child off (not who operated
+  // the screen). Only meaningful for a child; ignored otherwise.
+  droppedOffByProfileId?: string | null;
+  droppedOffByName?: string | null;
   method?: CheckInMethod;
   isGuest?: boolean;
 }
@@ -79,6 +85,8 @@ export async function recordCheckIn(input: RecordCheckInInput): Promise<CheckInR
         sessionId: input.sessionId ?? null,
         sessionName: input.sessionName ?? null,
         checkedInBy: input.checkedInBy,
+        droppedOffByProfileId: input.droppedOffByProfileId ?? null,
+        droppedOffByName: input.droppedOffByName ?? null,
         method,
         isGuest,
       })
@@ -87,6 +95,8 @@ export async function recordCheckIn(input: RecordCheckInInput): Promise<CheckInR
         set: {
           sessionId: input.sessionId ?? null,
           sessionName: input.sessionName ?? null,
+          droppedOffByProfileId: input.droppedOffByProfileId ?? null,
+          droppedOffByName: input.droppedOffByName ?? null,
           checkedOutAt: null,
           checkedOutBy: null,
         },
@@ -105,6 +115,8 @@ export async function recordCheckIn(input: RecordCheckInInput): Promise<CheckInR
   if (existing) {
     existing.sessionId = input.sessionId ?? null;
     existing.sessionName = input.sessionName ?? null;
+    existing.droppedOffByProfileId = input.droppedOffByProfileId ?? null;
+    existing.droppedOffByName = input.droppedOffByName ?? null;
     existing.checkedOutAt = null;
     existing.checkedOutBy = null;
     return existing;
@@ -121,6 +133,8 @@ export async function recordCheckIn(input: RecordCheckInInput): Promise<CheckInR
     sessionName: input.sessionName ?? null,
     checkedInAt: new Date().toISOString(),
     checkedInBy: input.checkedInBy,
+    droppedOffByProfileId: input.droppedOffByProfileId ?? null,
+    droppedOffByName: input.droppedOffByName ?? null,
     checkedOutAt: null,
     checkedOutBy: null,
     method,
