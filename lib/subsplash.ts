@@ -120,13 +120,27 @@ interface HalCollection<T> {
 
 // --- Fetch helper (real mode only) ---
 
-async function subsplashFetch<T>(path: string): Promise<T> {
-  if (!ORG_KEY) {
+// scopeToOrg defaults to true for the People/Households endpoints, which
+// require an explicit filter[org_key] on every request. The Events endpoints
+// (/events/v2/*) reject that filter outright — confirmed against the live API
+// ("filter not allowed: org_key") — because a client_credentials token is
+// already minted for one org, so events are scoped implicitly by the token.
+// Callers on that family must pass { scopeToOrg: false }.
+export async function subsplashFetch<T>(
+  path: string,
+  opts: { scopeToOrg?: boolean } = {}
+): Promise<T> {
+  const scopeToOrg = opts.scopeToOrg ?? true;
+  if (scopeToOrg && !ORG_KEY) {
     throw new Error("Missing SUBSPLASH_ORG_KEY — required as filter[org_key] on every request.");
   }
   const token = await getServiceToken();
-  const separator = path.includes("?") ? "&" : "?";
-  const res = await fetch(`${BASE_URL}${path}${separator}filter[org_key]=${ORG_KEY}`, {
+  let url = `${BASE_URL}${path}`;
+  if (scopeToOrg) {
+    const separator = path.includes("?") ? "&" : "?";
+    url += `${separator}filter[org_key]=${ORG_KEY}`;
+  }
+  const res = await fetch(url, {
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
@@ -134,6 +148,27 @@ async function subsplashFetch<T>(path: string): Promise<T> {
   });
   if (!res.ok) {
     throw new Error(`Subsplash API error: ${res.status} ${path}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+// For following a HAL `_links.next.href` returned by a collection response
+// (e.g. ListEventsV2, which — unlike ListProfiles — declares no page[]/filter[]
+// query parameters at all, so pagination must be done by following `next`
+// rather than constructing page[number]/page[size] ourselves). The href is
+// already a complete continuation URL (org_key and all), so it's fetched
+// as-is rather than through subsplashFetch, which would re-append org_key.
+export async function subsplashFetchHref<T>(href: string): Promise<T> {
+  const token = await getServiceToken();
+  const url = href.startsWith("http") ? href : `${BASE_URL}${href}`;
+  const res = await fetch(url, {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Subsplash API error: ${res.status} ${href}`);
   }
   return res.json() as Promise<T>;
 }
@@ -334,7 +369,20 @@ async function getCachedProfiles(): Promise<Profile[]> {
     profiles.push(...pageProfiles);
     if (pageProfiles.length < MAX_SUBSPLASH_PAGE_SIZE) break;
   }
-  return profiles;
+  // mapProfile's household_name comes from a `household` embed that no
+  // profile fetch actually requests (confirmed against the live org: it's
+  // always undefined without it), so it's joined in here from the separately
+  // cached households walk instead — one place, so every caller of
+  // getCachedProfiles/allProfiles (searchProfiles, searchChildren, household
+  // grouping in check-in, etc.) gets a real name instead of falling back to
+  // the person's own name.
+  const households = await getCachedHouseholds();
+  const nameByHouseholdId = new Map(households.map((h) => [h.id, h.name]));
+  return profiles.map((p) =>
+    p.household_id && nameByHouseholdId.has(p.household_id)
+      ? { ...p, household_name: nameByHouseholdId.get(p.household_id) }
+      : p
+  );
 }
 
 // Households (without embedded members — see listHouseholds) map to a much
