@@ -14,22 +14,25 @@ export interface HouseholdGroup {
   adults: Profile[];
 }
 
-// Shared by CheckInPageClient and KioskCheckInClient (ADR-0015): groups the
-// search results by household, applies the session-type roster restriction
-// (a "child"/"adult" session only shows that role; "everyone" and mixed
-// events show both), and tracks the per-profile session pick and
-// per-household drop-off adult. Pulled out once both surfaces needed the
-// identical, non-trivial grouping/defaulting rules rather than drifting
-// apart under separate copies.
-export function useCheckInRoster({
+// Groups an already-fetched roster by household, applies the session-type
+// restriction (a "child"/"adult" session only shows that role; "everyone"
+// and mixed events show both), and tracks the per-profile session pick and
+// per-household drop-off adult. Pulled out of useCheckInRoster so both the
+// signed-in check-in page (which fetches via /api/children or /api/profiles,
+// see useRoster) and the kiosk surface (which fetches via /api/kiosk/roster,
+// see useKioskCheckInRoster) share the identical, non-trivial grouping/
+// defaulting rules without duplicating them. ADR-0015.
+export function useRosterGrouping({
+  profiles,
+  isLoading,
+  hasFilter,
   event,
-  role,
-  search,
   manualChildrenOnly = false,
 }: {
+  profiles: Profile[];
+  isLoading: boolean;
+  hasFilter: boolean;
   event: AppEvent;
-  role: Role;
-  search: string;
   manualChildrenOnly?: boolean;
 }) {
   const [sessionByProfile, setSessionByProfile] = useState<Record<string, string>>({});
@@ -46,8 +49,6 @@ export function useCheckInRoster({
       : autoSessionType === null && manualChildrenOnly
         ? "child"
         : null;
-
-  const { profiles, isLoading, hasFilter } = useRoster({ role, search });
 
   const households: HouseholdGroup[] = useMemo(() => {
     // Group ALL matching profiles by household first (not role-filtered) —
@@ -126,4 +127,21 @@ export function useCheckInRoster({
     setSessionFor: (profileId: string, sessionId: string) =>
       setSessionByProfile((prev) => ({ ...prev, [profileId]: sessionId })),
   };
+}
+
+// The signed-in check-in page's roster: fetches via useRoster (/api/children
+// or /api/profiles, chosen by role) and applies the shared grouping above.
+export function useCheckInRoster({
+  event,
+  role,
+  search,
+  manualChildrenOnly = false,
+}: {
+  event: AppEvent;
+  role: Role;
+  search: string;
+  manualChildrenOnly?: boolean;
+}) {
+  const { profiles, isLoading, hasFilter } = useRoster({ role, search });
+  return useRosterGrouping({ profiles, isLoading, hasFilter, event, manualChildrenOnly });
 }

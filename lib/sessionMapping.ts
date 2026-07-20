@@ -6,7 +6,7 @@
 // fallback for sessions that don't carry that data. A volunteer can always
 // override. Pure — unit-tested in lib/sessionMapping.test.ts.
 
-import type { EventSession, SessionType } from "@/types/event";
+import type { AppEvent, EventSession, SessionType } from "@/types/event";
 import type { Profile } from "@/types/profile";
 import { calculateAgeInMonths } from "./age";
 
@@ -128,4 +128,12 @@ export function defaultSessionForProfile(
   }
   const general = sessions.find((s) => s.type === "everyone") ?? sessions.find((s) => /general/i.test(s.name));
   return general ?? (sessions.length === 1 ? sessions[0] : undefined);
+}
+
+// Snapshot name for a chosen session id, or null (no session picked). Shared
+// by /api/attendance and /api/kiosk/attendance so a check-in's stored
+// session_name always comes from the same lookup.
+export function sessionNameFor(event: Pick<AppEvent, "sessions">, sessionId: string | null): string | null {
+  if (!sessionId) return null;
+  return event.sessions.find((s) => s.id === sessionId)?.name ?? null;
 }

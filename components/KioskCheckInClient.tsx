@@ -7,8 +7,8 @@ import { toast } from "sonner";
 import { Check, LogOut, Settings, ShieldAlert, Sparkles, X } from "lucide-react";
 import { SearchBar } from "@/components/SearchBar";
 import { EmptyState } from "@/components/EmptyState";
-import { useCheckInRoster } from "@/hooks/useCheckInRoster";
-import { useAttendance } from "@/hooks/useAttendance";
+import { useKioskCheckInRoster } from "@/hooks/useKioskCheckInRoster";
+import { useKioskAttendance } from "@/hooks/useKioskAttendance";
 import { avatarTintForId, initialsOf } from "@/lib/avatar";
 import { generateMatchCode } from "@/lib/matchCode";
 import { loadKioskPrintSettings, saveKioskPrintSetting, type KioskPrintSettings } from "@/lib/kioskSettings";
@@ -19,19 +19,21 @@ import { checkInWindow, timeLabelInTz, windowState } from "@/lib/eventTime";
 import type { AppEvent } from "@/types/event";
 import type { CheckInRecord } from "@/types/attendance";
 import type { Profile } from "@/types/profile";
-import type { Role } from "@/types/auth";
 
 const RESET_AFTER_MS = 6000;
 
-// Self-service kiosk for one event occurrence (ADR-0015, Phase 2): idle
+// Self-service kiosk for one event occurrence (ADR-0015, Phase 2 & 3): idle
 // screen -> search -> tap-to-select household members -> confirm -> success
 // -> auto-reset. No backfill (staff/admin-only, and never offered on the
 // kiosk surface even for a signed-in operator) and no undo (mis-taps are
-// fixed from the regular check-in page, not here). Shares roster grouping
-// and session/drop-off defaulting with CheckInPageClient via
-// useCheckInRoster; the batch-submit and success/reset flow is kept
+// fixed from the regular check-in page, not here). Talks to /api/kiosk/*
+// (useKioskCheckInRoster / useKioskAttendance) rather than the staff-only
+// /api/attendance + /api/children|/profiles, so it works identically whether
+// the operator is a signed-in user or an unattended device — the household
+// grouping/session-defaulting logic is still shared with CheckInPageClient
+// via useRosterGrouping. The batch-submit and success/reset flow is kept
 // separate since the two surfaces behave differently afterward.
-export function KioskCheckInClient({ event, role }: { event: AppEvent; role: Role }) {
+export function KioskCheckInClient({ event }: { event: AppEvent }) {
   const router = useRouter();
   const [mode, setMode] = useState<"checkin" | "checkout">("checkin");
   const [idle, setIdle] = useState(true);
@@ -75,8 +77,8 @@ export function KioskCheckInClient({ event, role }: { event: AppEvent; role: Rol
     groupByProfileId,
     dropOffForHousehold,
     sessionForProfile,
-  } = useCheckInRoster({ event, role, search });
-  const { records, summary, checkIn, checkOut } = useAttendance(event.id);
+  } = useKioskCheckInRoster({ event, search });
+  const { records, summary, checkIn, checkOut } = useKioskAttendance(event.id);
 
   const recordByProfile = useMemo(() => {
     const map = new Map<string, CheckInRecord>();
