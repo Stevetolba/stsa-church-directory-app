@@ -3,15 +3,31 @@ import { Mail, Phone } from "lucide-react";
 import type { Profile } from "@/types/profile";
 import { AVATAR_TINTS, initialsOf } from "@/lib/avatar";
 import { StatusBadge } from "@/components/StatusBadge";
+import { calculateAge } from "@/lib/age";
 
 // Pixel values transcribed from design/README.md §Member card grid (the
 // mockup's "Member" naming became "People" in-app — see ADR-0008; this
 // still renders any person regardless of membership status). Uses real
 // Lucide icons in place of the mockup's placeholder CSS-shape icons.
 
+// Grade (preferred) or age, for a child profile only — lets a glance at the
+// Children and Youth directory tell an actual kid apart from a household
+// member Subsplash still tags "child" (family position) despite being a
+// grown adult (household_role doesn't track majority — ADR-0011).
+function childGradeOrAge(profile: Profile): string | null {
+  if (profile.household_role !== "child") return null;
+  if (profile.academic_grade) return profile.academic_grade;
+  if (profile.date_of_birth) {
+    const age = calculateAge(profile.date_of_birth);
+    if (age !== null) return `Age ${age}`;
+  }
+  return null;
+}
+
 export function PersonCard({ profile, index }: { profile: Profile; index: number }) {
   const tint = AVATAR_TINTS[index % AVATAR_TINTS.length];
   const householdCampus = [profile.household_name, profile.campus].filter(Boolean).join(" · ");
+  const gradeOrAge = childGradeOrAge(profile);
 
   return (
     <Link
@@ -35,7 +51,14 @@ export function PersonCard({ profile, index }: { profile: Profile; index: number
             )}
           </div>
         </div>
-        <StatusBadge status={profile.status} className="shrink-0" />
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          {gradeOrAge && (
+            <span className="whitespace-nowrap rounded-full bg-[#EEF2F6] px-[11px] py-1 text-[12px] font-semibold text-[#4C6178]">
+              {gradeOrAge}
+            </span>
+          )}
+          <StatusBadge status={profile.status} />
+        </div>
       </div>
 
       <div className="h-px bg-[#F0EBDF]" />

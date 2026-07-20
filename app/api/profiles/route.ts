@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
   // so a client can't force an unbounded in-memory scan.
   const pageSizeRaw = searchParams.get("pageSize");
   const pageSize = pageSizeRaw ? Math.min(Number(pageSizeRaw), 5000) : undefined;
+  const expandHouseholds = searchParams.get("expandHouseholds") === "true";
 
   const result = await searchProfiles({
     search,
@@ -46,6 +47,7 @@ export async function GET(request: NextRequest) {
     sortBy,
     page,
     pageSize,
+    expandHouseholds,
   });
   return NextResponse.json(result);
 }

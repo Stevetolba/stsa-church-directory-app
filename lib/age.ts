@@ -22,3 +22,17 @@ export function calculateAge(dateOfBirth: string, asOf: Date = new Date()): numb
 
   return age;
 }
+
+// Age in completed months as of `asOf` — Subsplash's session min_age/max_age
+// are in months, not years (confirmed against the live org: a "Pre-K-5yrs"
+// session reports 36–71). Same completed-unit semantics as calculateAge, just
+// months instead of years. Returns null for an unparseable/missing date of birth.
+export function calculateAgeInMonths(dateOfBirth: string, asOf: Date = new Date()): number | null {
+  const parts = parseIsoDateParts(dateOfBirth);
+  if (!parts) return null;
+
+  let months = (asOf.getFullYear() - parts.year) * 12 + (asOf.getMonth() + 1 - parts.month);
+  if (asOf.getDate() < parts.day) months -= 1;
+
+  return months;
+}

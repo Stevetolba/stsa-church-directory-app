@@ -12,14 +12,17 @@ import { resolveRole } from "@/lib/roles";
 const { auth } = NextAuth(authConfig);
 
 // ADR-0011: volunteers are scoped to the Children directory. This is the
-// coarse gate — it keeps them off the browse surfaces (dashboard stats + the
-// full People/Households/Birthdays lists); per-record visibility on the
-// detail pages is enforced in those server components. Only the list/root
-// paths are blocked so a volunteer can still reach a child's family via
-// /people/[id] and /households/[id], which self-guard. The children-scoped
-// equivalent of Birthdays lives inside /children (a view toggle, not a
-// separate route), so it isn't blocked here.
-const VOLUNTEER_BLOCKED_PATHS = new Set(["/", "/people", "/households", "/birthdays"]);
+// coarse gate — it keeps them off the browse surfaces (the full
+// People/Households/Birthdays lists); per-record visibility on the detail
+// pages is enforced in those server components. Only the list paths are
+// blocked so a volunteer can still reach a child's family via /people/[id]
+// and /households/[id], which self-guard. The children-scoped equivalent of
+// Birthdays lives inside /children (a view toggle, not a separate route), so
+// it isn't blocked here. "/" is intentionally NOT blocked — it renders a
+// volunteer-scoped landing page (today's children/youth birthdays + a
+// children-only search) instead of the staff/admin one, so a volunteer can
+// land there directly rather than being redirected off it.
+const VOLUNTEER_BLOCKED_PATHS = new Set(["/people", "/households", "/birthdays"]);
 
 export default auth((req) => {
   const isLoggedIn = !!req.auth;

@@ -120,13 +120,27 @@ interface HalCollection<T> {
 
 // --- Fetch helper (real mode only) ---
 
-async function subsplashFetch<T>(path: string): Promise<T> {
-  if (!ORG_KEY) {
+// scopeToOrg defaults to true for the People/Households endpoints, which
+// require an explicit filter[org_key] on every request. The Events endpoints
+// (/events/v2/*) reject that filter outright — confirmed against the live API
+// ("filter not allowed: org_key") — because a client_credentials token is
+// already minted for one org, so events are scoped implicitly by the token.
+// Callers on that family must pass { scopeToOrg: false }.
+export async function subsplashFetch<T>(
+  path: string,
+  opts: { scopeToOrg?: boolean } = {}
+): Promise<T> {
+  const scopeToOrg = opts.scopeToOrg ?? true;
+  if (scopeToOrg && !ORG_KEY) {
     throw new Error("Missing SUBSPLASH_ORG_KEY — required as filter[org_key] on every request.");
   }
   const token = await getServiceToken();
-  const separator = path.includes("?") ? "&" : "?";
-  const res = await fetch(`${BASE_URL}${path}${separator}filter[org_key]=${ORG_KEY}`, {
+  let url = `${BASE_URL}${path}`;
+  if (scopeToOrg) {
+    const separator = path.includes("?") ? "&" : "?";
+    url += `${separator}filter[org_key]=${ORG_KEY}`;
+  }
+  const res = await fetch(url, {
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
@@ -134,6 +148,27 @@ async function subsplashFetch<T>(path: string): Promise<T> {
   });
   if (!res.ok) {
     throw new Error(`Subsplash API error: ${res.status} ${path}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+// For following a HAL `_links.next.href` returned by a collection response
+// (e.g. ListEventsV2, which — unlike ListProfiles — declares no page[]/filter[]
+// query parameters at all, so pagination must be done by following `next`
+// rather than constructing page[number]/page[size] ourselves). The href is
+// already a complete continuation URL (org_key and all), so it's fetched
+// as-is rather than through subsplashFetch, which would re-append org_key.
+export async function subsplashFetchHref<T>(href: string): Promise<T> {
+  const token = await getServiceToken();
+  const url = href.startsWith("http") ? href : `${BASE_URL}${href}`;
+  const res = await fetch(url, {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Subsplash API error: ${res.status} ${href}`);
   }
   return res.json() as Promise<T>;
 }
@@ -334,7 +369,20 @@ async function getCachedProfiles(): Promise<Profile[]> {
     profiles.push(...pageProfiles);
     if (pageProfiles.length < MAX_SUBSPLASH_PAGE_SIZE) break;
   }
-  return profiles;
+  // mapProfile's household_name comes from a `household` embed that no
+  // profile fetch actually requests (confirmed against the live org: it's
+  // always undefined without it), so it's joined in here from the separately
+  // cached households walk instead — one place, so every caller of
+  // getCachedProfiles/allProfiles (searchProfiles, searchChildren, household
+  // grouping in check-in, etc.) gets a real name instead of falling back to
+  // the person's own name.
+  const households = await getCachedHouseholds();
+  const nameByHouseholdId = new Map(households.map((h) => [h.id, h.name]));
+  return profiles.map((p) =>
+    p.household_id && nameByHouseholdId.has(p.household_id)
+      ? { ...p, household_name: nameByHouseholdId.get(p.household_id) }
+      : p
+  );
 }
 
 // Households (without embedded members — see listHouseholds) map to a much
@@ -400,6 +448,13 @@ export interface SearchProfilesParams {
   sortBy?: "first_name" | "last_name" | "updated_at" | "created_at";
   page?: number;
   pageSize?: number;
+  // Once search text matches a profile, also include every other member of
+  // that profile's household — so searching a parent's own name/email/phone
+  // surfaces their kids too, not just the profile whose own fields matched.
+  // Opt-in (defaults off) so the People/Children directory pages, which
+  // share this function, keep their existing per-profile-only matching.
+  // Expanded members still have to pass the other (non-text) filters below.
+  expandHouseholds?: boolean;
 }
 
 export interface ProfileSearchResult {
@@ -410,7 +465,10 @@ export interface ProfileSearchResult {
   pageSize: number;
 }
 
-function filterAndPaginateProfiles(
+// Exported for direct unit testing (lib/subsplash.filterAndPaginateProfiles.test.ts)
+// — it's pure in-memory filtering, no need to go through mock/live data to
+// exercise it.
+export function filterAndPaginateProfiles(
   all: Profile[],
   {
     search,
@@ -423,6 +481,7 @@ function filterAndPaginateProfiles(
     sortBy,
     page = 1,
     pageSize = DEFAULT_PAGE_SIZE,
+    expandHouseholds,
   }: SearchProfilesParams
 ): ProfileSearchResult {
   const needle = search?.trim().toLowerCase();
@@ -435,7 +494,10 @@ function filterAndPaginateProfiles(
   const upperGrade = gradeTo ?? MAX_GRADE_VALUE;
   const ageFilterActive = ageFrom !== undefined || ageTo !== undefined;
 
-  const filtered = all.filter((p) => {
+  // Split out from the text-match requirement so expandHouseholds can reuse
+  // it: an expanded household member still has to pass status/campus/grade/
+  // age, it's only the search-text requirement that's waived for them.
+  function matchesNonTextFilters(p: Profile): boolean {
     const matchesStatus = !status?.length || status.includes(p.status);
     const matchesCampus = !campus?.length || (!!p.campus && campus.includes(p.campus));
     const matchesGrade =
@@ -450,16 +512,40 @@ function filterAndPaginateProfiles(
         if (age === null) return false;
         return (ageFrom === undefined || age >= ageFrom) && (ageTo === undefined || age <= ageTo);
       })();
-    const matchesSearch =
-      !needle ||
+    return matchesStatus && matchesCampus && matchesGrade && matchesAge;
+  }
+
+  function matchesSearchText(p: Profile): boolean {
+    if (!needle) return true;
+    return (
       [`${p.first_name ?? ""} ${p.last_name ?? ""}`, p.email ?? ""].some((field) =>
         field.toLowerCase().includes(needle)
       ) ||
       (!!p.phone_number &&
         (p.phone_number.toLowerCase().includes(needle) ||
-          (needleDigits.length > 0 && p.phone_number.replace(/\D/g, "").includes(needleDigits))));
-    return matchesStatus && matchesCampus && matchesGrade && matchesAge && matchesSearch;
-  });
+          (needleDigits.length > 0 && p.phone_number.replace(/\D/g, "").includes(needleDigits))))
+    );
+  }
+
+  const filtered = all.filter((p) => matchesNonTextFilters(p) && matchesSearchText(p));
+
+  if (expandHouseholds && needle) {
+    const matchedHouseholdIds = new Set(
+      filtered.map((p) => p.household_id).filter((id): id is string => !!id)
+    );
+    const alreadyIncluded = new Set(filtered.map((p) => p.id));
+    for (const p of all) {
+      if (
+        p.household_id &&
+        matchedHouseholdIds.has(p.household_id) &&
+        !alreadyIncluded.has(p.id) &&
+        matchesNonTextFilters(p)
+      ) {
+        filtered.push(p);
+        alreadyIncluded.add(p.id);
+      }
+    }
+  }
 
   // Defaults to last_name to match the order the real-mode walk already
   // fetches in (sort=last_name — see fetchAllProfilesFromSubsplash), so

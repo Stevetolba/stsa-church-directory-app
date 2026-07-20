@@ -59,3 +59,30 @@
     @apply bg-background text-foreground font-sans;
   }
 }
+
+/* Check-in label printing (ADR-0015): isolates PrintLabelsSheet's labels so
+   window.print() outputs only the label stack, not the rest of the app
+   (modal chrome included). The classic "print only this subtree" trick:
+   hide everything, then re-reveal just .print-label-sheet and its
+   descendants, positioned absolutely so it escapes the modal's scroll clip
+   (its containing block becomes the viewport, since no ancestor here is
+   positioned) — no ancestor markup changes needed. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-label-sheet,
+  .print-label-sheet * {
+    visibility: visible;
+  }
+  .print-label-sheet {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+  .print-label {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+}

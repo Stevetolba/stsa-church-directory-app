@@ -322,7 +322,7 @@ export function ChildrenPageClient({
               : `${total} of ${overallTotal} ${memberTypeNoun}`}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center rounded-full border border-[#E5DCC8] bg-white p-0.5">
             <button
               type="button"
@@ -613,7 +613,7 @@ export function ChildrenPageClient({
       )}
 
       {view === "directory" && (hasMultiplePages || showAll) && (
-        <div className="mt-7 flex items-center justify-center gap-3">
+        <div className="mt-7 flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
           {showAll ? (
             <button
               type="button"
@@ -632,7 +632,7 @@ export function ChildrenPageClient({
               >
                 Previous
               </button>
-              <span className="text-[13px] text-[#5B7185]">
+              <span className="whitespace-nowrap text-[13px] text-[#5B7185]">
                 Page {page} of {Math.ceil(total / pageSize)}
               </span>
               <button
