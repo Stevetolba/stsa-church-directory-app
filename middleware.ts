@@ -24,11 +24,21 @@ const { auth } = NextAuth(authConfig);
 // land there directly rather than being redirected off it.
 const VOLUNTEER_BLOCKED_PATHS = new Set(["/people", "/households", "/birthdays"]);
 
+// ADR-0015 (Phase 3): /kiosk (and /kiosk/setup, where a device claims its
+// setup code and has no cookie yet) authorize via a device cookie instead of
+// a NextAuth session — middleware only relaxes the redirect here, it doesn't
+// validate the cookie itself (that needs a DB lookup, not Edge-safe). The
+// page/route handlers underneath call getAttendanceActor / verifyDeviceToken
+// and reject anyone with neither a session nor a valid device token.
+const KIOSK_PATH_PREFIX = "/kiosk";
+
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
   const isLoginPage = req.nextUrl.pathname.startsWith("/login");
+  const isKioskPath =
+    req.nextUrl.pathname === KIOSK_PATH_PREFIX || req.nextUrl.pathname.startsWith(`${KIOSK_PATH_PREFIX}/`);
 
-  if (!isLoggedIn && !isLoginPage) {
+  if (!isLoggedIn && !isLoginPage && !isKioskPath) {
     return NextResponse.redirect(new URL("/login", req.nextUrl.origin));
   }
   if (isLoggedIn && isLoginPage) {
