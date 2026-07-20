@@ -25,7 +25,7 @@ export function ChildLabel({ data }: { data: ChildLabelData }) {
   const contact = [data.contactName, data.contactPhone].filter(Boolean).join(" • ");
 
   return (
-    <div className="print-label flex w-[300px] flex-col gap-1.5 rounded-[14px] border border-[#E5DCC8] bg-white p-3">
+    <div className="print-label flex w-full max-w-[300px] flex-col gap-1.5 rounded-[14px] border border-[#E5DCC8] bg-white p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-[20px] font-bold leading-tight text-brand-navy">{data.firstName}</div>
