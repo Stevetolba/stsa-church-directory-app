@@ -6,9 +6,21 @@
 // fallback for sessions that don't carry that data. A volunteer can always
 // override. Pure — unit-tested in lib/sessionMapping.test.ts.
 
-import type { EventSession } from "@/types/event";
+import type { EventSession, SessionType } from "@/types/event";
 import type { Profile } from "@/types/profile";
 import { calculateAgeInMonths } from "./age";
+
+// The session type shared by every session on an event, or null when they
+// disagree (a single session trivially agrees with itself). Drives the
+// check-in roster's own child/adult/everyone restriction, and — server-side —
+// whether a child check-in gets a drop-off adult and pickup match code
+// (skipped for "everyone" sessions, where kids stay with their parents).
+// Shared by the client (CheckInPageClient, kiosk) and the server
+// (app/api/attendance/route.ts) so both agree without duplicating the rule.
+export function eventAutoSessionType(sessions: EventSession[]): SessionType | null {
+  const types = Array.from(new Set(sessions.map((s) => s.type)));
+  return types.length === 1 ? types[0] : null;
+}
 
 // Subsplash academic_grade_value scale (lib/grades.ts): Pre-K=1, Kindergarten=2,
 // then value = school grade + 2 (1st=3 … 12th=14). Convert a grade value to a

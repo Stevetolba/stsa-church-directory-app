@@ -21,6 +21,10 @@ export interface CheckInRecord {
   // from checkedInBy). Null for an adult/guest checking themselves in.
   droppedOffByProfileId?: string | null;
   droppedOffByName?: string | null;
+  // Short code shared by this child's label and the drop-off adult's tag, so
+  // pickup can be verified at a glance. Null under the same conditions as
+  // droppedOffBy* (adult/guest check-in, or an "everyone"-type session).
+  matchCode?: string | null;
   checkedOutAt?: string | null; // ISO 8601, null = still present
   checkedOutBy?: string | null;
   method: CheckInMethod;

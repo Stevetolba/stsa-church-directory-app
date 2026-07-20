@@ -28,6 +28,7 @@ function fromRow(row: CheckInRow): CheckInRecord {
     checkedInBy: row.checkedInBy,
     droppedOffByProfileId: row.droppedOffByProfileId,
     droppedOffByName: row.droppedOffByName,
+    matchCode: row.matchCode,
     checkedOutAt: row.checkedOutAt ? row.checkedOutAt.toISOString() : null,
     checkedOutBy: row.checkedOutBy,
     method: row.method as CheckInMethod,
@@ -59,6 +60,7 @@ export interface RecordCheckInInput {
   // the screen). Only meaningful for a child; ignored otherwise.
   droppedOffByProfileId?: string | null;
   droppedOffByName?: string | null;
+  matchCode?: string | null;
   method?: CheckInMethod;
   isGuest?: boolean;
 }
@@ -87,6 +89,7 @@ export async function recordCheckIn(input: RecordCheckInInput): Promise<CheckInR
         checkedInBy: input.checkedInBy,
         droppedOffByProfileId: input.droppedOffByProfileId ?? null,
         droppedOffByName: input.droppedOffByName ?? null,
+        matchCode: input.matchCode ?? null,
         method,
         isGuest,
       })
@@ -97,6 +100,7 @@ export async function recordCheckIn(input: RecordCheckInInput): Promise<CheckInR
           sessionName: input.sessionName ?? null,
           droppedOffByProfileId: input.droppedOffByProfileId ?? null,
           droppedOffByName: input.droppedOffByName ?? null,
+          matchCode: input.matchCode ?? null,
           checkedOutAt: null,
           checkedOutBy: null,
         },
@@ -117,6 +121,7 @@ export async function recordCheckIn(input: RecordCheckInInput): Promise<CheckInR
     existing.sessionName = input.sessionName ?? null;
     existing.droppedOffByProfileId = input.droppedOffByProfileId ?? null;
     existing.droppedOffByName = input.droppedOffByName ?? null;
+    existing.matchCode = input.matchCode ?? null;
     existing.checkedOutAt = null;
     existing.checkedOutBy = null;
     return existing;
@@ -135,6 +140,7 @@ export async function recordCheckIn(input: RecordCheckInInput): Promise<CheckInR
     checkedInBy: input.checkedInBy,
     droppedOffByProfileId: input.droppedOffByProfileId ?? null,
     droppedOffByName: input.droppedOffByName ?? null,
+    matchCode: input.matchCode ?? null,
     checkedOutAt: null,
     checkedOutBy: null,
     method,
@@ -209,6 +215,48 @@ export async function removeCheckIn(input: RemoveCheckInInput): Promise<void> {
       r.profileId === input.profileId
   );
   if (idx !== -1) store.splice(idx, 1);
+}
+
+// The existing row for a person at this occurrence, if any — used by the
+// check-in route to preserve drop-off/match-code data across a repeat
+// submission that doesn't itself carry it (e.g. changing a session after the
+// fact shouldn't blank out who dropped the child off or reissue their code).
+export async function getCheckIn(
+  seriesId: string,
+  occurrenceDate: string,
+  profileId: string
+): Promise<CheckInRecord | null> {
+  if (isDbConfigured()) {
+    const db = getDb();
+    const [row] = await db
+      .select()
+      .from(checkIns)
+      .where(
+        and(
+          eq(checkIns.seriesId, seriesId),
+          eq(checkIns.occurrenceDate, occurrenceDate),
+          eq(checkIns.profileId, profileId)
+        )
+      );
+    return row ? fromRow(row) : null;
+  }
+  return (
+    mockStore().find(
+      (r) => r.seriesId === seriesId && r.occurrenceDate === occurrenceDate && r.profileId === profileId
+    ) ?? null
+  );
+}
+
+// Pickup match codes currently in play for an occurrence (still-present
+// check-ins only — a departed child's old code is fair game to reuse), so a
+// freshly generated code doesn't collide with another family's.
+export async function activeMatchCodes(seriesId: string, occurrenceDate: string): Promise<Set<string>> {
+  const records = await listCheckIns(seriesId, occurrenceDate);
+  return new Set(
+    records.filter((r): r is CheckInRecord & { matchCode: string } => !r.checkedOutAt && !!r.matchCode).map(
+      (r) => r.matchCode
+    )
+  );
 }
 
 export async function listCheckIns(

@@ -14,12 +14,15 @@ import {
 } from "lucide-react";
 import { SearchBar } from "@/components/SearchBar";
 import { EmptyState } from "@/components/EmptyState";
-import { useRoster } from "@/hooks/useRoster";
+import { useCheckInRoster } from "@/hooks/useCheckInRoster";
 import { useAttendance } from "@/hooks/useAttendance";
 import { avatarTintForId, initialsOf } from "@/lib/avatar";
-import { defaultSessionForProfile } from "@/lib/sessionMapping";
+import { generateMatchCode } from "@/lib/matchCode";
+import type { ChildLabelData } from "@/components/labels/ChildLabel";
+import type { ParentMatchTagData } from "@/components/labels/ParentMatchTag";
+import { PrintLabelsSheet } from "@/components/labels/PrintLabelsSheet";
 import { checkInWindow, timeLabelInTz, windowState } from "@/lib/eventTime";
-import type { AppEvent, SessionType } from "@/types/event";
+import type { AppEvent } from "@/types/event";
 import type { CheckInRecord } from "@/types/attendance";
 import type { Profile } from "@/types/profile";
 import type { Role } from "@/types/auth";
@@ -40,8 +43,6 @@ export function CheckInPageClient({
   const [search, setSearch] = useState("");
   const [manualChildrenOnly, setManualChildrenOnly] = useState(false);
   const [backfillMode, setBackfillMode] = useState(false);
-  // Per-profile chosen session before check-in (overrides the grade default).
-  const [sessionByProfile, setSessionByProfile] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<Set<string>>(new Set());
   // Tap-to-select, then one batch "Check in N" submit — mirrors Subsplash's
   // own kiosk app rather than an immediate per-row action. Cleared whenever
@@ -49,26 +50,26 @@ export function CheckInPageClient({
   // the operator can no longer see.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchSubmitting, setBatchSubmitting] = useState(false);
-  // Per-household chosen drop-off adult (keyed by household id), for
-  // children only — who brought them, not who ran the check-in screen.
-  const [dropOffByHousehold, setDropOffByHousehold] = useState<Record<string, string>>({});
+  // Labels queued up after a batch check-in that included children, shown in
+  // a print-preview sheet until dismissed.
+  const [labelsToPrint, setLabelsToPrint] = useState<{
+    children: ChildLabelData[];
+    parentTags: ParentMatchTagData[];
+  } | null>(null);
 
-  // A "child"/"adult" session restricts who can even be checked in to it (a
-  // Sunday School class isn't for adults). Determined only when every session
-  // on the event agrees (a single session trivially agrees with itself);
-  // event.sessions with mixed types falls back to the pre-existing manual
-  // "Children only" toggle.
-  const autoSessionType: SessionType | null = useMemo(() => {
-    const types = Array.from(new Set(event.sessions.map((s) => s.type)));
-    return types.length === 1 ? types[0] : null;
-  }, [event.sessions]);
-  const showManualChildrenToggle = autoSessionType === null;
-  const householdRoleFilter: "child" | "adult" | null =
-    autoSessionType === "child" || autoSessionType === "adult"
-      ? autoSessionType
-      : autoSessionType === null && manualChildrenOnly
-        ? "child"
-        : null;
+  const {
+    isLoading,
+    hasFilter,
+    autoSessionType,
+    showManualChildrenToggle,
+    households,
+    profileById,
+    groupByProfileId,
+    dropOffForHousehold,
+    setDropOffFor,
+    sessionForProfile,
+    setSessionFor,
+  } = useCheckInRoster({ event, role, search, manualChildrenOnly });
 
   const now = new Date();
   const state = windowState(event, now);
@@ -76,7 +77,6 @@ export function CheckInPageClient({
   const windowOpen = state === "open";
   const canCheckIn = windowOpen || (backfillMode && canBackfill);
 
-  const { profiles, isLoading, hasFilter } = useRoster({ role, search });
   const { records, summary, checkIn, checkOut, undoCheckIn } = useAttendance(event.id);
 
   const recordByProfile = useMemo(() => {
@@ -85,62 +85,6 @@ export function CheckInPageClient({
     return map;
   }, [records]);
 
-  const households = useMemo(() => {
-    // Group ALL matching profiles by household first (not role-filtered) —
-    // a "children only" session still needs its households' adults on hand
-    // for the drop-off picker, even though they won't show as selectable
-    // rows below.
-    const byHousehold = new Map<string, { householdId: string; name: string; allMembers: Profile[] }>();
-    for (const p of profiles) {
-      const key = p.household_id ?? p.id;
-      const name = p.household_name ?? `${p.first_name} ${p.last_name}`.trim();
-      const group = byHousehold.get(key) ?? { householdId: key, name, allMembers: [] };
-      group.allMembers.push(p);
-      byHousehold.set(key, group);
-    }
-    const rank = (p: Profile) => (p.household_role === "child" ? 1 : 0);
-    const groups = Array.from(byHousehold.values()).map((g) => {
-      const members =
-        householdRoleFilter === "child"
-          ? g.allMembers.filter((p) => p.household_role === "child")
-          : householdRoleFilter === "adult"
-            ? g.allMembers.filter((p) => p.household_role !== "child")
-            : g.allMembers;
-      return {
-        householdId: g.householdId,
-        name: g.name,
-        members: [...members].sort(
-          (a, b) => rank(a) - rank(b) || `${a.first_name}`.localeCompare(`${b.first_name}`)
-        ),
-        adults: g.allMembers.filter((p) => p.household_role !== "child"),
-      };
-    });
-    return groups.filter((g) => g.members.length > 0).sort((a, b) => a.name.localeCompare(b.name));
-  }, [profiles, householdRoleFilter]);
-
-  const profileById = useMemo(() => {
-    const m = new Map<string, Profile>();
-    for (const p of profiles) m.set(p.id, p);
-    return m;
-  }, [profiles]);
-
-  // profileId -> its household group, so the batch check-in handler can find
-  // the chosen (or auto-defaulted) drop-off adult for a child without a
-  // separate lookup structure.
-  const groupByProfileId = useMemo(() => {
-    const m = new Map<string, (typeof households)[number]>();
-    for (const g of households) for (const p of g.members) m.set(p.id, g);
-    return m;
-  }, [households]);
-
-  // Explicit pick, or the household's sole adult if there's exactly one —
-  // otherwise undefined (ambiguous, left for the operator to choose).
-  function dropOffForHousehold(group: { householdId: string; adults: Profile[] }): string | undefined {
-    const explicit = dropOffByHousehold[group.householdId];
-    if (explicit) return explicit;
-    return group.adults.length === 1 ? group.adults[0].id : undefined;
-  }
-
   function setBusyFor(id: string, on: boolean) {
     setBusy((prev) => {
       const next = new Set(prev);
@@ -148,11 +92,6 @@ export function CheckInPageClient({
       else next.delete(id);
       return next;
     });
-  }
-
-  function sessionForProfile(profile: Profile): string | undefined {
-    if (sessionByProfile[profile.id]) return sessionByProfile[profile.id];
-    return defaultSessionForProfile(event.sessions, profile)?.id;
   }
 
   function toggleSelected(profileId: string) {
@@ -177,19 +116,51 @@ export function CheckInPageClient({
     const ids = Array.from(selected);
     if (ids.length === 0) return;
     setBatchSubmitting(true);
+    // Siblings checked in in the same batch share one pickup match code, so
+    // a parent carries a single tag rather than one per child — generated
+    // once per household as the first of its children is processed below.
+    const matchCodeByHousehold = new Map<string, string>();
+    const labelDataById = new Map<string, ChildLabelData>();
     const outcomes = await Promise.allSettled(
       ids.map(async (id) => {
         const profile = profileById.get(id);
         if (!profile) throw new Error("Profile not found");
         const group = groupByProfileId.get(id);
-        const dropOffProfileId =
-          profile.household_role === "child" && group && autoSessionType !== "everyone"
-            ? dropOffForHousehold(group)
-            : undefined;
+        // Drop-off / pickup tracking only applies to a child, and not for an
+        // "everyone" session where kids stay with their parents.
+        const tracksPickup = profile.household_role === "child" && !!group && autoSessionType !== "everyone";
+        const dropOffProfileId = tracksPickup ? dropOffForHousehold(group) : undefined;
+        let matchCode: string | undefined;
+        if (tracksPickup) {
+          matchCode = matchCodeByHousehold.get(group.householdId) ?? generateMatchCode();
+          matchCodeByHousehold.set(group.householdId, matchCode);
+          const dropOffProfile = dropOffProfileId ? profileById.get(dropOffProfileId) : undefined;
+          const sessionId = sessionForProfile(profile);
+          // A specific drop-off adult wins; with two+ adults and no explicit
+          // pick, the label still names the household's adult(s) rather than
+          // going blank — the printed slip is meant to be read at a glance,
+          // not left without a parent name because no one tapped a dropdown.
+          const contactName = dropOffProfile
+            ? `${dropOffProfile.first_name} ${dropOffProfile.last_name}`.trim()
+            : group.adults.map((a) => `${a.first_name} ${a.last_name}`.trim()).join(" & ") || undefined;
+          labelDataById.set(id, {
+            id,
+            firstName: profile.first_name,
+            lastName: profile.last_name,
+            matchCode,
+            eventTitle: event.title,
+            sessionName: event.sessions.find((s) => s.id === sessionId)?.name,
+            contactName,
+            contactPhone: dropOffProfile?.phone_number,
+            allergyNotes: profile.allergy_notes,
+            careNotes: profile.care_notes,
+          });
+        }
         await checkIn({
           profileId: id,
           sessionId: sessionForProfile(profile),
           dropOffProfileId,
+          matchCode,
           backfill: backfillMode && canBackfill ? true : undefined,
         });
         return id;
@@ -206,11 +177,26 @@ export function CheckInPageClient({
     });
     if (succeededIds.length > 0) toast.success(`Checked in ${succeededIds.length}`);
     if (failedCount > 0) toast.error(`${failedCount} check-in${failedCount > 1 ? "s" : ""} failed`);
+
+    const printableChildren = succeededIds
+      .map((id) => labelDataById.get(id))
+      .filter((d): d is ChildLabelData => !!d);
+    if (printableChildren.length > 0) {
+      const tagsByCode = new Map<string, ParentMatchTagData>();
+      for (const child of printableChildren) {
+        const tag =
+          tagsByCode.get(child.matchCode) ??
+          { matchCode: child.matchCode, childNames: [], dropOffName: child.contactName };
+        tag.childNames.push(`${child.firstName} ${child.lastName}`.trim());
+        tagsByCode.set(child.matchCode, tag);
+      }
+      setLabelsToPrint({ children: printableChildren, parentTags: Array.from(tagsByCode.values()) });
+    }
     setBatchSubmitting(false);
   }
 
   async function handleChangeSession(profileId: string, sessionId: string) {
-    setSessionByProfile((prev) => ({ ...prev, [profileId]: sessionId }));
+    setSessionFor(profileId, sessionId);
     // If already checked in, move them to the new session immediately.
     if (recordByProfile.has(profileId)) {
       setBusyFor(profileId, true);
@@ -367,9 +353,7 @@ export function CheckInPageClient({
                         Dropped off by
                         <select
                           value={dropOffForHousehold(group) ?? ""}
-                          onChange={(e) =>
-                            setDropOffByHousehold((prev) => ({ ...prev, [group.householdId]: e.target.value }))
-                          }
+                          onChange={(e) => setDropOffFor(group.householdId, e.target.value)}
                           className="cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2 py-1 text-[12px] text-brand-navy outline-none"
                         >
                           <option value="">Select…</option>
@@ -425,6 +409,14 @@ export function CheckInPageClient({
           profileById={profileById}
           onCheckOut={handleCheckOut}
           onUndo={handleUndo}
+        />
+      )}
+
+      {labelsToPrint && (
+        <PrintLabelsSheet
+          childLabels={labelsToPrint.children}
+          parentTags={labelsToPrint.parentTags}
+          onClose={() => setLabelsToPrint(null)}
         />
       )}
     </div>
@@ -604,7 +596,10 @@ function RosterRow({
           </div>
           {record.sessionName && <div className="text-[12px] text-[#3F6B45]">In {record.sessionName}</div>}
           {record.droppedOffByName && (
-            <div className="text-[12px] text-[#5B7185]">Dropped off by {record.droppedOffByName}</div>
+            <div className="text-[12px] text-[#5B7185]">
+              Dropped off by {record.droppedOffByName}
+              {record.matchCode ? ` · Code ${record.matchCode}` : ""}
+            </div>
           )}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -720,7 +715,10 @@ function CheckedInList({
             {r.checkedOutAt ? ` · Out ${timeLabelInTz(new Date(r.checkedOutAt), event.timezone)}` : ""}
           </div>
           {r.droppedOffByName && (
-            <div className="mt-0.5 text-[12px] text-[#5B7185]">Dropped off by {r.droppedOffByName}</div>
+            <div className="mt-0.5 text-[12px] text-[#5B7185]">
+              Dropped off by {r.droppedOffByName}
+              {r.matchCode ? ` · Code ${r.matchCode}` : ""}
+            </div>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">

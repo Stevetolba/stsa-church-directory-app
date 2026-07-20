@@ -564,13 +564,14 @@ function buildMockCheckIns(events: AppEvent[], now: Date): CheckInRecord[] {
     sessionName: string | null;
     attendEvery: number;
     // Only set on child plans, so mock data exercises the "Dropped off by"
-    // display without needing a real household lookup.
+    // display and pickup match code without needing a real household lookup.
     droppedOffByProfileId?: string;
     droppedOffByName?: string;
+    matchCode?: string;
   }> = [
     // Arlington Sunday School regulars
-    { profileId: "profile-lily-whitfield", displayName: "Lily Whitfield", isChild: true, seriesId: "series-ss-arlington", sessionId: "ss-1-5", sessionName: "Grades 1–5", attendEvery: 1, droppedOffByProfileId: "profile-margaret-whitfield", droppedOffByName: "Margaret Whitfield" },
-    { profileId: "profile-rohan-anand", displayName: "Rohan Anand", isChild: true, seriesId: "series-ss-arlington", sessionId: "ss-prek", sessionName: "Pre-K", attendEvery: 2, droppedOffByProfileId: "profile-priya-anand", droppedOffByName: "Priya Anand" },
+    { profileId: "profile-lily-whitfield", displayName: "Lily Whitfield", isChild: true, seriesId: "series-ss-arlington", sessionId: "ss-1-5", sessionName: "Grades 1–5", attendEvery: 1, droppedOffByProfileId: "profile-margaret-whitfield", droppedOffByName: "Margaret Whitfield", matchCode: "4821" },
+    { profileId: "profile-rohan-anand", displayName: "Rohan Anand", isChild: true, seriesId: "series-ss-arlington", sessionId: "ss-prek", sessionName: "Pre-K", attendEvery: 2, droppedOffByProfileId: "profile-priya-anand", droppedOffByName: "Priya Anand", matchCode: "3096" },
     // Arlington Liturgy — adults
     { profileId: "profile-margaret-whitfield", displayName: "Margaret Whitfield", isChild: false, seriesId: "series-liturgy-arlington", sessionId: "liturgy-general", sessionName: "General", attendEvery: 1 },
     { profileId: "profile-priya-anand", displayName: "Priya Anand", isChild: false, seriesId: "series-liturgy-arlington", sessionId: "liturgy-general", sessionName: "General", attendEvery: 3 },
@@ -614,6 +615,7 @@ function buildMockCheckIns(events: AppEvent[], now: Date): CheckInRecord[] {
         checkedInBy: "office@gracechapel.org",
         droppedOffByProfileId: plan.droppedOffByProfileId ?? null,
         droppedOffByName: plan.droppedOffByName ?? null,
+        matchCode: plan.matchCode ?? null,
         checkedOutAt,
         checkedOutBy: checkedOutAt ? "office@gracechapel.org" : null,
         method: "live",

@@ -3,14 +3,17 @@ import { auth } from "@/lib/auth";
 import { getEvent } from "@/lib/events";
 import { getProfile, profileVisibleToVolunteer } from "@/lib/subsplash";
 import {
+  activeMatchCodes,
   checkOut,
+  getCheckIn,
   listCheckIns,
   recordCheckIn,
   removeCheckIn,
   summarize,
 } from "@/lib/attendance";
 import { isWithinCheckInWindow } from "@/lib/eventTime";
-import { defaultSessionForProfile } from "@/lib/sessionMapping";
+import { defaultSessionForProfile, eventAutoSessionType } from "@/lib/sessionMapping";
+import { generateMatchCode, isValidMatchCode } from "@/lib/matchCode";
 import { checkInSchema, checkOutSchema, removeCheckInSchema } from "@/lib/validation/attendance";
 import type { AppEvent } from "@/types/event";
 import type { Role } from "@/types/auth";
@@ -106,20 +109,38 @@ export async function POST(request: NextRequest) {
     if (!sessionId) sessionId = defaultSessionForProfile(event.sessions, profile)?.id ?? null;
   }
 
-  // Drop-off only applies to a child (re-derived above, not trusted from the
-  // client) — an adult/guest checking in doesn't get a drop-off person even
-  // if one was somehow submitted.
-  let droppedOffByProfileId: string | null = null;
-  let droppedOffByName: string | null = null;
-  if (isChild && body.dropOffProfileId) {
-    if (!(await volunteerMayAct(actor, body.dropOffProfileId, false))) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // Drop-off / pickup match code only apply to a child (re-derived above, not
+  // trusted from the client) checking into a non-"everyone" session — an
+  // "everyone" service (e.g. Liturgy) keeps kids with their parents, so
+  // there's no separate pickup to track (same rule the client uses to hide
+  // the "Dropped off by" picker). A repeat submission that doesn't carry
+  // these (e.g. just changing a session) keeps whatever was already on file
+  // rather than blanking it out.
+  const existing = isGuest ? null : await getCheckIn(event.series_id, event.occurrence_date, profileId);
+  const tracksPickup = isChild && eventAutoSessionType(event.sessions) !== "everyone";
+  let droppedOffByProfileId: string | null = existing?.droppedOffByProfileId ?? null;
+  let droppedOffByName: string | null = existing?.droppedOffByName ?? null;
+  let matchCode: string | null = existing?.matchCode ?? null;
+  if (tracksPickup) {
+    if (body.dropOffProfileId) {
+      if (!(await volunteerMayAct(actor, body.dropOffProfileId, false))) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      const dropOffProfile = await getProfile(body.dropOffProfileId);
+      if (dropOffProfile) {
+        droppedOffByProfileId = body.dropOffProfileId;
+        droppedOffByName = `${dropOffProfile.first_name} ${dropOffProfile.last_name}`.trim();
+      }
     }
-    const dropOffProfile = await getProfile(body.dropOffProfileId);
-    if (dropOffProfile) {
-      droppedOffByProfileId = body.dropOffProfileId;
-      droppedOffByName = `${dropOffProfile.first_name} ${dropOffProfile.last_name}`.trim();
+    if (body.matchCode && isValidMatchCode(body.matchCode)) {
+      matchCode = body.matchCode;
+    } else if (!matchCode) {
+      matchCode = generateMatchCode(await activeMatchCodes(event.series_id, event.occurrence_date));
     }
+  } else {
+    droppedOffByProfileId = null;
+    droppedOffByName = null;
+    matchCode = null;
   }
 
   const record = await recordCheckIn({
@@ -134,6 +155,7 @@ export async function POST(request: NextRequest) {
     checkedInBy: actor.email,
     droppedOffByProfileId,
     droppedOffByName,
+    matchCode,
     method: body.backfill ? "backfill" : "live",
     isGuest,
   });

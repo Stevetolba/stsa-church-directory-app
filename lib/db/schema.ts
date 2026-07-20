@@ -54,6 +54,12 @@ export const checkIns = pgTable(
     // to pick from.
     droppedOffByProfileId: text("dropped_off_by_profile_id"),
     droppedOffByName: text("dropped_off_by_name"),
+    // Short code printed on the child's label and a matching tag for the
+    // adult who dropped them off, so pickup can be verified at a glance.
+    // Shared across siblings checked in in the same batch. Null for an
+    // adult/guest check-in or an "everyone"-type session (kids stay with
+    // their parents there, same rule as droppedOffBy*).
+    matchCode: text("match_code"),
     checkedOutAt: timestamp("checked_out_at", { withTimezone: true }),
     checkedOutBy: text("checked_out_by"),
     method: text("method").notNull().default("live"), // 'live' | 'backfill' | 'kiosk'

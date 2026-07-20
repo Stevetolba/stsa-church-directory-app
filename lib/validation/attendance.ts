@@ -18,6 +18,10 @@ export const checkInSchema = z.object({
   // when the checked-in profile actually is a child — a client can't use this
   // to tag an adult's own check-in.
   dropOffProfileId: z.string().trim().min(1).optional(),
+  // Client-generated pickup code shared by siblings checked in in the same
+  // batch (see components/labels). Re-validated server-side; an invalid or
+  // missing value falls back to a freshly generated one.
+  matchCode: z.string().trim().regex(/^\d{4}$/).optional(),
   // Staff/admin only — records after the fact and bypasses the check-in window.
   backfill: z.boolean().optional(),
 }).refine((d) => d.isGuest ? !!d.guestName : !!d.profileId, {

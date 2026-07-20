@@ -24,6 +24,9 @@ export interface CheckInArgs {
   // For a child, the adult household member who dropped them off. Ignored by
   // the server for a non-child check-in.
   dropOffProfileId?: string;
+  // Client-generated pickup match code (see components/labels). Ignored by
+  // the server for a non-child check-in, same as dropOffProfileId.
+  matchCode?: string;
   backfill?: boolean;
 }
 
