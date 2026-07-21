@@ -148,6 +148,10 @@ const SEED_PROFILES: Profile[] = [
     // (ADR-0010) — lets the volunteer sign-in path be exercised in mock mode.
     // Field label matches this project's configured
     // SUBSPLASH_ACCESS_FIELD_NAME (.env.local), not the code's fallback default.
+    // Set directly (mirroring how `campus` above is set) since mock profiles
+    // are read as plain Profile objects, not derived from custom_fields the
+    // way mapProfile does for real Subsplash data.
+    directory_access: true,
     custom_fields: [
       { id: "cf-campus", label: "Campus", value: "Arlington" },
       { id: "cf-access", label: "DirectoryAccess", value: "Yes" },
@@ -239,6 +243,7 @@ const SEED_PROFILES: Profile[] = [
     // Workspace domain but is an approved volunteer. Field label matches
     // this project's configured SUBSPLASH_ACCESS_FIELD_NAME (.env.local),
     // not necessarily the code's fallback default.
+    directory_access: true,
     custom_fields: [
       { id: "cf-campus", label: "Campus", value: "Arlington" },
       { id: "cf-directory-access", label: "DirectoryAccess", value: "Yes" },

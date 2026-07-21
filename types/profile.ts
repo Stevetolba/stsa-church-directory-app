@@ -43,6 +43,11 @@ export interface Profile {
   graduation_year?: number;
   status: MemberStatus;
   campus?: Campus;
+  // Whether this person's Subsplash profile has the DirectoryAccess custom
+  // field set to an affirmative value — grants a personal-email volunteer
+  // read-only sign-in (ADR-0010). Admin-editable from the person's edit
+  // page, same as campus.
+  directory_access?: boolean;
   // A profile can have its own linked address in Subsplash, independent of
   // the household's — most people don't have one set (the household address
   // is the norm), so display code should fall back to the household's.

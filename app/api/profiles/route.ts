@@ -16,7 +16,7 @@ const VALID_SORT_BY: NonNullable<SearchProfilesParams["sortBy"]>[] = [
 // (ADR-0005). Volunteers are scoped to children only (ADR-0011), so they get
 // 403 here and use /api/children instead.
 export async function GET(request: NextRequest) {
-  const forbidden = await requireStaffOrAdmin();
+  const forbidden = await requireStaffOrAdmin("profiles");
   if (forbidden) return forbidden;
 
   const { searchParams } = new URL(request.url);

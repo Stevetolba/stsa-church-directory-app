@@ -45,6 +45,7 @@ export function EditProfileForm({
       email: profile.email,
       phone_number: profile.phone_number ?? "",
       campus: profile.campus ?? "Arlington",
+      directory_access: profile.directory_access ?? false,
       date_of_birth: profile.date_of_birth ?? "",
       allergy_notes: profile.allergy_notes ?? "",
       care_notes: profile.care_notes ?? "",
@@ -57,13 +58,16 @@ export function EditProfileForm({
 
   async function onSubmit(values: EditFormValues) {
     setSubmitError(null);
-    const { campus, ...restValues } = values;
-    // Campus is a controlled <select> with a default, so it's always present
-    // in `values` even when unchanged — only include it in the PATCH if it
-    // actually changed, so saving name/email/phone doesn't trigger a
-    // needless custom-field write.
-    const profileValues =
-      campus !== (profile.campus ?? "Arlington") ? { ...restValues, campus } : restValues;
+    const { campus, directory_access, ...restValues } = values;
+    // Campus and Directory Access both default to a value even when
+    // unchanged (a controlled <select>/checkbox always reports one) — only
+    // include each in the PATCH if it actually changed, so saving name/
+    // email/phone doesn't trigger a needless custom-field write.
+    const profileValues = {
+      ...restValues,
+      ...(campus !== (profile.campus ?? "Arlington") ? { campus } : {}),
+      ...(directory_access !== (profile.directory_access ?? false) ? { directory_access } : {}),
+    };
 
     const profileRes = await fetch(`/api/profiles/${profile.id}`, {
       method: "PATCH",
@@ -131,6 +135,25 @@ export function EditProfileForm({
             {...register("date_of_birth")}
             className={inputClass(!!errors.date_of_birth)}
           />
+        </Field>
+        <Field
+          label="Directory Access"
+          htmlFor="directory_access"
+          error={errors.directory_access?.message}
+          className="sm:col-span-2"
+        >
+          <label
+            htmlFor="directory_access"
+            className="flex cursor-pointer items-center gap-2 text-[13.5px] text-brand-navy"
+          >
+            <input
+              id="directory_access"
+              type="checkbox"
+              {...register("directory_access")}
+              className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+            />
+            Grant read-only volunteer sign-in access
+          </label>
         </Field>
       </div>
 

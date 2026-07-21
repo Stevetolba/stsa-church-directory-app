@@ -7,7 +7,7 @@ import type { Campus } from "@/types/profile";
 // (ADR-0005). Volunteers are scoped to children only (ADR-0011), so they're
 // blocked here.
 export async function GET(request: NextRequest) {
-  const forbidden = await requireStaffOrAdmin();
+  const forbidden = await requireStaffOrAdmin("households");
   if (forbidden) return forbidden;
 
   const { searchParams } = new URL(request.url);

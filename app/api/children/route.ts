@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
+import { recordAccessEvent } from "@/lib/accessLog";
 import {
   attachParentContacts,
   searchChildren,
@@ -27,6 +28,15 @@ export async function GET(request: NextRequest) {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // ADR-0016: this is the one directory-read endpoint reachable by
+  // volunteers, so it's logged directly rather than via requireStaffOrAdmin
+  // (which 403s a volunteer before it would get the chance to log).
+  await recordAccessEvent({
+    email: session.user.email ?? "unknown",
+    role: session.user.role,
+    eventType: "directory_read",
+    resource: "children",
+  });
 
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search") ?? undefined;

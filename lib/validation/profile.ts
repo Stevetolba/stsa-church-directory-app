@@ -18,6 +18,9 @@ export const editProfileSchema = z.object({
   // actually changed (real-mode campus updates aren't implemented yet —
   // see updateProfile), so omitting it must still validate.
   campus: z.enum(["Arlington", "Leesburg"]).optional(),
+  // Grants/revokes volunteer read-only sign-in access (ADR-0010) — see
+  // updateProfile's DirectoryAccess custom-field write in lib/subsplash.ts.
+  directory_access: z.boolean().optional(),
   date_of_birth: z
     .string()
     .trim()

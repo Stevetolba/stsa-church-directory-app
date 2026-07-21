@@ -6,11 +6,14 @@ import useSWR from "swr";
 import { ArrowLeft, BarChart3, Download, Mail, UserX } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { EmailAbsenteesDialog } from "@/components/EmailAbsenteesDialog";
+import { FilterPill } from "@/components/FilterPill";
+import { AddFilterMenu } from "@/components/AddFilterMenu";
 import { avatarTintForId, initialsOf } from "@/lib/avatar";
 import { formatDate } from "@/lib/utils";
 import { timeLabelInTz } from "@/lib/eventTime";
 import { eventAutoSessionType } from "@/lib/sessionMapping";
 import { campusGroupFor, type SeriesOccurrence } from "@/lib/events";
+import { GRADE_LEVELS } from "@/lib/grades";
 import {
   OCCURRENCE_REPORT_COLUMNS,
   checkInToExportRow,
@@ -22,12 +25,243 @@ import {
 import type { AppEvent } from "@/types/event";
 import type { AttendanceSummary, CheckInRecord } from "@/types/attendance";
 import type { SeriesFrequencyResult } from "@/lib/attendance";
-import type { Campus, Profile } from "@/types/profile";
+import type { Campus, MemberStatus, Profile } from "@/types/profile";
 
 async function fetcher(url: string) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Request failed: ${res.status}`);
   return res.json();
+}
+
+// --- Report filters (Campus/Status/Grade) shared by all three tabs ---
+// Same FilterPill/AddFilterMenu "dynamic filter" pattern as the People/
+// Children pages (PeoplePageClient), but kept as per-tab local state rather
+// than URL params — each tab already manages its own local state (date,
+// month/year range, lastN, etc.), not a shared URL-driven view.
+
+const STATUS_OPTIONS: MemberStatus[] = [
+  "Member",
+  "Regular Attendee",
+  "Visitor",
+  "Newcomer",
+  "Former Attender",
+];
+
+const CAMPUS_OPTIONS: Campus[] = ["Arlington", "Leesburg"];
+
+type ReportFilterKey = "campus" | "status" | "grade";
+const ALL_REPORT_FILTER_KEYS: ReportFilterKey[] = ["campus", "status", "grade"];
+const REPORT_FILTER_LABELS: Record<ReportFilterKey, string> = {
+  campus: "Campus",
+  status: "Status",
+  grade: "Grade",
+};
+
+interface ReportFilters {
+  campus: Campus[];
+  status: MemberStatus[];
+  gradeFrom?: number;
+  gradeTo?: number;
+}
+
+const EMPTY_REPORT_FILTERS: ReportFilters = { campus: [], status: [] };
+
+function reportFiltersToParams(filters: ReportFilters): URLSearchParams {
+  const params = new URLSearchParams();
+  filters.campus.forEach((c) => params.append("campus", c));
+  filters.status.forEach((s) => params.append("status", s));
+  if (filters.gradeFrom !== undefined) params.set("gradeFrom", String(filters.gradeFrom));
+  if (filters.gradeTo !== undefined) params.set("gradeTo", String(filters.gradeTo));
+  return params;
+}
+
+function summarizeCampus(campus: Campus[]): string {
+  if (campus.length === 0) return "Campus";
+  return `Campus: ${campus.join(", ")}`;
+}
+
+function summarizeStatus(status: MemberStatus[]): string {
+  if (status.length === 0) return "Status";
+  if (status.length > 2) return `Status: ${status.length} selected`;
+  return `Status: ${status.join(", ")}`;
+}
+
+function summarizeGrade(gradeFrom?: number, gradeTo?: number): string {
+  if (gradeFrom === undefined && gradeTo === undefined) return "Grade";
+  const from = GRADE_LEVELS.find((g) => g.value === gradeFrom)?.label;
+  const to = GRADE_LEVELS.find((g) => g.value === gradeTo)?.label;
+  if (from && to) return `Grade: ${from} – ${to}`;
+  if (from) return `Grade: ${from}+`;
+  if (to) return `Grade: up to ${to}`;
+  return "Grade";
+}
+
+// Renders the active filter pills + "+ Filter" menu for one tab. The
+// filter *values* are lifted to the caller (each tab needs them in its SWR
+// query key); this component only owns the "which pill is open / manually
+// added but still empty" UI state, same split PeoplePageClient uses.
+function ReportFilterBar({
+  filters,
+  onChange,
+}: {
+  filters: ReportFilters;
+  onChange: (next: ReportFilters) => void;
+}) {
+  const [manuallyAdded, setManuallyAdded] = useState<Set<ReportFilterKey>>(new Set());
+  const [openFilter, setOpenFilter] = useState<ReportFilterKey | null>(null);
+
+  const activeFilters = new Set<ReportFilterKey>(manuallyAdded);
+  if (filters.campus.length > 0) activeFilters.add("campus");
+  if (filters.status.length > 0) activeFilters.add("status");
+  if (filters.gradeFrom !== undefined || filters.gradeTo !== undefined) activeFilters.add("grade");
+
+  function toggleListValue(key: "campus" | "status", value: string) {
+    const current = filters[key] as string[];
+    const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
+    onChange({ ...filters, [key]: next });
+  }
+
+  function handleAddFilter(key: ReportFilterKey) {
+    setManuallyAdded((prev) => new Set(prev).add(key));
+    setOpenFilter(key);
+  }
+
+  function handleRemoveFilter(key: ReportFilterKey) {
+    setManuallyAdded((prev) => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    if (openFilter === key) setOpenFilter(null);
+    if (key === "campus") onChange({ ...filters, campus: [] });
+    else if (key === "status") onChange({ ...filters, status: [] });
+    else onChange({ ...filters, gradeFrom: undefined, gradeTo: undefined });
+  }
+
+  return (
+    <>
+      {activeFilters.has("campus") && (
+        <FilterPill
+          label={summarizeCampus(filters.campus)}
+          active={filters.campus.length > 0}
+          open={openFilter === "campus"}
+          onOpenChange={(open) => setOpenFilter(open ? "campus" : null)}
+          onRemove={() => handleRemoveFilter("campus")}
+        >
+          <div className="flex flex-col gap-1.5">
+            {CAMPUS_OPTIONS.map((option) => (
+              <label key={option} className="flex cursor-pointer items-center gap-2 text-[13.5px] text-brand-navy">
+                <input
+                  type="checkbox"
+                  checked={filters.campus.includes(option)}
+                  onChange={() => toggleListValue("campus", option)}
+                  className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                />
+                {option}
+              </label>
+            ))}
+          </div>
+        </FilterPill>
+      )}
+
+      {activeFilters.has("status") && (
+        <FilterPill
+          label={summarizeStatus(filters.status)}
+          active={filters.status.length > 0}
+          open={openFilter === "status"}
+          onOpenChange={(open) => setOpenFilter(open ? "status" : null)}
+          onRemove={() => handleRemoveFilter("status")}
+        >
+          <div className="flex flex-col gap-1.5">
+            {STATUS_OPTIONS.map((option) => (
+              <label key={option} className="flex cursor-pointer items-center gap-2 text-[13.5px] text-brand-navy">
+                <input
+                  type="checkbox"
+                  checked={filters.status.includes(option)}
+                  onChange={() => toggleListValue("status", option)}
+                  className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                />
+                {option}
+              </label>
+            ))}
+          </div>
+        </FilterPill>
+      )}
+
+      {activeFilters.has("grade") && (
+        <FilterPill
+          label={summarizeGrade(filters.gradeFrom, filters.gradeTo)}
+          active={filters.gradeFrom !== undefined || filters.gradeTo !== undefined}
+          open={openFilter === "grade"}
+          onOpenChange={(open) => setOpenFilter(open ? "grade" : null)}
+          onRemove={() => handleRemoveFilter("grade")}
+        >
+          <div className="flex flex-col gap-3">
+            <div>
+              <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                Min
+              </label>
+              <select
+                value={filters.gradeFrom ?? ""}
+                onChange={(e) =>
+                  onChange({ ...filters, gradeFrom: e.target.value ? Number(e.target.value) : undefined })
+                }
+                className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+              >
+                <option value="">None</option>
+                {GRADE_LEVELS.map((grade) => (
+                  <option key={grade.value} value={grade.value}>
+                    {grade.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                Max
+              </label>
+              <select
+                value={filters.gradeTo ?? ""}
+                onChange={(e) =>
+                  onChange({ ...filters, gradeTo: e.target.value ? Number(e.target.value) : undefined })
+                }
+                className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+              >
+                <option value="">None</option>
+                {GRADE_LEVELS.map((grade) => (
+                  <option key={grade.value} value={grade.value}>
+                    {grade.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </FilterPill>
+      )}
+
+      <AddFilterMenu
+        options={ALL_REPORT_FILTER_KEYS.filter((key) => !activeFilters.has(key)).map((key) => ({
+          key,
+          label: REPORT_FILTER_LABELS[key],
+        }))}
+        onSelect={(key) => handleAddFilter(key as ReportFilterKey)}
+      />
+
+      {activeFilters.size > 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            setManuallyAdded(new Set());
+            setOpenFilter(null);
+            onChange(EMPTY_REPORT_FILTERS);
+          }}
+          className="whitespace-nowrap text-[13px] font-semibold text-[#5B7185] underline-offset-2 hover:underline"
+        >
+          Clear all
+        </button>
+      )}
+    </>
+  );
 }
 
 type Tab = "occurrence" | "series" | "absentees";
@@ -150,9 +384,13 @@ function OccurrenceTab({ event, occurrences }: { event: AppEvent; occurrences: S
       occurrences[0]?.occurrence_date ??
       event.occurrence_date
   );
+  const [filters, setFilters] = useState<ReportFilters>(EMPTY_REPORT_FILTERS);
+  const filterQuery = reportFiltersToParams(filters).toString();
 
   const { data, isLoading } = useSWR<{ records: CheckInRecord[]; summary: AttendanceSummary }>(
-    `/api/attendance/report?seriesId=${encodeURIComponent(event.series_id)}&occurrenceDate=${occurrenceDate}`,
+    `/api/attendance/report?seriesId=${encodeURIComponent(event.series_id)}&occurrenceDate=${occurrenceDate}${
+      filterQuery ? `&${filterQuery}` : ""
+    }`,
     fetcher
   );
   const records = data?.records ?? [];
@@ -180,6 +418,7 @@ function OccurrenceTab({ event, occurrences }: { event: AppEvent; occurrences: S
             </option>
           ))}
         </select>
+        <ReportFilterBar filters={filters} onChange={setFilters} />
         <ExportButton onClick={handleExport} disabled={records.length === 0} />
       </div>
 
@@ -252,10 +491,14 @@ function SeriesTab({ event }: { event: AppEvent }) {
   const [month, setMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
   const [year, setYear] = useState(String(now.getFullYear()));
   const [childFilter, setChildFilter] = useState<ChildFilter>("all");
+  const [filters, setFilters] = useState<ReportFilters>(EMPTY_REPORT_FILTERS);
+  const filterQuery = reportFiltersToParams(filters).toString();
 
   const { from, to } = rangeMode === "month" ? monthRange(month) : yearRange(year);
   const { data, isLoading } = useSWR<SeriesFrequencyResult>(
-    `/api/attendance/report?seriesId=${encodeURIComponent(event.series_id)}&from=${from}&to=${to}`,
+    `/api/attendance/report?seriesId=${encodeURIComponent(event.series_id)}&from=${from}&to=${to}${
+      filterQuery ? `&${filterQuery}` : ""
+    }`,
     fetcher
   );
   const occurrenceDates = data?.occurrenceDates ?? [];
@@ -306,6 +549,7 @@ function SeriesTab({ event }: { event: AppEvent }) {
           <option value="children">Children only</option>
           <option value="adults">Adults only</option>
         </select>
+        <ReportFilterBar filters={filters} onChange={setFilters} />
         <ExportButton onClick={handleExport} disabled={people.length === 0} />
       </div>
 
@@ -377,15 +621,24 @@ function AbsenteesTab({
   const [childrenOnly, setChildrenOnly] = useState(autoType === "child");
   const [emailOpen, setEmailOpen] = useState(false);
 
+  // Campus starts pre-set from the event title's guess (unchanged default
+  // behavior), but is now a regular, editable filter pill like Status/Grade
+  // rather than a hardcoded, un-removable value.
   const campusGuess = campusGroupFor(event.title);
-  const campus: Campus[] = campusGuess === "Arlington" || campusGuess === "Leesburg" ? [campusGuess] : [];
+  const [filters, setFilters] = useState<ReportFilters>({
+    ...EMPTY_REPORT_FILTERS,
+    campus: campusGuess === "Arlington" || campusGuess === "Leesburg" ? [campusGuess] : [],
+  });
 
   const params = new URLSearchParams({
     seriesId: event.series_id,
     lastN: String(lastN),
     childrenOnly: String(childrenOnly),
   });
-  campus.forEach((c) => params.append("campus", c));
+  filters.campus.forEach((c) => params.append("campus", c));
+  filters.status.forEach((s) => params.append("status", s));
+  if (filters.gradeFrom !== undefined) params.set("gradeFrom", String(filters.gradeFrom));
+  if (filters.gradeTo !== undefined) params.set("gradeTo", String(filters.gradeTo));
 
   const { data, isLoading } = useSWR<{ occurrenceDates: string[]; absentees: Profile[] }>(
     `/api/attendance/absentees?${params.toString()}`,
@@ -433,6 +686,7 @@ function AbsenteesTab({
           />
           Children only
         </label>
+        <ReportFilterBar filters={filters} onChange={setFilters} />
         <ExportButton onClick={handleExport} disabled={absentees.length === 0} />
         <button
           type="button"
@@ -485,7 +739,15 @@ function AbsenteesTab({
         user={user}
         fromAddress={fromAddress}
         seriesTitle={event.title}
-        filters={{ seriesId: event.series_id, lastN, childrenOnly, campus }}
+        filters={{
+          seriesId: event.series_id,
+          lastN,
+          childrenOnly,
+          campus: filters.campus,
+          status: filters.status,
+          gradeFrom: filters.gradeFrom,
+          gradeTo: filters.gradeTo,
+        }}
         absenteeCount={absentees.length}
       />
     </div>
