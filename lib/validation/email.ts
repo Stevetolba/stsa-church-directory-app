@@ -66,3 +66,22 @@ export const emailPeopleSchema = z
   .refine(attachmentsWithinLimit, ATTACHMENTS_REFINE_OPTIONS);
 
 export type EmailPeopleValues = z.infer<typeof emailPeopleSchema>;
+
+// Mirrors /api/attendance/absentees's query params (ADR-0015 Phase 5) — same
+// server-recomputes-recipients principle: seriesId+lastN+filters are
+// resent, and the server recomputes the absentee set and its resolved
+// parent/self emails itself rather than trusting a client-supplied list.
+export const emailAbsenteesSchema = z
+  .object({
+    ...baseEmailFields,
+    seriesId: z.string().trim().min(1, "seriesId is required"),
+    lastN: z.number().int().positive().max(52).optional(),
+    childrenOnly: z.boolean().optional(),
+    search: z.string().trim().max(200, "Too long").optional().or(z.literal("")),
+    campus: z.array(z.enum(["Arlington", "Leesburg"])).optional(),
+    gradeFrom: z.number().int().optional(),
+    gradeTo: z.number().int().optional(),
+  })
+  .refine(attachmentsWithinLimit, ATTACHMENTS_REFINE_OPTIONS);
+
+export type EmailAbsenteesValues = z.infer<typeof emailAbsenteesSchema>;

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireStaffOrAdmin } from "@/lib/rbac";
-import { findAbsentees } from "@/lib/attendance";
+import { findAbsentees, resolveAbsenteeEmails } from "@/lib/attendance";
 import { listOccurrences } from "@/lib/events";
 import { occurrenceDateInTz } from "@/lib/eventTime";
 import type { Campus } from "@/types/profile";
@@ -51,5 +51,15 @@ export async function GET(request: NextRequest) {
     gradeFrom,
     gradeTo,
   });
+
+  // Only resolved on request (ADR-0015 Phase 5) — the report page's
+  // Absentees tab doesn't need it and shouldn't pay for the extra
+  // parent-contact lookup on every load; the email compose dialog asks for
+  // it explicitly so its recipient preview matches exactly what
+  // /api/attendance/email will actually send.
+  if (searchParams.get("includeParents") === "true") {
+    const recipientEmails = Array.from(await resolveAbsenteeEmails(absentees)).sort((a, b) => a.localeCompare(b));
+    return NextResponse.json({ occurrenceDates, absentees, recipientEmails });
+  }
   return NextResponse.json({ occurrenceDates, absentees });
 }

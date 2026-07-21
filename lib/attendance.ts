@@ -8,7 +8,7 @@ import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { getDb, isDbConfigured } from "./db";
 import { checkIns, type CheckInRow } from "./db/schema";
 import { mockCheckIns } from "./mockData";
-import { searchChildren, searchProfiles } from "./subsplash";
+import { attachParentContacts, searchChildren, searchProfiles } from "./subsplash";
 import type { AttendanceSummary, CheckInMethod, CheckInRecord } from "@/types/attendance";
 import type { Campus, Profile } from "@/types/profile";
 
@@ -472,4 +472,34 @@ export async function findAbsentees(params: FindAbsenteesParams): Promise<Profil
   const result =
     params.childrenOnly === false ? await searchProfiles(rosterParams) : await searchChildren(rosterParams);
   return computeAbsentees(result.profiles, attended);
+}
+
+// Follow-up email recipients for a list of absentees (ADR-0015 Phase 5): a
+// child's own email is never used (children generally don't have one, and
+// the point is reaching a parent) — resolved to their household's
+// parent/guardian contacts via attachParentContacts, same as the existing
+// "Email Parents" flow on the Children page. A non-child absentee (an
+// "everyone"-type series like Liturgy can have adult absentees) emails
+// directly. Shared by /api/attendance/email (the actual send, which always
+// recomputes this server-side) and /api/attendance/absentees's
+// includeParents preview mode, so what a sender previews matches exactly
+// what goes out.
+export async function resolveAbsenteeEmails(absentees: Profile[]): Promise<Set<string>> {
+  const emails = new Set<string>();
+  const children: Profile[] = [];
+  for (const p of absentees) {
+    if (p.household_role === "child") {
+      children.push(p);
+    } else if (p.email) {
+      emails.add(p.email);
+    }
+  }
+  if (children.length > 0) {
+    const withParents = await attachParentContacts(children);
+    for (const c of withParents) {
+      if (c.parent1?.email) emails.add(c.parent1.email);
+      if (c.parent2?.email) emails.add(c.parent2.email);
+    }
+  }
+  return emails;
 }
