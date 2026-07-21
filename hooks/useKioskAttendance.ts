@@ -27,6 +27,21 @@ export interface KioskCheckInArgs {
   matchCode?: string;
 }
 
+// Resolved server-side at check-in time from the profile POST /api/kiosk/
+// attendance already fetched — never part of the roster search response
+// (ADR-0015) — so the printed label can carry allergy/care notes and the
+// drop-off adult's phone without a device's roster ever exposing them.
+export interface KioskCheckInLabel {
+  allergyNotes: string | null;
+  careNotes: string | null;
+  dropOffPhone: string | null;
+}
+
+export interface KioskCheckInResult {
+  record: CheckInRecord;
+  label?: KioskCheckInLabel;
+}
+
 // The kiosk surface's live attendance state: hits /api/kiosk/attendance,
 // which accepts a device cookie as well as a signed-in session and — unlike
 // useAttendance — never offers backfill (POST) or undo (no DELETE at all).
@@ -60,7 +75,8 @@ export function useKioskAttendance(eventId: string | null) {
     error,
     isLoading,
     mutate,
-    checkIn: (args: KioskCheckInArgs) => mutateAndRevalidate("POST", { eventId, ...args }),
+    checkIn: (args: KioskCheckInArgs): Promise<KioskCheckInResult> =>
+      mutateAndRevalidate("POST", { eventId, ...args }),
     checkOut: (profileId: string) => mutateAndRevalidate("PATCH", { eventId, profileId }),
   };
 }
