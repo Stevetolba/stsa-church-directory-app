@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import useSWR from "swr";
 import { toast } from "sonner";
-import { Check, LogOut, Settings, ShieldAlert, Sparkles, X } from "lucide-react";
+import { Calendar, Check, LogOut, Settings, ShieldAlert, Sparkles, X } from "lucide-react";
 import { SearchBar } from "@/components/SearchBar";
 import { EmptyState } from "@/components/EmptyState";
 import { useKioskCheckInRoster } from "@/hooks/useKioskCheckInRoster";
@@ -33,7 +34,7 @@ const RESET_AFTER_MS = 6000;
 // grouping/session-defaulting logic is still shared with CheckInPageClient
 // via useRosterGrouping. The batch-submit and success/reset flow is kept
 // separate since the two surfaces behave differently afterward.
-export function KioskCheckInClient({ event }: { event: AppEvent }) {
+export function KioskCheckInClient({ event, isDevice = false }: { event: AppEvent; isDevice?: boolean }) {
   const router = useRouter();
   const [mode, setMode] = useState<"checkin" | "checkout">("checkin");
   const [idle, setIdle] = useState(true);
@@ -68,6 +69,15 @@ export function KioskCheckInClient({ event }: { event: AppEvent }) {
   const state = windowState(event, now);
   const { opensAt } = checkInWindow(event);
   const canCheckIn = state === "open";
+
+  // Only a device actor sees this — a signed-in operator already has full
+  // access to /events (which "Exit kiosk" already sends them to) to pick a
+  // different event's kiosk. Fetched regardless of isDevice (cheap, and
+  // /api/kiosk/events works for either actor) but only rendered for one.
+  const { data: todaysEventsData } = useSWR<{ events: AppEvent[] }>("/api/kiosk/events", (url: string) =>
+    fetch(url).then((res) => (res.ok ? res.json() : { events: [] }))
+  );
+  const hasOtherEventsToday = (todaysEventsData?.events.length ?? 0) > 1;
 
   const {
     isLoading,
@@ -260,6 +270,16 @@ export function KioskCheckInClient({ event }: { event: AppEvent }) {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {isDevice && hasOtherEventsToday && (
+            <button
+              type="button"
+              onClick={() => router.push("/kiosk")}
+              className="flex items-center gap-1.5 rounded-[10px] border border-[#E5DCC8] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#8A94A0] transition-colors hover:border-brand-navy/30"
+            >
+              <Calendar className="h-3.5 w-3.5" />
+              Switch event
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
@@ -415,7 +435,9 @@ export function KioskCheckInClient({ event }: { event: AppEvent }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-[16px] bg-white p-5 shadow-xl">
             <h2 className="font-heading text-[16px] font-semibold text-brand-navy">Exit kiosk mode?</h2>
-            <p className="mt-1 text-[13.5px] text-[#5B7185]">You&apos;ll return to the events list.</p>
+            <p className="mt-1 text-[13.5px] text-[#5B7185]">
+              {isDevice ? "You'll return to today's events." : "You'll return to the events list."}
+            </p>
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
@@ -426,7 +448,12 @@ export function KioskCheckInClient({ event }: { event: AppEvent }) {
               </button>
               <button
                 type="button"
-                onClick={() => router.push("/events")}
+                // A device has no dashboard/session to return to — /kiosk
+                // re-resolves it and shows today's event picker (or the lone
+                // event) again, which also doubles as "switch to a different
+                // event today" without a separate affordance. A signed-in
+                // operator goes back to the full events list as before.
+                onClick={() => router.push(isDevice ? "/kiosk" : "/events")}
                 className="rounded-[10px] bg-brand-navy px-4 py-2 text-[13.5px] font-semibold text-brand-cream"
               >
                 Exit

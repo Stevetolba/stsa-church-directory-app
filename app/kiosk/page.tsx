@@ -23,11 +23,13 @@ export default async function KioskPage({
   // so this page can send them here instead of /login).
   if (!actor) redirect("/kiosk/setup");
 
+  const isDevice = actor.type === "device";
+
   const eventId = searchParams.eventId;
   if (eventId) {
     const event = await getEvent(eventId);
     if (!event) notFound();
-    return <KioskCheckInClient event={event} />;
+    return <KioskCheckInClient event={event} isDevice={isDevice} />;
   }
 
   if (actor.type === "user") {

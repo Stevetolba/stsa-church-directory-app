@@ -1,4 +1,6 @@
 import Image from "next/image";
+import Link from "next/link";
+import { Tablet } from "lucide-react";
 import { signInWithGoogle } from "./actions";
 
 // NextAuth appends ?error=<code> to pages.signIn on failure. AccessDenied
@@ -54,6 +56,24 @@ export default function LoginPage({
           <br />
           Volunteers — sign in with your personal email address.
         </p>
+
+        <div className="mt-6 flex items-center gap-3 text-xs text-muted-foreground">
+          <div className="h-px flex-1 bg-border" />
+          or
+          <div className="h-px flex-1 bg-border" />
+        </div>
+
+        {/* Setting up a self-service check-in tablet doesn't need a sign-in
+            at all (ADR-0015 Phase 3) — /kiosk resolves an already-claimed
+            device straight to its event(s), or sends a fresh device to
+            /kiosk/setup for its one-time code. */}
+        <Link
+          href="/kiosk"
+          className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-white px-4 py-3 text-sm font-semibold text-brand-navy shadow-sm transition hover:bg-brand-cream"
+        >
+          <Tablet className="h-4 w-4" />
+          Set up or open kiosk mode
+        </Link>
       </div>
     </main>
   );
