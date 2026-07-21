@@ -173,19 +173,27 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
         const group = groupByProfileId.get(id);
         const tracksPickup = profile.household_role === "child" && !!group;
         const dropOffProfileId = tracksPickup ? dropOffForHousehold(group) : undefined;
+        const sessionId = sessionForProfile(profile);
         let matchCode: string | undefined;
+        let contactName: string | undefined;
         if (tracksPickup) {
           matchCode = matchCodeByHousehold.get(group.householdId) ?? generateMatchCode();
           matchCodeByHousehold.set(group.householdId, matchCode);
           const dropOffProfile = dropOffProfileId ? profileById.get(dropOffProfileId) : undefined;
-          const sessionId = sessionForProfile(profile);
           // A specific drop-off adult wins; with two+ adults and no explicit
           // pick, the label still names the household's adult(s) rather than
           // going blank — the printed slip is meant to be read at a glance,
           // not left without a parent name because no one tapped a dropdown.
-          const contactName = dropOffProfile
+          contactName = dropOffProfile
             ? `${dropOffProfile.first_name} ${dropOffProfile.last_name}`.trim()
             : group.adults.map((a) => `${a.first_name} ${a.last_name}`.trim()).join(" & ") || undefined;
+        }
+        const result = await checkIn({ profileId: id, sessionId, dropOffProfileId, matchCode });
+        // Allergy/care notes and the drop-off adult's phone come from the
+        // check-in response, resolved server-side at check-in time — not
+        // read off the roster search result, which a device actor's never
+        // carries them in (ADR-0015).
+        if (tracksPickup && matchCode) {
           labelDataById.set(id, {
             id,
             firstName: profile.first_name,
@@ -194,12 +202,11 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
             eventTitle: event.title,
             sessionName: event.sessions.find((s) => s.id === sessionId)?.name,
             contactName,
-            contactPhone: dropOffProfile?.phone_number,
-            allergyNotes: profile.allergy_notes,
-            careNotes: profile.care_notes,
+            contactPhone: result.label?.dropOffPhone,
+            allergyNotes: result.label?.allergyNotes,
+            careNotes: result.label?.careNotes,
           });
         }
-        await checkIn({ profileId: id, sessionId: sessionForProfile(profile), dropOffProfileId, matchCode });
         return id;
       })
     );

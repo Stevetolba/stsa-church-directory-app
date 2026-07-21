@@ -9,6 +9,6 @@ import type { AppEvent } from "@/types/event";
 // household grouping/session-defaulting shared with the staff check-in page.
 // ADR-0015 Phase 3.
 export function useKioskCheckInRoster({ event, search }: { event: AppEvent; search: string }) {
-  const { profiles, isLoading, hasFilter } = useKioskRoster({ search });
-  return useRosterGrouping({ profiles, isLoading, hasFilter, event });
+  const { profiles, isLoading, hasFilter, suggestedSessions } = useKioskRoster({ eventId: event.id, search });
+  return useRosterGrouping({ profiles, isLoading, hasFilter, event, suggestedSessionByProfileId: suggestedSessions });
 }

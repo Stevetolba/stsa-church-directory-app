@@ -87,6 +87,11 @@ export async function POST(request: NextRequest) {
   let displayName: string;
   let isChild = false;
   let sessionId = body.sessionId ?? null;
+  // Resolved here (the profile is already fetched for isChild/session
+  // defaulting) and returned only in this response, for the printed label —
+  // never bulk-exposed via the roster search (ADR-0015).
+  let childAllergyNotes: string | null = null;
+  let childCareNotes: string | null = null;
 
   if (isGuest) {
     profileId = `guest:${crypto.randomUUID()}`;
@@ -101,6 +106,8 @@ export async function POST(request: NextRequest) {
     displayName = `${profile.first_name} ${profile.last_name}`.trim();
     isChild = profile.household_role === "child";
     if (!sessionId) sessionId = defaultSessionForProfile(event.sessions, profile)?.id ?? null;
+    childAllergyNotes = profile.allergy_notes ?? null;
+    childCareNotes = profile.care_notes ?? null;
   }
 
   // Drop-off / pickup match code, same rule as /api/attendance: only for a
@@ -110,6 +117,7 @@ export async function POST(request: NextRequest) {
   let droppedOffByProfileId: string | null = existing?.droppedOffByProfileId ?? null;
   let droppedOffByName: string | null = existing?.droppedOffByName ?? null;
   let matchCode: string | null = existing?.matchCode ?? null;
+  let dropOffPhone: string | null = null;
   if (tracksPickup) {
     if (body.dropOffProfileId) {
       if (!(await mayAct(actor, body.dropOffProfileId, false))) {
@@ -119,6 +127,7 @@ export async function POST(request: NextRequest) {
       if (dropOffProfile) {
         droppedOffByProfileId = body.dropOffProfileId;
         droppedOffByName = `${dropOffProfile.first_name} ${dropOffProfile.last_name}`.trim();
+        dropOffPhone = dropOffProfile.phone_number ?? null;
       }
     }
     if (body.matchCode && isValidMatchCode(body.matchCode)) {
@@ -148,7 +157,10 @@ export async function POST(request: NextRequest) {
     method: "kiosk",
     isGuest,
   });
-  return NextResponse.json({ record }, { status: 201 });
+  const label = tracksPickup
+    ? { allergyNotes: childAllergyNotes, careNotes: childCareNotes, dropOffPhone }
+    : undefined;
+  return NextResponse.json({ record, label }, { status: 201 });
 }
 
 // PATCH /api/kiosk/attendance — check a person out (records departure).

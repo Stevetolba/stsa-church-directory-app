@@ -28,12 +28,20 @@ export function useRosterGrouping({
   hasFilter,
   event,
   manualChildrenOnly = false,
+  suggestedSessionByProfileId,
 }: {
   profiles: Profile[];
   isLoading: boolean;
   hasFilter: boolean;
   event: AppEvent;
   manualChildrenOnly?: boolean;
+  // Server-computed profile id -> session id (see useKioskRoster) — takes
+  // priority over defaultSessionForProfile's own client-side recompute so a
+  // device actor's DOB-stripped profiles still get correct age-based
+  // suggestions without DOB ever reaching the client (ADR-0015). Undefined
+  // for the plain (non-kiosk) roster, which always has full profile data
+  // and computes locally exactly as before.
+  suggestedSessionByProfileId?: Record<string, string>;
 }) {
   const [sessionByProfile, setSessionByProfile] = useState<Record<string, string>>({});
   const [dropOffByHousehold, setDropOffByHousehold] = useState<Record<string, string>>({});
@@ -108,6 +116,7 @@ export function useRosterGrouping({
 
   function sessionForProfile(profile: Profile): string | undefined {
     if (sessionByProfile[profile.id]) return sessionByProfile[profile.id];
+    if (suggestedSessionByProfileId?.[profile.id]) return suggestedSessionByProfileId[profile.id];
     return defaultSessionForProfile(event.sessions, profile)?.id;
   }
 
