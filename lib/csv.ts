@@ -1,5 +1,8 @@
 import type { Profile } from "@/types/profile";
 import type { ChildWithParents } from "@/lib/subsplash";
+import type { CheckInRecord } from "@/types/attendance";
+import type { SeriesFrequencyPerson } from "@/lib/attendance";
+import { timeLabelInTz } from "@/lib/eventTime";
 
 // Minimal CSV encoder — no dependency needed for the flat, string-only rows
 // this app exports. RFC 4180: quote a field if it contains a comma, quote,
@@ -86,4 +89,61 @@ export function childProfileToExportRow(child: ChildWithParents): Record<string,
     parent2_phone: child.parent2?.phone_number ?? "",
     parent2_email: child.parent2?.email ?? "",
   };
+}
+
+// Occurrence attendance report export (ADR-0015 Phase 4).
+export const OCCURRENCE_REPORT_COLUMNS: { key: string; label: string }[] = [
+  { key: "name", label: "Name" },
+  { key: "type", label: "Type" },
+  { key: "session", label: "Session" },
+  { key: "checked_in_at", label: "Checked In At" },
+  { key: "checked_in_by", label: "Checked In By" },
+  { key: "checked_out_at", label: "Checked Out At" },
+  { key: "checked_out_by", label: "Checked Out By" },
+];
+
+export function checkInToExportRow(record: CheckInRecord, timezone: string): Record<string, string> {
+  return {
+    name: record.displayName,
+    type: record.isGuest ? "Guest" : record.isChild ? "Child" : "Adult",
+    session: record.sessionName ?? "",
+    checked_in_at: timeLabelInTz(new Date(record.checkedInAt), timezone),
+    checked_in_by: record.checkedInBy,
+    checked_out_at: record.checkedOutAt ? timeLabelInTz(new Date(record.checkedOutAt), timezone) : "",
+    checked_out_by: record.checkedOutBy ?? "",
+  };
+}
+
+// Series frequency report export — one column per occurrence date (an "X"
+// marks attendance), plus summary columns. Columns are built per-call since
+// they depend on the report's date range, unlike the static sets above.
+export function seriesFrequencyColumns(occurrenceDates: string[]): { key: string; label: string }[] {
+  return [
+    { key: "name", label: "Name" },
+    { key: "type", label: "Type" },
+    { key: "attended", label: "Attended" },
+    { key: "total", label: "Total" },
+    { key: "percent", label: "Percent" },
+    { key: "last_attended", label: "Last Attended" },
+    ...occurrenceDates.map((d) => ({ key: `date_${d}`, label: d })),
+  ];
+}
+
+export function seriesFrequencyToExportRow(
+  person: SeriesFrequencyPerson,
+  occurrenceDates: string[]
+): Record<string, string> {
+  const row: Record<string, string> = {
+    name: person.displayName,
+    type: person.isChild ? "Child" : "Adult",
+    attended: String(person.attendedDates.length),
+    total: String(occurrenceDates.length),
+    percent: occurrenceDates.length
+      ? `${Math.round((person.attendedDates.length / occurrenceDates.length) * 100)}%`
+      : "",
+    last_attended: person.lastAttended ?? "",
+  };
+  const attended = new Set(person.attendedDates);
+  for (const d of occurrenceDates) row[`date_${d}`] = attended.has(d) ? "X" : "";
+  return row;
 }
