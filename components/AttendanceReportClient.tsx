@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { ArrowLeft, BarChart3, Download, UserX } from "lucide-react";
+import { ArrowLeft, BarChart3, Download, Mail, UserX } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { EmailAbsenteesDialog } from "@/components/EmailAbsenteesDialog";
 import { avatarTintForId, initialsOf } from "@/lib/avatar";
 import { formatDate } from "@/lib/utils";
 import { timeLabelInTz } from "@/lib/eventTime";
@@ -42,9 +43,13 @@ type Tab = "occurrence" | "series" | "absentees";
 export function AttendanceReportClient({
   event,
   occurrences,
+  user,
+  fromAddress,
 }: {
   event: AppEvent;
   occurrences: SeriesOccurrence[];
+  user: { name: string; email: string };
+  fromAddress: string;
 }) {
   const [tab, setTab] = useState<Tab>("occurrence");
 
@@ -77,7 +82,7 @@ export function AttendanceReportClient({
 
       {tab === "occurrence" && <OccurrenceTab event={event} occurrences={occurrences} />}
       {tab === "series" && <SeriesTab event={event} />}
-      {tab === "absentees" && <AbsenteesTab event={event} />}
+      {tab === "absentees" && <AbsenteesTab event={event} user={user} fromAddress={fromAddress} />}
     </div>
   );
 }
@@ -358,10 +363,19 @@ function SeriesTab({ event }: { event: AppEvent }) {
 
 // --- Absentees tab ---
 
-function AbsenteesTab({ event }: { event: AppEvent }) {
+function AbsenteesTab({
+  event,
+  user,
+  fromAddress,
+}: {
+  event: AppEvent;
+  user: { name: string; email: string };
+  fromAddress: string;
+}) {
   const autoType = eventAutoSessionType(event.sessions);
   const [lastN, setLastN] = useState(4);
   const [childrenOnly, setChildrenOnly] = useState(autoType === "child");
+  const [emailOpen, setEmailOpen] = useState(false);
 
   const campusGuess = campusGroupFor(event.title);
   const campus: Campus[] = campusGuess === "Arlington" || campusGuess === "Leesburg" ? [campusGuess] : [];
@@ -420,6 +434,15 @@ function AbsenteesTab({ event }: { event: AppEvent }) {
           Children only
         </label>
         <ExportButton onClick={handleExport} disabled={absentees.length === 0} />
+        <button
+          type="button"
+          onClick={() => setEmailOpen(true)}
+          disabled={absentees.length === 0}
+          className="flex items-center gap-1.5 rounded-[10px] bg-brand-navy px-3.5 py-2 text-[13px] font-semibold text-brand-cream transition-colors hover:bg-brand-navy/90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Mail className="h-3.5 w-3.5" />
+          Email absentees
+        </button>
       </div>
 
       {!isLoading && occurrenceDates.length > 0 && (
@@ -455,6 +478,16 @@ function AbsenteesTab({ event }: { event: AppEvent }) {
           ))}
         </div>
       )}
+
+      <EmailAbsenteesDialog
+        open={emailOpen}
+        onOpenChange={setEmailOpen}
+        user={user}
+        fromAddress={fromAddress}
+        seriesTitle={event.title}
+        filters={{ seriesId: event.series_id, lastN, childrenOnly, campus }}
+        absenteeCount={absentees.length}
+      />
     </div>
   );
 }
