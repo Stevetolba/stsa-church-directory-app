@@ -405,3 +405,65 @@ export async function listOccurrences(
   occurrences.sort((a, b) => b.occurrence_date.localeCompare(a.occurrence_date));
   return opts.limit ? occurrences.slice(0, opts.limit) : occurrences;
 }
+
+// Guesses a series' campus from its title — a light heuristic, not a
+// structured field (Subsplash's Event has no campus of its own, only
+// Profile does). Shared by the /reports landing page (grouping) and the
+// per-series report's Absentees tab (scoping the roster to the matching
+// Profile.campus so a single-campus series doesn't pull in the other
+// campus's households). Confirmed against the live org's real title
+// conventions rather than assuming one delimiter: "Sunday School
+// [Arlington]", "Men's Ministry Meeting - Leesburg", "Leesburg AFC 203" all
+// just contain the campus name somewhere, with no consistent
+// prefix/suffix/bracket pattern — so this matches on presence, not position.
+export function campusGroupFor(title: string): string {
+  if (/arlington/i.test(title)) return "Arlington";
+  if (/leesburg/i.test(title)) return "Leesburg";
+  return "General";
+}
+
+export interface SeriesSummary {
+  seriesId: string;
+  title: string;
+  sessions: EventSession[];
+  // An occurrence to enter the report page through (the nearest one at or
+  // before today, falling back to the nearest future one for a series with
+  // no past occurrences yet) — /reports links each series card straight to
+  // its report rather than making the user pick an event first.
+  representativeEventId: string;
+}
+
+// Every distinct check-in-enabled *repeating* series, one representative
+// event each — the /reports landing page's list. One-off events are
+// deliberately excluded: "monthly/yearly attendance" only means something
+// for something that recurs (Liturgy, Sunday School), and a real org can
+// have hundreds of one-off check-in-enabled events (retreats, socials,
+// one-time classes) that would otherwise swamp the list. A one-off event's
+// series_id always equals its own id (mapEvent falls back to raw.id when
+// there's no repeating-event embed); anything that actually belongs to a
+// series has a distinct series_id — a more robust signal than trusting
+// Subsplash's own "source" field to be "repeating" on every materialized
+// occurrence. ADR-0015 Phase 4.
+export async function listSeries(): Promise<SeriesSummary[]> {
+  const events = (await listEvents()).filter((e) => e.series_id !== e.id);
+  const today = occurrenceDateInTz(new Date().toISOString(), "UTC");
+  const bySeriesId = new Map<string, AppEvent[]>();
+  for (const e of events) {
+    const group = bySeriesId.get(e.series_id) ?? [];
+    group.push(e);
+    bySeriesId.set(e.series_id, group);
+  }
+  const result: SeriesSummary[] = [];
+  for (const [seriesId, group] of Array.from(bySeriesId.entries())) {
+    // group is already ascending by start_at (listEvents' own sort).
+    const past = group.filter((e) => e.occurrence_date <= today);
+    const representative = past[past.length - 1] ?? group[0];
+    result.push({
+      seriesId,
+      title: representative.title,
+      sessions: representative.sessions,
+      representativeEventId: representative.id,
+    });
+  }
+  return result.sort((a, b) => a.title.localeCompare(b.title));
+}

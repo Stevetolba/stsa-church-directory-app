@@ -4,11 +4,13 @@
 // — mirroring SUBSPLASH_USE_MOCK. People/events stay in Subsplash; rows here
 // reference the Subsplash profile/event ids.
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { getDb, isDbConfigured } from "./db";
 import { checkIns, type CheckInRow } from "./db/schema";
 import { mockCheckIns } from "./mockData";
+import { searchChildren, searchProfiles } from "./subsplash";
 import type { AttendanceSummary, CheckInMethod, CheckInRecord } from "@/types/attendance";
+import type { Campus, Profile } from "@/types/profile";
 
 // --- Row mapping (DB <-> app record) ---
 
@@ -351,4 +353,123 @@ export async function listOccurrenceDatesForSeries(seriesId: string): Promise<st
   return Array.from(
     new Set(mockStore().filter((r) => r.seriesId === seriesId).map((r) => r.occurrenceDate))
   );
+}
+
+// --- Reports & absentees (ADR-0015 Phase 4) ---
+
+// Every check-in row for a series within a date range — feeds the series
+// frequency report. Unbounded by occurrence (unlike listCheckIns, which is
+// one date at a time); a church's attendance volume over even a year is
+// small enough to aggregate in memory (summarizeSeriesFrequency below)
+// rather than pushing the GROUP BY into SQL.
+export async function listCheckInsForSeries(
+  seriesId: string,
+  from: string,
+  to: string
+): Promise<CheckInRecord[]> {
+  if (isDbConfigured()) {
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(checkIns)
+      .where(
+        and(eq(checkIns.seriesId, seriesId), gte(checkIns.occurrenceDate, from), lte(checkIns.occurrenceDate, to))
+      );
+    return rows.map(fromRow);
+  }
+  return mockStore()
+    .filter((r) => r.seriesId === seriesId && r.occurrenceDate >= from && r.occurrenceDate <= to)
+    .map((r) => ({ ...r }));
+}
+
+export interface SeriesFrequencyPerson {
+  profileId: string;
+  displayName: string;
+  isChild: boolean;
+  // Occurrence dates (within the period) this person has at least one
+  // check-in for, ascending.
+  attendedDates: string[];
+  lastAttended: string | null;
+}
+
+export interface SeriesFrequencyResult {
+  // Every occurrence_date in the period (ascending) — the report's column
+  // headers / denominator, from lib/events.listOccurrences (Subsplash +
+  // any backfill-only dates), not just dates that happen to have a check-in.
+  occurrenceDates: string[];
+  people: SeriesFrequencyPerson[];
+}
+
+// Pure aggregation — records already scoped to one series/date range (see
+// listCheckInsForSeries) grouped by person. Only people with at least one
+// check-in appear here (findAbsentees below covers the zero-attendance
+// case, which a GROUP BY over check-ins can never surface). Sorted most-
+// to-least frequent so a declining attender sorts toward the bottom.
+export function summarizeSeriesFrequency(
+  records: CheckInRecord[],
+  occurrenceDates: string[]
+): SeriesFrequencyResult {
+  const inRange = new Set(occurrenceDates);
+  const byPerson = new Map<string, SeriesFrequencyPerson>();
+  for (const r of records) {
+    if (!inRange.has(r.occurrenceDate)) continue;
+    const entry = byPerson.get(r.profileId) ?? {
+      profileId: r.profileId,
+      displayName: r.displayName,
+      isChild: r.isChild,
+      attendedDates: [],
+      lastAttended: null,
+    };
+    if (!entry.attendedDates.includes(r.occurrenceDate)) entry.attendedDates.push(r.occurrenceDate);
+    entry.displayName = r.displayName;
+    entry.isChild = r.isChild;
+    byPerson.set(r.profileId, entry);
+  }
+  const people = Array.from(byPerson.values()).map((entry) => {
+    const attendedDates = [...entry.attendedDates].sort();
+    return { ...entry, attendedDates, lastAttended: attendedDates[attendedDates.length - 1] ?? null };
+  });
+  people.sort((a, b) => b.attendedDates.length - a.attendedDates.length || a.displayName.localeCompare(b.displayName));
+  return { occurrenceDates: [...occurrenceDates].sort(), people };
+}
+
+// Pure set difference — the roster members with zero check-ins across the
+// given occurrence dates. Split out from findAbsentees so the actual
+// filtering logic is unit-testable without a live/mock profile fetch.
+export function computeAbsentees<T extends { id: string }>(roster: T[], attended: Set<string>): T[] {
+  return roster.filter((p) => !attended.has(p.id));
+}
+
+export interface FindAbsenteesParams {
+  seriesId: string;
+  // The window to check attendance across, e.g. a series' last N occurrences
+  // (see /api/attendance/absentees). Someone with zero check-ins across
+  // every one of these dates is an absentee — including someone who has
+  // literally never attended, who would never show up in a GROUP BY over
+  // check-ins (see summarizeSeriesFrequency's doc comment).
+  occurrenceDates: string[];
+  // Defaults to the child-bearing-household pool (same as /api/children,
+  // ADR-0011) — the common case for a Sunday School series. Pass false for
+  // an "everyone" series like Liturgy to check the full directory instead.
+  childrenOnly?: boolean;
+  search?: string;
+  campus?: Campus[];
+  gradeFrom?: number;
+  gradeTo?: number;
+}
+
+// Roster fetch (Subsplash) minus attended (this series' check-ins) — the
+// people who should have been at the last N occurrences and weren't.
+export async function findAbsentees(params: FindAbsenteesParams): Promise<Profile[]> {
+  const attended = await attendedProfileIds(params.seriesId, params.occurrenceDates);
+  const rosterParams = {
+    search: params.search,
+    campus: params.campus,
+    gradeFrom: params.gradeFrom,
+    gradeTo: params.gradeTo,
+    pageSize: 5000,
+  };
+  const result =
+    params.childrenOnly === false ? await searchProfiles(rosterParams) : await searchChildren(rosterParams);
+  return computeAbsentees(result.profiles, attended);
 }

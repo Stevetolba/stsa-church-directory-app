@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Baby, Cake, CalendarCheck, Home, LogOut, Menu, Tablet, Users, X } from "lucide-react";
+import { Baby, BarChart3, Cake, CalendarCheck, Home, LogOut, Menu, Tablet, Users, X } from "lucide-react";
 import { signOutAction } from "@/app/(dashboard)/actions";
 import type { Role } from "@/types/auth";
 
@@ -26,6 +26,7 @@ const NAV_ITEMS: Array<{ href: string; label: string; icon: typeof Users; roles:
   { href: "/birthdays", label: "Birthdays", icon: Cake, roles: ["admin", "staff"] },
   { href: "/children", label: "Children and Youth", icon: Baby, roles: ["admin", "staff", "volunteer"] },
   { href: "/events", label: "Events", icon: CalendarCheck, roles: ["admin", "staff", "volunteer"] },
+  { href: "/reports", label: "Reports", icon: BarChart3, roles: ["admin", "staff"] },
   { href: "/settings/devices", label: "Kiosk devices", icon: Tablet, roles: ["admin"] },
 ];
 

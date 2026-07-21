@@ -22,7 +22,7 @@ const { auth } = NextAuth(authConfig);
 // volunteer-scoped landing page (today's children/youth birthdays + a
 // children-only search) instead of the staff/admin one, so a volunteer can
 // land there directly rather than being redirected off it.
-const VOLUNTEER_BLOCKED_PATHS = new Set(["/people", "/households", "/birthdays"]);
+const VOLUNTEER_BLOCKED_PATHS = new Set(["/people", "/households", "/birthdays", "/reports", "/settings/devices"]);
 
 // ADR-0015 (Phase 3): /kiosk (and /kiosk/setup, where a device claims its
 // setup code and has no cookie yet) authorize via a device cookie instead of
