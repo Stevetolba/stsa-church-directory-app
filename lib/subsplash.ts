@@ -262,6 +262,43 @@ function campusUsesChoices(meta: CampusFieldMeta): boolean {
   return meta.type === "dropdown" || Object.keys(meta.choiceIds).length > 0;
 }
 
+// Same write-metadata problem as Campus (no custom-field-definitions
+// endpoint), for the DirectoryAccess field instead — see ADR-0010. The field
+// may be a Yes/No dropdown (choiceIds populated) or a plain text/checkbox
+// field (choiceIds stays empty), mirroring campusUsesChoices below.
+interface AccessFieldMeta {
+  definitionId: string;
+  revisionId?: string;
+  type?: string;
+  choiceIds: Partial<Record<"Yes" | "No", string>>;
+}
+
+function mergeAccessFieldMeta(
+  existing: AccessFieldMeta | null,
+  field: RawCustomFieldValue
+): AccessFieldMeta {
+  const def = field.custom_field_definition;
+  const meta: AccessFieldMeta = existing ?? { definitionId: def.id, choiceIds: {} };
+  meta.definitionId = def.id;
+  if (def.revision_id) meta.revisionId = def.revision_id;
+  if (def.type) meta.type = def.type;
+  const choices = field.value.choices?.length
+    ? field.value.choices
+    : field.value.choice
+      ? [field.value.choice]
+      : [];
+  for (const choice of choices) {
+    if (choice.name === "Yes" || choice.name === "No") {
+      meta.choiceIds[choice.name] = choice.id;
+    }
+  }
+  return meta;
+}
+
+function accessFieldUsesChoices(meta: AccessFieldMeta): boolean {
+  return meta.type === "dropdown" || Object.keys(meta.choiceIds).length > 0;
+}
+
 function formatPhone(phone: RawProfile["phone_number"]): string | undefined {
   if (!phone) return undefined;
   const digits = phone.significant;
@@ -295,6 +332,7 @@ function mapProfile(raw: RawProfile): Profile {
     graduation_year: raw.graduation_year ?? undefined,
     status: statusRaw ? MEMBERSHIP_STATUS_MAP[statusRaw] : "Visitor",
     campus: extractCampus(raw.custom_fields),
+    directory_access: extractDirectoryAccess(raw.custom_fields),
     address: formatAddressParts(address_parts),
     address_parts,
     baptism_date: raw.baptism_date ?? undefined,
@@ -430,6 +468,24 @@ const getCampusFieldMetaCached = unstable_cache(
   },
   ["subsplash-campus-field-meta"],
   { revalidate: CACHE_REVALIDATE_SECONDS, tags: ["subsplash-campus-meta"] }
+);
+
+// Same sampling approach as getCampusFieldMetaCached, for the DirectoryAccess
+// field's write metadata.
+const getAccessFieldMetaCached = unstable_cache(
+  async (): Promise<AccessFieldMeta | null> => {
+    const data = await subsplashFetch<HalCollection<RawProfile>>(
+      `/people/v1/profiles?page[number]=1&page[size]=${MAX_SUBSPLASH_PAGE_SIZE}`
+    );
+    let meta: AccessFieldMeta | null = null;
+    for (const raw of data._embedded.profiles) {
+      const field = findAccessField(raw.custom_fields);
+      if (field) meta = mergeAccessFieldMeta(meta, field);
+    }
+    return meta;
+  },
+  ["subsplash-access-field-meta"],
+  { revalidate: CACHE_REVALIDATE_SECONDS, tags: ["subsplash-access-meta"] }
 );
 
 // --- In-memory search/filter/paginate (shared by mock and real modes) ---
@@ -779,6 +835,19 @@ function isAccessValueGranted(value: string | undefined): boolean {
   return !!value && ACCESS_GRANTED_VALUES.has(value.trim().toLowerCase());
 }
 
+function findAccessField(
+  customFields: RawCustomFieldValue[] | undefined
+): RawCustomFieldValue | undefined {
+  return customFields?.find(
+    (f) => f.custom_field_definition.name.trim().toLowerCase() === ACCESS_FIELD_NAME
+  );
+}
+
+function extractDirectoryAccess(customFields: RawCustomFieldValue[] | undefined): boolean {
+  const field = findAccessField(customFields);
+  return field ? isAccessValueGranted(extractCustomFieldValue(field)) : false;
+}
+
 // ADR-0010: does this email belong to someone granted read-only directory
 // access via Subsplash? Used by the sign-in gate (lib/auth.ts) to admit
 // personal-email volunteers. Returns false (deny) on any lookup error —
@@ -831,6 +900,7 @@ export type UpdateProfileInput = Partial<
     | "email"
     | "phone_number"
     | "campus"
+    | "directory_access"
     | "allergy_notes"
     | "care_notes"
     | "date_of_birth"
@@ -838,10 +908,13 @@ export type UpdateProfileInput = Partial<
   >
 >;
 
-// Distinguishes "campus write couldn't be resolved" (a 422-worthy
-// client-ish situation) from an unexpected failure, so the API route can
-// respond meaningfully rather than a blanket error.
-export class CampusUpdateError extends Error {}
+// Distinguishes "a custom field write couldn't be resolved" (a 422-worthy
+// client-ish situation, e.g. an unknown dropdown choice) from an unexpected
+// failure, so the API route can respond meaningfully rather than a blanket
+// error. Campus keeps its own subclass name for backwards compatibility with
+// existing call sites that check `instanceof CampusUpdateError` directly.
+export class CustomFieldUpdateError extends Error {}
+export class CampusUpdateError extends CustomFieldUpdateError {}
 
 // Subsplash's PATCH body wants phone_number as PhoneNumberWithCountryCode
 // ({ significant, country: { calling_code, region_code } }), not the
@@ -911,8 +984,58 @@ async function buildCampusFieldInput(
   };
 }
 
+// Builds the custom_fields entry that grants/revokes DirectoryAccess —
+// same discover-from-real-data approach as buildCampusFieldInput, since
+// Subsplash has no custom-field-definitions endpoint to look this up
+// directly. Lets an admin manage volunteer sign-in access (ADR-0010) from
+// this app instead of needing separate access to Subsplash's own UI.
+async function buildDirectoryAccessFieldInput(
+  profileId: string,
+  granted: boolean
+): Promise<{ custom_field_definition: { id: string; revision_id?: string }; value: object }> {
+  const currentRaw = await subsplashFetch<RawProfile>(`/people/v1/profiles/${profileId}`).catch(
+    () => null
+  );
+  const fromProfile = currentRaw ? findAccessField(currentRaw.custom_fields) : undefined;
+  let meta = fromProfile ? mergeAccessFieldMeta(null, fromProfile) : null;
+  const targetChoice: "Yes" | "No" = granted ? "Yes" : "No";
+
+  if (!meta || !meta.revisionId || (accessFieldUsesChoices(meta) && !meta.choiceIds[targetChoice])) {
+    const sampled = await getAccessFieldMetaCached();
+    if (sampled) {
+      meta = meta
+        ? { ...sampled, ...meta, choiceIds: { ...sampled.choiceIds, ...meta.choiceIds } }
+        : sampled;
+    }
+  }
+
+  if (!meta || !meta.revisionId) {
+    throw new CustomFieldUpdateError(
+      `Could not resolve the ${ACCESS_FIELD_NAME} custom field's write metadata from Subsplash — it may not be configured.`
+    );
+  }
+
+  let value: { choice: { id: string } } | { text: string };
+  if (accessFieldUsesChoices(meta)) {
+    const choiceId = meta.choiceIds[targetChoice];
+    if (!choiceId) {
+      throw new CustomFieldUpdateError(
+        `No known Subsplash dropdown choice id for "${targetChoice}" on the ${ACCESS_FIELD_NAME} field — it hasn't appeared on any sampled profile yet.`
+      );
+    }
+    value = { choice: { id: choiceId } };
+  } else {
+    value = { text: targetChoice };
+  }
+
+  return {
+    custom_field_definition: { id: meta.definitionId, revision_id: meta.revisionId },
+    value,
+  };
+}
+
 export async function updateProfile(id: string, patch: UpdateProfileInput): Promise<Profile> {
-  const { campus, address_parts, date_of_birth, ...topLevelPatch } = patch;
+  const { campus, directory_access, address_parts, date_of_birth, ...topLevelPatch } = patch;
 
   if (USE_MOCK_DATA) {
     const existing = mockProfiles.find((p) => p.id === id);
@@ -930,6 +1053,21 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
         existing.custom_fields = [
           ...(existing.custom_fields ?? []),
           { id: "cf-campus", label: "Campus", value: campus },
+        ];
+      }
+    }
+    if (directory_access !== undefined) {
+      existing.directory_access = directory_access;
+      const accessValue = directory_access ? "Yes" : "No";
+      const accessField = existing.custom_fields?.find(
+        (f) => f.label.trim().toLowerCase() === ACCESS_FIELD_NAME
+      );
+      if (accessField) {
+        accessField.value = accessValue;
+      } else {
+        existing.custom_fields = [
+          ...(existing.custom_fields ?? []),
+          { id: "cf-access", label: "DirectoryAccess", value: accessValue },
         ];
       }
     }
@@ -954,11 +1092,21 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
     // isn't a valid date, so clearing the field means sending null.
     body.date_of_birth = date_of_birth || null;
   }
-  // Campus lives in a custom field, not a top-level column, so it rides
-  // along in the same PATCH via the custom_fields array (openapi.yaml →
-  // CustomFieldValueInput).
+  // Campus and DirectoryAccess both live in custom fields, not top-level
+  // columns, so they ride along in the same PATCH via the custom_fields
+  // array (openapi.yaml → CustomFieldValueInput).
+  const customFieldInputs: Array<{
+    custom_field_definition: { id: string; revision_id?: string };
+    value: object;
+  }> = [];
   if (campus !== undefined) {
-    body.custom_fields = [await buildCampusFieldInput(id, campus)];
+    customFieldInputs.push(await buildCampusFieldInput(id, campus));
+  }
+  if (directory_access !== undefined) {
+    customFieldInputs.push(await buildDirectoryAccessFieldInput(id, directory_access));
+  }
+  if (customFieldInputs.length > 0) {
+    body.custom_fields = customFieldInputs;
   }
   // A profile's own address (independent of the household's) lives under
   // _embedded.address, same shape as the household write (openapi.yaml →

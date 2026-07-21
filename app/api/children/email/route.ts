@@ -11,7 +11,7 @@ import type { MemberStatus } from "@/types/profile";
 // requireStaffOrAdmin-gated routes until there's reason to extend it to
 // volunteers.
 export async function POST(request: NextRequest) {
-  const forbidden = await requireStaffOrAdmin();
+  const forbidden = await requireStaffOrAdmin("children-email");
   if (forbidden) return forbidden;
   const session = await auth();
   if (!session?.user?.email) {

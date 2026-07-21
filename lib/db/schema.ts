@@ -100,6 +100,39 @@ export const devices = pgTable("devices", {
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
 });
 
+// Audit log (ADR-0016): every sign-in attempt (allowed or denied) and every
+// directory read (People/Households/Children search, attendance reports) —
+// so an admin can see who's accessed the directory and when. Logging is
+// best-effort (lib/accessLog.ts never lets a write here fail the request
+// it's recording), so this table has no foreign keys into anything else.
+export const accessEvents = pgTable(
+  "access_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    email: text("email").notNull(),
+    // Resolved via lib/roles.ts's resolveRole — set even for a denied sign-in
+    // (resolveRole only classifies the email shape, it doesn't itself decide
+    // access) so a denied row still shows who they would have been.
+    role: text("role").notNull(), // 'admin' | 'staff' | 'volunteer'
+    eventType: text("event_type").notNull(), // 'sign_in' | 'sign_in_denied' | 'directory_read'
+    // Short label for what was read — e.g. "profiles", "households",
+    // "children", "attendance-report". Null for sign_in/sign_in_denied.
+    resource: text("resource"),
+  },
+  (t) => ({
+    occurredAtIdx: index("access_events_occurred_at_idx").on(t.occurredAt),
+    emailIdx: index("access_events_email_idx").on(t.email),
+    roleCheck: check("access_events_role_check", sql`${t.role} in ('admin','staff','volunteer')`),
+    eventTypeCheck: check(
+      "access_events_event_type_check",
+      sql`${t.eventType} in ('sign_in','sign_in_denied','directory_read')`
+    ),
+  })
+);
+
 export type CheckInRow = typeof checkIns.$inferSelect;
 export type NewCheckInRow = typeof checkIns.$inferInsert;
 export type DeviceRow = typeof devices.$inferSelect;
+export type AccessEventRow = typeof accessEvents.$inferSelect;
+export type NewAccessEventRow = typeof accessEvents.$inferInsert;

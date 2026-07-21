@@ -79,6 +79,7 @@ export const emailAbsenteesSchema = z
     childrenOnly: z.boolean().optional(),
     search: z.string().trim().max(200, "Too long").optional().or(z.literal("")),
     campus: z.array(z.enum(["Arlington", "Leesburg"])).optional(),
+    status: z.array(z.string()).optional(),
     gradeFrom: z.number().int().optional(),
     gradeTo: z.number().int().optional(),
   })

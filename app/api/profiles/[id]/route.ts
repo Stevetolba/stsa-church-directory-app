@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAdmin } from "@/lib/rbac";
-import { CampusUpdateError, updateProfile, type UpdateProfileInput } from "@/lib/subsplash";
+import { CustomFieldUpdateError, updateProfile, type UpdateProfileInput } from "@/lib/subsplash";
 import { editProfileWithAddressSchema } from "@/lib/validation/profile";
 
 // ADR-0005: the admin check happens here, independent of the UI — a
@@ -33,9 +33,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const updated = await updateProfile(params.id, patch);
     return NextResponse.json(updated);
   } catch (error) {
-    // A resolvable-but-unmet campus write (e.g. an unknown dropdown choice) is
-    // a 422, distinct from any other failure.
-    if (error instanceof CampusUpdateError) {
+    // A resolvable-but-unmet custom field write (e.g. an unknown dropdown
+    // choice, for Campus or DirectoryAccess) is a 422, distinct from any
+    // other failure.
+    if (error instanceof CustomFieldUpdateError) {
       return NextResponse.json({ error: error.message }, { status: 422 });
     }
     // Surface the real failure instead of a blanket "not found" that masks it.

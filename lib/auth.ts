@@ -10,6 +10,7 @@ import type { Role } from "@/types/auth";
 import { isAdminEmail, resolveRole } from "./roles";
 import { hasDirectoryAccess } from "./subsplash";
 import { authConfig } from "./auth.config";
+import { recordAccessEvent } from "./accessLog";
 
 const WORKSPACE_DOMAIN = process.env.CHURCH_GOOGLE_WORKSPACE_DOMAIN;
 
@@ -28,22 +29,36 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const email = profile?.email?.toLowerCase();
       const emailVerified = (profile as GoogleProfile | undefined)?.email_verified;
       // We trust the email as an identity key (for admin/volunteer matching),
-      // so require Google to have verified it.
+      // so require Google to have verified it. Not logged: without a
+      // verified email there's no reliable identity to attribute the
+      // attempt to.
       if (!email || !emailVerified) return false;
 
+      // ADR-0016: resolveRole only classifies the email's shape (admin list /
+      // workspace domain / neither) — it doesn't itself decide access — so
+      // it's safe to compute up front and log against every branch below,
+      // including a denial.
+      const role = resolveRole(email);
+
       // Admins may use any Google account (e.g. a personal one).
-      if (isAdminEmail(email)) return true;
+      if (isAdminEmail(email)) {
+        await recordAccessEvent({ email, role, eventType: "sign_in" });
+        return true;
+      }
 
       // Church staff: workspace-domain account. Keep the hd-claim + suffix
       // defense-in-depth from ADR-0001.
       const hostedDomain = (profile as GoogleProfile | undefined)?.hd;
       if (hostedDomain === WORKSPACE_DOMAIN && email.endsWith(`@${WORKSPACE_DOMAIN}`)) {
+        await recordAccessEvent({ email, role, eventType: "sign_in" });
         return true;
       }
 
       // Volunteers: personal email, allowed only if flagged for directory
       // access in Subsplash (ADR-0010). Fails closed on any lookup error.
-      return await hasDirectoryAccess(email);
+      const granted = await hasDirectoryAccess(email);
+      await recordAccessEvent({ email, role, eventType: granted ? "sign_in" : "sign_in_denied" });
+      return granted;
     },
     async jwt({ token }) {
       if (token.email) {

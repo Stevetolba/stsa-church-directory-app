@@ -9,7 +9,7 @@ import { ArrowLeft, Mail, Paperclip, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { MAX_ATTACHMENTS_COUNT, MAX_ATTACHMENTS_TOTAL_BYTES } from "@/lib/validation/email";
-import type { Campus } from "@/types/profile";
+import type { Campus, MemberStatus } from "@/types/profile";
 
 const composeSchema = z.object({
   subject: z.string().trim().min(1, "Subject is required").max(200, "Too long"),
@@ -44,6 +44,9 @@ export interface EmailAbsenteesFilters {
   lastN: number;
   childrenOnly: boolean;
   campus: Campus[];
+  status: MemberStatus[];
+  gradeFrom?: number;
+  gradeTo?: number;
 }
 
 function buildParams(filters: EmailAbsenteesFilters): URLSearchParams {
@@ -53,6 +56,9 @@ function buildParams(filters: EmailAbsenteesFilters): URLSearchParams {
     childrenOnly: String(filters.childrenOnly),
   });
   filters.campus.forEach((c) => params.append("campus", c));
+  filters.status.forEach((s) => params.append("status", s));
+  if (filters.gradeFrom !== undefined) params.set("gradeFrom", String(filters.gradeFrom));
+  if (filters.gradeTo !== undefined) params.set("gradeTo", String(filters.gradeTo));
   return params;
 }
 
@@ -192,6 +198,9 @@ export function EmailAbsenteesDialog({
           lastN: filters.lastN,
           childrenOnly: filters.childrenOnly,
           campus: filters.campus,
+          status: filters.status,
+          gradeFrom: filters.gradeFrom,
+          gradeTo: filters.gradeTo,
         }),
       });
       if (!res.ok) {

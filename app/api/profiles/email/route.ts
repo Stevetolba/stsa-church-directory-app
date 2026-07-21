@@ -10,7 +10,7 @@ import type { MemberStatus } from "@/types/profile";
 // itself is already unreachable for volunteers (middleware + ADR-0011), so
 // this mirrors that existing boundary rather than opening a new one.
 export async function POST(request: NextRequest) {
-  const forbidden = await requireStaffOrAdmin();
+  const forbidden = await requireStaffOrAdmin("profiles-email");
   if (forbidden) return forbidden;
   const session = await auth();
   if (!session?.user?.email) {

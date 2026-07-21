@@ -3,7 +3,7 @@ import { requireStaffOrAdmin } from "@/lib/rbac";
 import { findAbsentees, resolveAbsenteeEmails } from "@/lib/attendance";
 import { listOccurrences } from "@/lib/events";
 import { occurrenceDateInTz } from "@/lib/eventTime";
-import type { Campus } from "@/types/profile";
+import type { Campus, MemberStatus } from "@/types/profile";
 
 const DEFAULT_LAST_N = 4;
 const MAX_LAST_N = 52;
@@ -15,7 +15,7 @@ const MAX_LAST_N = 52;
 // This route instead starts from the roster (Subsplash) and subtracts
 // whoever attended, so a true zero-attendance person is visible too.
 export async function GET(request: NextRequest) {
-  const forbidden = await requireStaffOrAdmin();
+  const forbidden = await requireStaffOrAdmin("attendance-absentees");
   if (forbidden) return forbidden;
 
   const { searchParams } = new URL(request.url);
@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
   const childrenOnly = childrenOnlyRaw === null ? undefined : childrenOnlyRaw === "true";
   const search = searchParams.get("search") ?? undefined;
   const campus = searchParams.getAll("campus") as Campus[];
+  const status = searchParams.getAll("status") as MemberStatus[];
   const gradeFromRaw = searchParams.get("gradeFrom");
   const gradeToRaw = searchParams.get("gradeTo");
   const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
@@ -48,6 +49,7 @@ export async function GET(request: NextRequest) {
     childrenOnly,
     search,
     campus,
+    status,
     gradeFrom,
     gradeTo,
   });

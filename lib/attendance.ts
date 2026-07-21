@@ -10,7 +10,7 @@ import { checkIns, type CheckInRow } from "./db/schema";
 import { mockCheckIns } from "./mockData";
 import { attachParentContacts, searchChildren, searchProfiles } from "./subsplash";
 import type { AttendanceSummary, CheckInMethod, CheckInRecord } from "@/types/attendance";
-import type { Campus, Profile } from "@/types/profile";
+import type { Campus, MemberStatus, Profile } from "@/types/profile";
 
 // --- Row mapping (DB <-> app record) ---
 
@@ -355,6 +355,39 @@ export async function listOccurrenceDatesForSeries(seriesId: string): Promise<st
   );
 }
 
+// --- Roster-filter join (report Campus/Status/Grade filters) ---
+
+export interface RosterFilterParams {
+  campus?: Campus[];
+  status?: MemberStatus[];
+  gradeFrom?: number;
+  gradeTo?: number;
+}
+
+// Check-in rows only carry a profileId (see CheckInRecord) — no campus,
+// status, or grade of their own — so the Occurrence/Series report tabs
+// filter on those dimensions by first resolving which Subsplash profiles
+// match (the same searchProfiles filtering the People/Children pages already
+// use), then keeping only records/people whose profileId is in that set.
+// Returns null when no filter dimension is set, meaning "don't filter" —
+// callers should treat null as "keep everything" rather than an empty match,
+// so a report with no filters applied doesn't pay for a full roster walk.
+export async function matchingProfileIds(filters: RosterFilterParams): Promise<Set<string> | null> {
+  const { campus, status, gradeFrom, gradeTo } = filters;
+  const active =
+    (campus && campus.length > 0) || (status && status.length > 0) || gradeFrom !== undefined || gradeTo !== undefined;
+  if (!active) return null;
+  const result = await searchProfiles({ campus, status, gradeFrom, gradeTo, pageSize: 5000 });
+  return new Set(result.profiles.map((p) => p.id));
+}
+
+export function filterRecordsByProfileIds(
+  records: CheckInRecord[],
+  ids: Set<string> | null
+): CheckInRecord[] {
+  return ids === null ? records : records.filter((r) => ids.has(r.profileId));
+}
+
 // --- Reports & absentees (ADR-0015 Phase 4) ---
 
 // Every check-in row for a series within a date range — feeds the series
@@ -454,6 +487,7 @@ export interface FindAbsenteesParams {
   childrenOnly?: boolean;
   search?: string;
   campus?: Campus[];
+  status?: MemberStatus[];
   gradeFrom?: number;
   gradeTo?: number;
 }
@@ -465,6 +499,7 @@ export async function findAbsentees(params: FindAbsenteesParams): Promise<Profil
   const rosterParams = {
     search: params.search,
     campus: params.campus,
+    status: params.status,
     gradeFrom: params.gradeFrom,
     gradeTo: params.gradeTo,
     pageSize: 5000,
