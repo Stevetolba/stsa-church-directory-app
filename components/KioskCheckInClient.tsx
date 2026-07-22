@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Calendar, Check, LogOut, Settings, ShieldAlert, Sparkles, X } from "lucide-react";
+import { Calendar, Check, LogOut, Printer, Settings, ShieldAlert, Sparkles, X } from "lucide-react";
 import { SearchBar } from "@/components/SearchBar";
 import { EmptyState } from "@/components/EmptyState";
 import { useKioskCheckInRoster } from "@/hooks/useKioskCheckInRoster";
@@ -52,8 +52,18 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
   // Defaults to the pre-hydration default (true) to match the server render,
   // then picks up this device's saved preference on mount.
   const [printSettings, setPrintSettings] = useState<KioskPrintSettings>({
+    printChildLabels: true,
     printParentLabels: true,
   });
+  // Reprint is a standalone, on-demand action — kept separate from
+  // labelsToPrint (which is tied to the batch-checkin flow's autoPrint +
+  // scheduleReset-on-close behavior) so reprinting mid-session doesn't reset
+  // the kiosk back to idle or fire an unexpected auto-print.
+  const [reprintData, setReprintData] = useState<{
+    children: ChildLabelData[];
+    parentTags: ParentMatchTagData[];
+  } | null>(null);
+  const [reprintingId, setReprintingId] = useState<string | null>(null);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -82,10 +92,12 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
   const {
     isLoading,
     hasFilter,
+    autoSessionType,
     households,
     profileById,
     groupByProfileId,
     dropOffForHousehold,
+    setDropOffFor,
     sessionForProfile,
   } = useKioskCheckInRoster({ event, search });
   const { records, summary, checkIn, checkOut } = useKioskAttendance(event.id);
@@ -160,9 +172,31 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
     });
   }
 
+  // Household names, among currently selected children, whose drop-off
+  // adult is still ambiguous (2+ adults, none picked via the "Dropped off
+  // by" select below) — a single-adult household auto-resolves via
+  // dropOffForHousehold and never appears here. Mirrors
+  // CheckInPageClient's identically-named helper.
+  function unresolvedDropOffHouseholds(): string[] {
+    if (autoSessionType === "everyone") return [];
+    const names = new Set<string>();
+    for (const id of Array.from(selected)) {
+      const profile = profileById.get(id);
+      if (!profile || profile.household_role !== "child") continue;
+      const group = groupByProfileId.get(id);
+      if (group && !dropOffForHousehold(group)) names.add(group.name);
+    }
+    return Array.from(names);
+  }
+
   async function handleBatchCheckIn() {
     const ids = Array.from(selected);
     if (ids.length === 0) return;
+    const missingDropOff = unresolvedDropOffHouseholds();
+    if (missingDropOff.length > 0) {
+      toast.error(`Select who dropped off ${missingDropOff.join(", ")} before checking in.`);
+      return;
+    }
     setSubmitting(true);
     const matchCodeByHousehold = new Map<string, string>();
     const labelDataById = new Map<string, ChildLabelData>();
@@ -171,7 +205,7 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
         const profile = profileById.get(id);
         if (!profile) throw new Error("Profile not found");
         const group = groupByProfileId.get(id);
-        const tracksPickup = profile.household_role === "child" && !!group;
+        const tracksPickup = profile.household_role === "child" && !!group && autoSessionType !== "everyone";
         const dropOffProfileId = tracksPickup ? dropOffForHousehold(group) : undefined;
         const sessionId = sessionForProfile(profile);
         let matchCode: string | undefined;
@@ -180,13 +214,9 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
           matchCode = matchCodeByHousehold.get(group.householdId) ?? generateMatchCode();
           matchCodeByHousehold.set(group.householdId, matchCode);
           const dropOffProfile = dropOffProfileId ? profileById.get(dropOffProfileId) : undefined;
-          // A specific drop-off adult wins; with two+ adults and no explicit
-          // pick, the label still names the household's adult(s) rather than
-          // going blank — the printed slip is meant to be read at a glance,
-          // not left without a parent name because no one tapped a dropdown.
-          contactName = dropOffProfile
-            ? `${dropOffProfile.first_name} ${dropOffProfile.last_name}`.trim()
-            : group.adults.map((a) => `${a.first_name} ${a.last_name}`.trim()).join(" & ") || undefined;
+          // Always resolved by this point — unresolvedDropOffHouseholds()
+          // already blocked submission otherwise.
+          contactName = dropOffProfile ? `${dropOffProfile.first_name} ${dropOffProfile.last_name}`.trim() : undefined;
         }
         const result = await checkIn({ profileId: id, sessionId, dropOffProfileId, matchCode });
         // Allergy/care notes and the drop-off adult's phone come from the
@@ -228,11 +258,11 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
 
     setSelected(new Set());
     setSuccessCount(succeededIds.length);
+    // The full set of children who tracked pickup — used as the source for
+    // both the child labels and the parent pickup tags below, independent of
+    // which of those two a given kiosk currently has toggled on.
     const printableChildren = succeededIds.map((id) => labelDataById.get(id)).filter((d): d is ChildLabelData => !!d);
-    // "Print parent labels" only governs the separate pickup-code tag — the
-    // child's own name label always prints, matching the base Sunday School
-    // check-in behavior (there's no toggle for that in Subsplash's settings
-    // either, only for the guest and parent tags).
+    const childLabelsToPrint = printSettings.printChildLabels ? printableChildren : [];
     const parentTags: ParentMatchTagData[] = [];
     if (printSettings.printParentLabels) {
       const tagsByCode = new Map<string, ParentMatchTagData>();
@@ -245,12 +275,43 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
       }
       parentTags.push(...Array.from(tagsByCode.values()));
     }
-    if (printableChildren.length > 0) {
-      setLabelsToPrint({ children: printableChildren, parentTags });
+    if (childLabelsToPrint.length > 0 || parentTags.length > 0) {
+      setLabelsToPrint({ children: childLabelsToPrint, parentTags });
       // Reset timer starts once the label sheet is dismissed, not now — give
       // the operator time to actually print before the screen clears itself.
     } else {
       scheduleReset();
+    }
+  }
+
+  // Reprint (on-demand, not tied to a batch check-in) — re-fetches allergy/
+  // care/contact-phone server-side since a device actor's roster never
+  // carries them and even a signed-in operator's client-side cache may not
+  // include whoever's being reprinted (see buildReprintLabelData).
+  async function handleReprint(profileId: string) {
+    setReprintingId(profileId);
+    try {
+      const params = new URLSearchParams({ eventId: event.id, profileId });
+      const res = await fetch(`/api/kiosk/attendance/reprint?${params.toString()}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? "Could not reprint label");
+      }
+      const { childLabel, parentTag } = (await res.json()) as {
+        childLabel: ChildLabelData | null;
+        parentTag: ParentMatchTagData | null;
+      };
+      const children = childLabel && printSettings.printChildLabels ? [childLabel] : [];
+      const parentTags = parentTag && printSettings.printParentLabels ? [parentTag] : [];
+      if (children.length === 0 && parentTags.length === 0) {
+        toast.error("Both label types are turned off in Settings — nothing to print.");
+        return;
+      }
+      setReprintData({ children, parentTags });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not reprint label");
+    } finally {
+      setReprintingId(null);
     }
   }
 
@@ -265,6 +326,7 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
 
   const startLabel = timeLabelInTz(new Date(event.start_at), event.timezone);
   const endLabel = event.end_at ? timeLabelInTz(new Date(event.end_at), event.timezone) : null;
+  const missingDropOff = unresolvedDropOffHouseholds();
 
   return (
     <div className="flex min-h-screen flex-col bg-[#FAF7F1]">
@@ -348,8 +410,29 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
                 <div className="flex flex-col gap-5">
                   {households.map((group) => (
                     <div key={group.householdId}>
-                      <div className="mb-2 text-[12.5px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
-                        {group.name}
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                        <span className="text-[12.5px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                          {group.name}
+                        </span>
+                        {autoSessionType !== "everyone" &&
+                          group.adults.length > 0 &&
+                          group.members.some((p) => p.household_role === "child") && (
+                          <label className="flex items-center gap-1.5 text-[12.5px] text-[#5B7185]">
+                            Dropped off by
+                            <select
+                              value={dropOffForHousehold(group) ?? ""}
+                              onChange={(e) => setDropOffFor(group.householdId, e.target.value)}
+                              className="cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[12.5px] text-brand-navy outline-none"
+                            >
+                              <option value="">Select…</option>
+                              {group.adults.map((a) => (
+                                <option key={a.id} value={a.id}>
+                                  {a.first_name} {a.last_name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
                       </div>
                       <div className="flex flex-col gap-2.5">
                         {group.members.map((profile) => (
@@ -359,6 +442,8 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
                             checkedIn={recordByProfile.has(profile.id)}
                             selected={selected.has(profile.id)}
                             onToggle={() => toggleSelected(profile.id)}
+                            onReprint={() => handleReprint(profile.id)}
+                            reprinting={reprintingId === profile.id}
                           />
                         ))}
                       </div>
@@ -378,6 +463,8 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
                     onTap={() => setPendingCheckOutId(r.id)}
                     onCancel={() => setPendingCheckOutId(null)}
                     onConfirm={() => handleConfirmCheckOut(r.profileId)}
+                    onReprint={() => handleReprint(r.profileId)}
+                    reprinting={reprintingId === r.profileId}
                   />
                 ))}
               </div>
@@ -387,11 +474,16 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
       </main>
 
       {mode === "checkin" && !idle && successCount === null && selected.size > 0 && (
-        <div className="sticky bottom-5 z-10 flex justify-center px-5">
+        <div className="sticky bottom-5 z-10 flex flex-col items-center gap-1.5 px-5">
+          {missingDropOff.length > 0 && (
+            <span className="rounded-lg bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#B4462F] shadow-sm">
+              Select who dropped off {missingDropOff.join(", ")}
+            </span>
+          )}
           <button
             type="button"
             onClick={handleBatchCheckIn}
-            disabled={submitting}
+            disabled={submitting || missingDropOff.length > 0}
             className="rounded-full bg-brand-navy px-8 py-4 text-[16px] font-semibold text-brand-cream shadow-[0_6px_20px_rgba(26,58,92,0.35)] transition-colors hover:bg-brand-navy/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? "Checking in…" : `Check in ${selected.size}`}
@@ -411,6 +503,14 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
         />
       )}
 
+      {reprintData && (
+        <PrintLabelsSheet
+          childLabels={reprintData.children}
+          parentTags={reprintData.parentTags}
+          onClose={() => setReprintData(null)}
+        />
+      )}
+
       {settingsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-[16px] bg-white p-5 shadow-xl">
@@ -425,7 +525,13 @@ export function KioskCheckInClient({ event, isDevice = false }: { event: AppEven
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="mt-3 flex flex-col divide-y divide-[#EAE2D0]">
+            <div className="mt-2 flex flex-col divide-y divide-[#EAE2D0]">
+              <SettingToggle
+                label="Print child labels"
+                description="Print the child's own name label with their pickup code and any allergy/care notes."
+                checked={printSettings.printChildLabels}
+                onChange={(v) => updatePrintSetting("printChildLabels", v)}
+              />
               <SettingToggle
                 label="Print parent labels"
                 description="Print an additional label with a pickup code for the adult who dropped a child off."
@@ -507,7 +613,11 @@ function SettingToggle({
   onChange: (value: boolean) => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-3">
+    // items-center (not items-start) so the switch sits balanced against the
+    // two-line label+description block rather than pinned to its top edge;
+    // the track/thumb are sized up a notch (h-7 w-12 / h-6 w-6, from h-6 w-11
+    // / h-5 w-5) for an easier tap target on an iPad.
+    <div className="flex items-center justify-between gap-4 py-3.5">
       <div className="min-w-0">
         <div className="text-[14px] font-semibold text-brand-navy">{label}</div>
         <div className="mt-0.5 text-[12.5px] text-[#5B7185]">{description}</div>
@@ -518,10 +628,10 @@ function SettingToggle({
         aria-checked={checked}
         aria-label={label}
         onClick={() => onChange(!checked)}
-        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${checked ? "bg-brand-navy" : "bg-[#E5DCC8]"}`}
+        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${checked ? "bg-brand-navy" : "bg-[#E5DCC8]"}`}
       >
         <span
-          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+          className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
             checked ? "translate-x-[22px]" : "translate-x-0.5"
           }`}
         />
@@ -583,11 +693,15 @@ function KioskRow({
   checkedIn,
   selected,
   onToggle,
+  onReprint,
+  reprinting,
 }: {
   profile: Profile;
   checkedIn: boolean;
   selected: boolean;
   onToggle: () => void;
+  onReprint: () => void;
+  reprinting: boolean;
 }) {
   const tint = avatarTintForId(profile.id);
   const grade = gradeLabel(profile);
@@ -602,6 +716,19 @@ function KioskRow({
           </div>
           <div className="text-[13px] text-[#3F6B45]">Already checked in</div>
         </div>
+        {/* Only a child ever gets a printed label — matches ChildLabelData's
+            own scope, no label exists to reprint for anyone else. */}
+        {profile.household_role === "child" && (
+          <button
+            type="button"
+            onClick={onReprint}
+            disabled={reprinting}
+            aria-label={`Reprint label for ${profile.first_name} ${profile.last_name}`}
+            className="shrink-0 rounded-[10px] border border-[#E5DCC8] bg-white p-2.5 text-[#8A94A0] transition-colors hover:border-brand-navy/30 disabled:opacity-50"
+          >
+            <Printer className="h-4 w-4" />
+          </button>
+        )}
         <Check className="h-5 w-5 shrink-0 text-[#3F6B45]" />
       </div>
     );
@@ -654,12 +781,16 @@ function CheckOutRow({
   onTap,
   onCancel,
   onConfirm,
+  onReprint,
+  reprinting,
 }: {
   record: CheckInRecord;
   confirming: boolean;
   onTap: () => void;
   onCancel: () => void;
   onConfirm: () => void;
+  onReprint: () => void;
+  reprinting: boolean;
 }) {
   if (confirming) {
     return (
@@ -684,16 +815,28 @@ function CheckOutRow({
     );
   }
   return (
-    <button
-      type="button"
-      onClick={onTap}
-      className="flex items-center gap-3 rounded-[14px] border border-[#EAE2D0] bg-white px-4 py-3.5 text-left transition-colors hover:border-brand-navy/30"
-    >
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[16px] font-semibold text-brand-navy">{record.displayName}</div>
-        {record.sessionName && <div className="text-[13px] text-[#8A94A0]">{record.sessionName}</div>}
-      </div>
-      <LogOut className="h-5 w-5 shrink-0 text-[#8A94A0]" />
-    </button>
+    // A container div, not a single <button> — a nested reprint button
+    // (only for a child) needs to sit alongside the tap-to-checkout area,
+    // and buttons can't nest inside buttons.
+    <div className="flex items-center gap-2 rounded-[14px] border border-[#EAE2D0] bg-white pl-4 pr-2 py-3.5 transition-colors hover:border-brand-navy/30">
+      <button type="button" onClick={onTap} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[16px] font-semibold text-brand-navy">{record.displayName}</div>
+          {record.sessionName && <div className="text-[13px] text-[#8A94A0]">{record.sessionName}</div>}
+        </div>
+        <LogOut className="h-5 w-5 shrink-0 text-[#8A94A0]" />
+      </button>
+      {record.isChild && (
+        <button
+          type="button"
+          onClick={onReprint}
+          disabled={reprinting}
+          aria-label={`Reprint label for ${record.displayName}`}
+          className="shrink-0 rounded-[10px] border border-[#E5DCC8] bg-white p-2.5 text-[#8A94A0] transition-colors hover:border-brand-navy/30 disabled:opacity-50"
+        >
+          <Printer className="h-4 w-4" />
+        </button>
+      )}
+    </div>
   );
 }

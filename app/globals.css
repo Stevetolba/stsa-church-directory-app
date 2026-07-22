@@ -61,28 +61,87 @@
 }
 
 /* Check-in label printing (ADR-0015): isolates PrintLabelsSheet's labels so
-   window.print() outputs only the label stack, not the rest of the app
-   (modal chrome included). The classic "print only this subtree" trick:
-   hide everything, then re-reveal just .print-label-sheet and its
-   descendants, positioned absolutely so it escapes the modal's scroll clip
-   (its containing block becomes the viewport, since no ancestor here is
-   positioned) — no ancestor markup changes needed. */
+   window.print() outputs only the label stack, not the rest of the app.
+   PrintLabelsSheet renders via createPortal(..., document.body), so it's a
+   direct child of <body> — a sibling of the rest of the app, not nested
+   inside it — and print CSS just hides every *other* body-level element.
+   That's a deliberately different trick from the more common "hide
+   everything, then re-reveal just this subtree via visibility" — two prior,
+   more surgical attempts each broke in their own way:
+     1. display:none (Tailwind's print:hidden) directly on an ancestor of
+        .print-label-sheet removed the whole subtree from the render tree
+        with no way for a descendant to opt back in — nothing printed at all.
+     2. Switching that ancestor to visibility:hidden instead (so descendants
+        *could* opt back in) fixed that, but position:fixed on the same
+        ancestor turned out to silently defeat CSS fragmentation too —
+        break-after/before (used below to put the child label and the
+        parent pickup tag on separate physical pieces) only fragments
+        ordinary in-flow content, so both labels kept landing on one
+        physical piece regardless of label stock or @page validity.
+        Neutralizing position/overflow on that ancestor (.print-pass-through,
+        still used below) fixed the fragmentation — but then the *rest of
+        the page* (the kiosk/dashboard UI this sheet opens from), still in
+        normal document flow and merely invisible, printed as blank leading
+        pages ahead of the real labels, since nothing pulled it out of flow
+        anymore either.
+   The portal sidesteps both failure modes at once: every other body child
+   can safely be display:none'd (none of them are .print-label-sheet's
+   ancestors anymore), so there's nothing left in flow to print as blank
+   pages, and .print-pass-through only has to neutralize this component's
+   *own* wrappers (still position:fixed/overflow-clipped for normal on-
+   screen modal behavior) for its own children to fragment correctly.
+
+   Deliberately has no @page/width sizing of its own — different kiosks load
+   different Brother DK label stock (continuous tape vs. die-cut), and a
+   website can't read or set the OS print dialog's paper size, so the actual
+   physical dimensions are a client-side preference instead (lib/labelStock.ts,
+   picked via the "Label size" control in PrintLabelsSheet) rendered as an
+   injected <style>@page{...}</style> tag rather than hardcoded here — CSS's
+   @page at-rule can't be scoped by a class selector, so swapping label stock
+   means replacing that rule's text, not toggling a class. Without *some*
+   @page size (static here or injected there), the print target defaults to a
+   full Letter/A4 page and the on-screen card ends up stranded in one corner
+   of it — if a physical printout still comes out wrong after picking the
+   right size in the dropdown, double-check "Media & Quality" in the iOS
+   print sheet matches the actual label stock and isn't "Auto Select Media
+   Type" before assuming this CSS needs adjusting (Safari/WebKit's support
+   for @page is limited compared to Chrome/Firefox). */
 @media print {
-  body * {
-    visibility: hidden;
+  body > *:not(.print-labels-root) {
+    display: none !important;
   }
-  .print-label-sheet,
-  .print-label-sheet * {
-    visibility: visible;
+  .print-pass-through {
+    position: static !important;
+    inset: auto !important;
+    overflow: visible !important;
+    max-height: none !important;
   }
   .print-label-sheet {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
+    gap: 0 !important;
   }
   .print-label {
     break-inside: avoid;
+    break-after: page;
+    page-break-after: always; /* older WebKit fallback for break-after */
     box-shadow: none !important;
+    /* The rounded border/card background (ChildLabel.tsx/ParentMatchTag.tsx)
+       is only meant for the on-screen preview card look — on the physical
+       label it just wastes ink/toner and reads as an odd bounding box, since
+       the label stock itself is already the "card". */
+    border: none !important;
+    border-radius: 0 !important;
+    background: none !important;
+    /* A fixed-height preset's content (e.g. a "Dropped off by" line wrapping
+       to a second line for a long name/phone combo) can end up very
+       slightly taller than the declared height — without this, that
+       overflow fragments onto a second, almost-entirely-blank physical
+       piece per label rather than just being clipped. Clipping a sliver of
+       a last line is a far smaller cost than wasting an entire blank
+       label. */
+    overflow: hidden !important;
+  }
+  .print-label:last-child {
+    break-after: auto;
+    page-break-after: auto;
   }
 }

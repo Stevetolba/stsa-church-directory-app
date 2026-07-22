@@ -141,6 +141,19 @@ export async function POST(request: NextRequest) {
     matchCode = null;
   }
 
+  // Required (not just offered) — same rule as /api/attendance — so a
+  // label never silently prints a client-side "joined household adults"
+  // guess that was never actually saved. Checked against the final
+  // resolved value so a repeat submission that omits dropOffProfileId
+  // (e.g. just changing a session) still passes if one was already
+  // captured on the original check-in.
+  if (tracksPickup && !droppedOffByProfileId) {
+    return NextResponse.json(
+      { error: "Select who dropped this child off before checking them in." },
+      { status: 400 }
+    );
+  }
+
   const record = await recordCheckIn({
     seriesId: event.series_id,
     eventId: event.id,

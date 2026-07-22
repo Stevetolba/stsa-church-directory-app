@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeAbsentees, summarize, summarizeSeriesFrequency } from "./attendance";
+import { buildReprintLabelData, computeAbsentees, summarize, summarizeSeriesFrequency } from "./attendance";
 import type { CheckInRecord } from "@/types/attendance";
 
 function rec(partial: Partial<CheckInRecord>): CheckInRecord {
@@ -15,6 +15,9 @@ function rec(partial: Partial<CheckInRecord>): CheckInRecord {
     sessionName: partial.sessionName ?? null,
     checkedInAt: "2026-07-19T13:05:00Z",
     checkedInBy: "office@example.org",
+    droppedOffByProfileId: partial.droppedOffByProfileId ?? null,
+    droppedOffByName: partial.droppedOffByName ?? null,
+    matchCode: partial.matchCode ?? null,
     checkedOutAt: partial.checkedOutAt ?? null,
     checkedOutBy: partial.checkedOutBy ?? null,
     method: "live",
@@ -75,6 +78,69 @@ describe("summarizeSeriesFrequency", () => {
     ];
     const result = summarizeSeriesFrequency(records, occurrenceDates);
     expect(result.people[0].attendedDates).toEqual(["2026-07-05"]);
+  });
+});
+
+describe("buildReprintLabelData", () => {
+  // lib/mockData.ts fixtures (SUBSPLASH_USE_MOCK defaults true when unset,
+  // as it is in the test env): Lily Whitfield is a child with allergy/care
+  // notes; Robert Whitfield is her parent with a phone number on file.
+  it("returns null for both when the record isn't a child", async () => {
+    const record = rec({ profileId: "profile-robert-whitfield", isChild: false });
+    const result = await buildReprintLabelData(record, "Sunday School");
+    expect(result).toEqual({ childLabel: null, parentTag: null });
+  });
+
+  it("re-fetches allergy/care notes and drop-off phone from the profile, not the record", async () => {
+    const record = rec({
+      profileId: "profile-lily-whitfield",
+      isChild: true,
+      matchCode: "AB12",
+      droppedOffByProfileId: "profile-robert-whitfield",
+      droppedOffByName: "Robert Whitfield",
+      sessionName: "Pre-K",
+    });
+    const result = await buildReprintLabelData(record, "Sunday School");
+    expect(result.childLabel).toMatchObject({
+      firstName: "Lily",
+      lastName: "Whitfield",
+      matchCode: "AB12",
+      eventTitle: "Sunday School",
+      sessionName: "Pre-K",
+      contactName: "Robert Whitfield",
+      contactPhone: "(614) 555-0143",
+      allergyNotes: "Severe peanut allergy — carries an EpiPen.",
+      careNotes: "Needs quiet space if overstimulated. Pickup by parent or grandmother only.",
+    });
+    expect(result.parentTag).toEqual({
+      matchCode: "AB12",
+      childNames: ["Lily Whitfield"],
+      dropOffName: "Robert Whitfield",
+    });
+  });
+
+  it("has no parent tag when the record has no match code (e.g. an 'everyone' session)", async () => {
+    const record = rec({ profileId: "profile-lily-whitfield", isChild: true, matchCode: null });
+    const result = await buildReprintLabelData(record, "Liturgy");
+    expect(result.parentTag).toBeNull();
+    expect(result.childLabel?.matchCode).toBe("");
+  });
+
+  it("falls back to the record's displayName for a guest child (no profile to fetch)", async () => {
+    const record = rec({
+      profileId: "guest:abc123",
+      isChild: true,
+      isGuest: true,
+      displayName: "Visiting Kid",
+      matchCode: "ZZ99",
+    });
+    const result = await buildReprintLabelData(record, "Sunday School");
+    expect(result.childLabel).toMatchObject({
+      firstName: "Visiting Kid",
+      lastName: "",
+      allergyNotes: null,
+      careNotes: null,
+    });
   });
 });
 
