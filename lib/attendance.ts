@@ -8,9 +8,11 @@ import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { getDb, isDbConfigured } from "./db";
 import { checkIns, type CheckInRow } from "./db/schema";
 import { mockCheckIns } from "./mockData";
-import { attachParentContacts, searchChildren, searchProfiles } from "./subsplash";
+import { attachParentContacts, getProfile, searchChildren, searchProfiles } from "./subsplash";
 import type { AttendanceSummary, CheckInMethod, CheckInRecord } from "@/types/attendance";
 import type { Campus, MemberStatus, Profile } from "@/types/profile";
+import type { ChildLabelData } from "@/components/labels/ChildLabel";
+import type { ParentMatchTagData } from "@/components/labels/ParentMatchTag";
 
 // --- Row mapping (DB <-> app record) ---
 
@@ -537,4 +539,71 @@ export async function resolveAbsenteeEmails(absentees: Profile[]): Promise<Set<s
     }
   }
   return emails;
+}
+
+// --- Reprint (rebuild printable label data for an already-checked-in person) ---
+
+export interface ReprintLabelResult {
+  childLabel: ChildLabelData | null;
+  parentTag: ParentMatchTagData | null;
+}
+
+// Rebuilds exactly what a "Reprint label" action needs from a persisted
+// CheckInRecord. Only children ever get a printed label (matches the
+// original check-in flow), so a non-child record yields nulls. Allergy/care
+// notes and the drop-off adult's phone are never persisted on the check_ins
+// row itself (see ChildLabel.tsx / ParentMatchTag.tsx) — they're normally
+// only available in the original check-in POST response, which a reprint
+// obviously can't replay, so they're re-fetched from Subsplash here instead.
+// Shared by /api/attendance/reprint and /api/kiosk/attendance/reprint (the
+// two parallel staff/kiosk surfaces, mirroring the existing GET/POST/PATCH
+// split between those routes) so both surfaces stay in sync with exactly one
+// implementation of "how to rebuild a label."
+export async function buildReprintLabelData(
+  record: CheckInRecord,
+  eventTitle: string
+): Promise<ReprintLabelResult> {
+  if (!record.isChild) {
+    return { childLabel: null, parentTag: null };
+  }
+
+  let firstName = record.displayName;
+  let lastName = "";
+  let allergyNotes: string | null = null;
+  let careNotes: string | null = null;
+  if (!record.isGuest) {
+    const profile = await getProfile(record.profileId);
+    if (profile) {
+      firstName = profile.first_name;
+      lastName = profile.last_name;
+      allergyNotes = profile.allergy_notes ?? null;
+      careNotes = profile.care_notes ?? null;
+    }
+  }
+
+  let contactPhone: string | null = null;
+  if (record.droppedOffByProfileId) {
+    const dropOffProfile = await getProfile(record.droppedOffByProfileId);
+    contactPhone = dropOffProfile?.phone_number ?? null;
+  }
+
+  const childLabel: ChildLabelData = {
+    id: record.id,
+    firstName,
+    lastName,
+    matchCode: record.matchCode ?? "",
+    eventTitle,
+    sessionName: record.sessionName,
+    contactName: record.droppedOffByName,
+    contactPhone,
+    allergyNotes,
+    careNotes,
+  };
+
+  const fullName = `${firstName} ${lastName}`.trim();
+  const parentTag: ParentMatchTagData | null = record.matchCode
+    ? { matchCode: record.matchCode, childNames: [fullName], dropOffName: record.droppedOffByName }
+    : null;
+
+  return { childLabel, parentTag };
 }

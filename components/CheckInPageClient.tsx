@@ -8,6 +8,7 @@ import {
   Check,
   Clock,
   LogOut,
+  Printer,
   ShieldAlert,
   UserPlus,
   X,
@@ -108,6 +109,25 @@ export function CheckInPageClient({
     setSelected(new Set());
   }
 
+  // Household names, among currently selected children, whose drop-off
+  // adult is still ambiguous (2+ adults, none picked via the "Dropped off
+  // by" select) — a single-adult household auto-resolves via
+  // dropOffForHousehold and never appears here. Checked before submit so a
+  // check-in can never save without one; a name that's only reachable via
+  // the client-side "joined household adults" guess was never actually
+  // persisted, which is exactly the gap that prompted requiring this.
+  function unresolvedDropOffHouseholds(): string[] {
+    if (autoSessionType === "everyone") return [];
+    const names = new Set<string>();
+    for (const id of Array.from(selected)) {
+      const profile = profileById.get(id);
+      if (!profile || profile.household_role !== "child") continue;
+      const group = groupByProfileId.get(id);
+      if (group && !dropOffForHousehold(group)) names.add(group.name);
+    }
+    return Array.from(names);
+  }
+
   // One combined submit for everyone currently selected, mirroring
   // Subsplash's own kiosk app rather than a per-row instant action. Profiles
   // that fail stay selected so the operator can see what still needs a retry;
@@ -115,6 +135,11 @@ export function CheckInPageClient({
   async function handleBatchCheckIn() {
     const ids = Array.from(selected);
     if (ids.length === 0) return;
+    const missingDropOff = unresolvedDropOffHouseholds();
+    if (missingDropOff.length > 0) {
+      toast.error(`Select who dropped off ${missingDropOff.join(", ")} before checking in.`);
+      return;
+    }
     setBatchSubmitting(true);
     // Siblings checked in in the same batch share one pickup match code, so
     // a parent carries a single tag rather than one per child — generated
@@ -136,13 +161,9 @@ export function CheckInPageClient({
           matchCodeByHousehold.set(group.householdId, matchCode);
           const dropOffProfile = dropOffProfileId ? profileById.get(dropOffProfileId) : undefined;
           const sessionId = sessionForProfile(profile);
-          // A specific drop-off adult wins; with two+ adults and no explicit
-          // pick, the label still names the household's adult(s) rather than
-          // going blank — the printed slip is meant to be read at a glance,
-          // not left without a parent name because no one tapped a dropdown.
-          const contactName = dropOffProfile
-            ? `${dropOffProfile.first_name} ${dropOffProfile.last_name}`.trim()
-            : group.adults.map((a) => `${a.first_name} ${a.last_name}`.trim()).join(" & ") || undefined;
+          // Always resolved by this point — unresolvedDropOffHouseholds()
+          // already blocked submission otherwise.
+          const contactName = dropOffProfile ? `${dropOffProfile.first_name} ${dropOffProfile.last_name}`.trim() : undefined;
           labelDataById.set(id, {
             id,
             firstName: profile.first_name,
@@ -231,6 +252,40 @@ export function CheckInPageClient({
       setBusyFor(profileId, false);
     }
   }
+
+  // Reprints re-fetch allergy/care notes and the drop-off adult's phone
+  // server-side rather than trusting profileById — that map only holds
+  // whoever this operator has searched for since the page loaded, and may
+  // not include the person being reprinted (see buildReprintLabelData).
+  async function handleReprint(profileId: string) {
+    setBusyFor(profileId, true);
+    try {
+      const params = new URLSearchParams({ eventId: event.id, profileId });
+      const res = await fetch(`/api/attendance/reprint?${params.toString()}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? "Could not reprint label");
+      }
+      const { childLabel, parentTag } = (await res.json()) as {
+        childLabel: ChildLabelData | null;
+        parentTag: ParentMatchTagData | null;
+      };
+      if (!childLabel && !parentTag) {
+        toast.error("No label to reprint for this person.");
+        return;
+      }
+      setLabelsToPrint({
+        children: childLabel ? [childLabel] : [],
+        parentTags: parentTag ? [parentTag] : [],
+      });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not reprint label");
+    } finally {
+      setBusyFor(profileId, false);
+    }
+  }
+
+  const missingDropOff = unresolvedDropOffHouseholds();
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -389,11 +444,16 @@ export function CheckInPageClient({
           )}
 
           {selected.size > 0 && (
-            <div className="sticky bottom-4 z-10 mt-4 flex justify-end">
+            <div className="sticky bottom-4 z-10 mt-4 flex flex-col items-end gap-1.5">
+              {missingDropOff.length > 0 && (
+                <span className="rounded-lg bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#B4462F] shadow-sm">
+                  Select who dropped off {missingDropOff.join(", ")}
+                </span>
+              )}
               <button
                 type="button"
                 onClick={handleBatchCheckIn}
-                disabled={batchSubmitting}
+                disabled={batchSubmitting || missingDropOff.length > 0}
                 className="rounded-full bg-brand-navy px-6 py-3 text-[14.5px] font-semibold text-brand-cream shadow-[0_4px_16px_rgba(26,58,92,0.3)] transition-colors hover:bg-brand-navy/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {batchSubmitting ? "Checking in…" : `Check in ${selected.size}`}
@@ -409,6 +469,7 @@ export function CheckInPageClient({
           profileById={profileById}
           onCheckOut={handleCheckOut}
           onUndo={handleUndo}
+          onReprint={handleReprint}
         />
       )}
 
@@ -674,6 +735,7 @@ function CheckedInList({
   profileById,
   onCheckOut,
   onUndo,
+  onReprint,
 }: {
   records: CheckInRecord[];
   event: AppEvent;
@@ -681,6 +743,7 @@ function CheckedInList({
   profileById: Map<string, Profile>;
   onCheckOut: (profileId: string) => void;
   onUndo: (profileId: string) => void;
+  onReprint: (profileId: string) => void;
 }) {
   const present = records.filter((r) => !r.checkedOutAt);
   const departed = records.filter((r) => r.checkedOutAt);
@@ -722,6 +785,20 @@ function CheckedInList({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {/* Only a child ever gets a printed label (ChildLabelData's own
+              scope) — present or departed, since a reprint doesn't depend on
+              still being checked in. */}
+          {r.isChild && (
+            <button
+              type="button"
+              onClick={() => onReprint(r.profileId)}
+              disabled={busy.has(r.profileId)}
+              className="flex items-center gap-1.5 rounded-[10px] border border-[#E5DCC8] bg-white px-3 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:opacity-50"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              Reprint
+            </button>
+          )}
           {!departedRow && (
             <button
               type="button"
