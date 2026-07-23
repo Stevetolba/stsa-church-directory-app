@@ -100,18 +100,56 @@ export function PrintLabelsSheet({
     setCanShareFiles(!!navigator.canShare?.({ files: [probe] }));
   }, []);
 
+  // toBlob snapshots the node exactly as it's currently painted on screen —
+  // and on screen, ChildLabel/ParentMatchTag use the wide modal-preview
+  // layout (max-w-[300px], landscape), not the narrow/tall shape the label
+  // stock actually needs. That shape only exists inside @media print
+  // (labelStockPrintCss), which a plain DOM snapshot never sees. Confirmed
+  // physically: a captured card came out ~3:1 landscape, and iOS's own
+  // Print pipeline rotated it 90° to feed it down a narrow continuous roll,
+  // printing a correctly-sized but sideways, needlessly long label. Fix:
+  // apply the same width/height the print CSS would for the current preset
+  // directly on the node before capturing it, so the exported image is
+  // already in the narrow/tall shape the tape expects and needs no rotation.
+  async function captureLabelAsFile(node: HTMLElement, filename: string): Promise<File> {
+    const original = node.style.cssText;
+    node.style.width = `${preset.widthMm}mm`;
+    node.style.maxWidth = "none";
+    if (preset.heightMm === "auto") {
+      node.style.height = "";
+      node.style.justifyContent = "";
+    } else {
+      node.style.height = `${preset.heightMm}mm`;
+      node.style.justifyContent = "center";
+    }
+    try {
+      // Let the browser actually reflow/repaint the resized node before
+      // html-to-image reads its layout — otherwise it can still capture
+      // stale (pre-resize) geometry.
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const blob = await toBlob(node, { pixelRatio: 3, backgroundColor: "#ffffff" });
+      if (!blob) throw new Error("Could not generate image");
+      return new File([blob], filename, { type: "image/png" });
+    } finally {
+      node.style.cssText = original;
+    }
+  }
+
   async function handleShare() {
     if (!labelsRef.current) return;
     setSharing(true);
     try {
       const nodes = Array.from(labelsRef.current.querySelectorAll<HTMLElement>(".print-label"));
-      const files = await Promise.all(
-        nodes.map(async (node, i) => {
-          const blob = await toBlob(node, { pixelRatio: 3, backgroundColor: "#ffffff" });
-          if (!blob) throw new Error("Could not generate image");
-          return new File([blob], `label-${i + 1}.png`, { type: "image/png" });
-        })
-      );
+      // Captured sequentially, not in parallel — each one temporarily
+      // mutates the live node's inline style, and doing that concurrently
+      // across nodes would be fine (they're different elements) but
+      // reusing the same "resize, wait a frame, snapshot, restore" dance
+      // in parallel offers no real speedup here and only adds risk if two
+      // resizes ever land on the same node.
+      const files: File[] = [];
+      for (let i = 0; i < nodes.length; i++) {
+        files.push(await captureLabelAsFile(nodes[i], `label-${i + 1}.png`));
+      }
       if (!navigator.canShare?.({ files })) {
         toast.error("This device can't share images — use Print instead.");
         return;
