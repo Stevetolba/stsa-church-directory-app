@@ -264,7 +264,15 @@ const SEED_PROFILES: Profile[] = [
     household_role: "guardian",
     status: "Visitor",
     campus: "Leesburg",
-    custom_fields: [{ id: "cf-campus", label: "Campus", value: "Leesburg" }],
+    // Personal outlook.com address + DirectoryRole "Team Lead" (ADR-0017),
+    // deliberately without directory_access set — exercises sign-in being
+    // admitted by DirectoryRole alone, and the Children page's "Email
+    // Parents" permission for a volunteer-tier person.
+    directory_role: "Team Lead",
+    custom_fields: [
+      { id: "cf-campus", label: "Campus", value: "Leesburg" },
+      { id: "cf-role", label: "DirectoryRole", value: "Team Lead" },
+    ],
     created_at: "2024-12-01T14:00:00Z",
     updated_at: "2025-12-01T09:30:00Z",
   },
@@ -300,7 +308,15 @@ const SEED_PROFILES: Profile[] = [
     household_role: "guardian",
     status: "Newcomer",
     campus: "Leesburg",
-    custom_fields: [{ id: "cf-campus", label: "Campus", value: "Leesburg" }],
+    // Personal yahoo.com address + DirectoryRole "Admin" (ADR-0017) —
+    // exercises a non-staff person being elevated to full admin from
+    // Subsplash config alone, the same way ADMIN_EMAILS elevates a staff
+    // member, without directory_access needing to be set separately.
+    directory_role: "Admin",
+    custom_fields: [
+      { id: "cf-campus", label: "Campus", value: "Leesburg" },
+      { id: "cf-role", label: "DirectoryRole", value: "Admin" },
+    ],
     created_at: "2026-02-09T14:00:00Z",
     updated_at: "2026-02-09T09:30:00Z",
   },

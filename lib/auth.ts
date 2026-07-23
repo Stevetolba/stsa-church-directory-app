@@ -1,14 +1,17 @@
 // NextAuth v5 (Auth.js) config — ADR-0001. Staff auth via Google Workspace
 // SSO, entirely independent of the Subsplash service token (lib/subsplash.ts).
 // ADR-0010 extends this to admit personal-email volunteers as read-only when
-// they're flagged for directory access in Subsplash.
+// they're flagged for directory access in Subsplash. ADR-0017 further
+// extends the jwt callback to elevate a personal-email person to admin, or
+// grant the one narrow "email children's parents" permission, based on a
+// separate Subsplash DirectoryRole custom field.
 
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import type { GoogleProfile } from "next-auth/providers/google";
 import type { Role } from "@/types/auth";
 import { isAdminEmail, resolveRole } from "./roles";
-import { hasDirectoryAccess } from "./subsplash";
+import { getDirectoryRole, hasDirectoryAccess } from "./subsplash";
 import { authConfig } from "./auth.config";
 import { recordAccessEvent } from "./accessLog";
 
@@ -54,16 +57,40 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return true;
       }
 
-      // Volunteers: personal email, allowed only if flagged for directory
-      // access in Subsplash (ADR-0010). Fails closed on any lookup error.
-      const granted = await hasDirectoryAccess(email);
+      // Everyone else: personal email, admitted either the original way
+      // (ADR-0010: flagged for read-only directory access) or via a
+      // Subsplash DirectoryRole of Admin/Team Lead (ADR-0017) — either is
+      // enough to sign in; the jwt callback below works out which. Fails
+      // closed on any lookup error.
+      const directoryRole = await getDirectoryRole(email);
+      const grantedByRole = directoryRole === "Admin" || directoryRole === "Team Lead";
+      const granted = grantedByRole || (await hasDirectoryAccess(email));
       await recordAccessEvent({ email, role, eventType: granted ? "sign_in" : "sign_in_denied" });
       return granted;
     },
-    async jwt({ token }) {
-      if (token.email) {
-        token.role = resolveRole(token.email);
+    async jwt({ token, account }) {
+      if (!token.email) return token;
+
+      // Only re-derive on a fresh sign-in (account present) — a token
+      // refresh shouldn't re-hit Subsplash on every request; the 24h
+      // maxAge above is what forces re-validation, not this callback.
+      if (!account) return token;
+
+      const baseRole = resolveRole(token.email);
+      if (baseRole !== "volunteer") {
+        token.role = baseRole;
+        token.canEmailChildren = false;
+        return token;
       }
+
+      // Non-staff, non-admin-by-list: check Subsplash's DirectoryRole field
+      // for an elevation (ADR-0017). Admin promotes the whole session, same
+      // as being listed in ADMIN_EMAILS; Team Lead only grants the one
+      // narrow permission (sending the Children/Youth "Email Parents"
+      // feature) — everything else about them stays exactly volunteer-scoped.
+      const directoryRole = await getDirectoryRole(token.email);
+      token.role = directoryRole === "Admin" ? "admin" : "volunteer";
+      token.canEmailChildren = directoryRole === "Team Lead";
       return token;
     },
     async session({ session, token }) {
@@ -71,6 +98,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (role) {
         session.user.role = role;
       }
+      session.user.canEmailChildren = !!token.canEmailChildren;
       return session;
     },
   },

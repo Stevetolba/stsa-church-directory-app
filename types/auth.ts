@@ -12,6 +12,14 @@ declare module "next-auth" {
   interface Session {
     user: {
       role: Role;
+      // ADR-0017: true for a personal-email volunteer whose Subsplash
+      // DirectoryRole custom field is "Team Lead" — grants exactly one
+      // extra permission (sending the Children/Youth "Email Parents"
+      // feature) without otherwise changing their volunteer-tier scoping.
+      // Deliberately not a new Role value: that would require re-auditing
+      // every existing `role === "volunteer"` check across the app, when
+      // the actual ask is one narrow, additive permission.
+      canEmailChildren: boolean;
     } & DefaultSession["user"];
   }
 }

@@ -10,10 +10,11 @@ export default async function ChildrenPage() {
     name: session?.user?.name ?? session?.user?.email ?? "Staff",
     email: session?.user?.email ?? "",
   };
-  // ADR-0014: Email Parents is staff/admin only for now — server-enforced in
-  // POST /api/children/email (requireStaffOrAdmin); this just keeps a
-  // volunteer from seeing an entry point to a request that'll 403 anyway.
-  const canEmailParents = session?.user?.role !== "volunteer";
+  // ADR-0014: Email Parents is staff/admin only, plus (ADR-0017) a volunteer
+  // whose Subsplash DirectoryRole is "Team Lead" — server-enforced in
+  // POST /api/children/email (requireCanEmailChildren); this just keeps
+  // anyone else from seeing an entry point to a request that'll 403 anyway.
+  const canEmailParents = session?.user?.role !== "volunteer" || !!session?.user?.canEmailChildren;
 
   return (
     <ChildrenPageClient

@@ -1,17 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
-import { requireStaffOrAdmin } from "@/lib/rbac";
+import { requireCanEmailChildren } from "@/lib/rbac";
 import { sendBulkEmail } from "@/lib/email";
 import { emailParentsSchema } from "@/lib/validation/email";
 import { attachParentContacts, searchChildren } from "@/lib/subsplash";
 import type { MemberStatus } from "@/types/profile";
 
-// ADR-0014: staff/admin only for now — unlike GET /api/children, this is a
-// send capability, not a read, so it's held to the same bar as the other
-// requireStaffOrAdmin-gated routes until there's reason to extend it to
-// volunteers.
+// ADR-0014: staff/admin only, plus (ADR-0017) a volunteer whose Subsplash
+// DirectoryRole is "Team Lead" — unlike GET /api/children, this is a send
+// capability, not a read, so it's held to the same bar as the other
+// requireStaffOrAdmin-gated routes, with that one narrow carve-out.
 export async function POST(request: NextRequest) {
-  const forbidden = await requireStaffOrAdmin("children-email");
+  const forbidden = await requireCanEmailChildren();
   if (forbidden) return forbidden;
   const session = await auth();
   if (!session?.user?.email) {

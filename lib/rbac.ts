@@ -42,3 +42,26 @@ export async function requireStaffOrAdmin(resource: string): Promise<NextRespons
   });
   return null;
 }
+
+// ADR-0017: same gate as requireStaffOrAdmin, but also admits a volunteer
+// whose Subsplash DirectoryRole is "Team Lead" (session.user.canEmailChildren).
+// That's the one permission Team Lead grants — sending the Children/Youth
+// "Email Parents" feature — nothing broader like the full profiles/
+// households reads requireStaffOrAdmin otherwise gates, so this is scoped to
+// that one route rather than folded into requireStaffOrAdmin itself.
+export async function requireCanEmailChildren(): Promise<NextResponse | null> {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (session.user.role === "volunteer" && !session.user.canEmailChildren) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  await recordAccessEvent({
+    email: session.user.email ?? "unknown",
+    role: session.user.role,
+    eventType: "directory_read",
+    resource: "children-email",
+  });
+  return null;
+}

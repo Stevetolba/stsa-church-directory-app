@@ -10,6 +10,16 @@ export type MemberStatus =
 
 export type Campus = "Arlington" | "Leesburg";
 
+// Mirrors the "DirectoryRole" custom field's dropdown choices in Subsplash
+// (ADR-0017) — lets a church admin elevate a personal-email person beyond
+// the default volunteer tier without needing separate access to Subsplash's
+// own admin UI: "Admin" grants full write access (same as being listed in
+// ADMIN_EMAILS), "Team Lead" grants exactly one extra permission (sending
+// the Children/Youth "Email Parents" feature). Unset, or "Volunteer", leaves
+// someone exactly where the existing DirectoryAccess field already puts
+// them — this field only ever elevates, never restricts.
+export type DirectoryRole = "Admin" | "Team Lead" | "Volunteer";
+
 // Mirrors Subsplash's HouseholdRole enum exactly (openapi.yaml) — not
 // "head"/"spouse" as earlier mock data guessed before this was checked.
 export type HouseholdRole = "guardian" | "parent" | "child" | "other" | "unknown";
@@ -48,6 +58,9 @@ export interface Profile {
   // read-only sign-in (ADR-0010). Admin-editable from the person's edit
   // page, same as campus.
   directory_access?: boolean;
+  // The DirectoryRole custom field's current value, if set (ADR-0017).
+  // Admin-editable from the person's edit page, same as directory_access.
+  directory_role?: DirectoryRole;
   // A profile can have its own linked address in Subsplash, independent of
   // the household's — most people don't have one set (the household address
   // is the norm), so display code should fall back to the household's.
