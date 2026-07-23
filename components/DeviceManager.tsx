@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Plus, Tablet, Trash2, X } from "lucide-react";
+import { Ban, Plus, Tablet, Trash2, X } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 
 interface DeviceRecord {
@@ -54,6 +54,7 @@ export function DeviceManager() {
   const [submitting, setSubmitting] = useState(false);
   const [justCreated, setJustCreated] = useState<DeviceRecord | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -93,6 +94,21 @@ export function DeviceManager() {
       mutate();
     } finally {
       setRevokingId(null);
+    }
+  }
+
+  async function handleDelete(device: DeviceRecord) {
+    try {
+      const res = await fetch(`/api/devices/${device.id}/delete`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        toast.error(body.error ?? "Could not delete device");
+        return;
+      }
+      toast.success(`"${device.name}" deleted`);
+      mutate();
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -149,14 +165,23 @@ export function DeviceManager() {
                     {" · "}Added {formatDateTime(device.createdAt)} by {device.createdBy}
                   </div>
                 </div>
-                {!device.revokedAt && (
+                {!device.revokedAt ? (
                   <button
                     type="button"
                     onClick={() => setRevokingId(device.id)}
                     className="flex shrink-0 items-center gap-1.5 rounded-[10px] border border-[#E5DCC8] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#B04A3A] transition-colors hover:border-[#B04A3A]/40"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Ban className="h-3.5 w-3.5" />
                     Revoke
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setDeletingId(device.id)}
+                    className="flex shrink-0 items-center gap-1.5 rounded-[10px] border border-[#E5DCC8] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#B04A3A] transition-colors hover:border-[#B04A3A]/40"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
                   </button>
                 )}
               </div>
@@ -226,6 +251,36 @@ export function DeviceManager() {
                 className="rounded-[10px] bg-[#B04A3A] px-4 py-2 text-[13.5px] font-semibold text-white"
               >
                 Revoke
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deletingId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-[16px] bg-white p-5 shadow-xl">
+            <h2 className="font-heading text-[16px] font-semibold text-brand-navy">Delete this device?</h2>
+            <p className="mt-1 text-[13.5px] text-[#5B7185]">
+              This removes it from the list for good, including its setup history. This can&apos;t be undone.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeletingId(null)}
+                className="rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const device = devices.find((d) => d.id === deletingId);
+                  if (device) handleDelete(device);
+                }}
+                className="rounded-[10px] bg-[#B04A3A] px-4 py-2 text-[13.5px] font-semibold text-white"
+              >
+                Delete
               </button>
             </div>
           </div>

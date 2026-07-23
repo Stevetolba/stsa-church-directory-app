@@ -6,7 +6,7 @@
 // in-memory globalThis array), selected by isDbConfigured() — same pattern
 // as lib/attendance.ts.
 
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { getDb, isDbConfigured } from "./db";
 import { devices, type DeviceRow } from "./db/schema";
@@ -196,6 +196,27 @@ export async function revokeDevice(id: string): Promise<void> {
   }
   const row = mockStore().find((r) => r.id === id);
   if (row) row.revokedAt = now;
+}
+
+// Permanently removes a device's row — only once it's already revoked, so
+// there's no path straight from "still trusted" to "gone with no audit
+// trail." Returns false (no-op) if the device doesn't exist or hasn't been
+// revoked yet, so the caller can respond with a clear error instead of
+// silently doing nothing.
+export async function deleteDevice(id: string): Promise<boolean> {
+  if (isDbConfigured()) {
+    const db = getDb();
+    const deleted = await db
+      .delete(devices)
+      .where(and(eq(devices.id, id), isNotNull(devices.revokedAt)))
+      .returning({ id: devices.id });
+    return deleted.length > 0;
+  }
+  const store = mockStore();
+  const index = store.findIndex((r) => r.id === id && r.revokedAt);
+  if (index === -1) return false;
+  store.splice(index, 1);
+  return true;
 }
 
 // --- Dual-auth actor resolution ---

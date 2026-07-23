@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   claimDevice,
   createDeviceSetupCode,
+  deleteDevice,
   listDevices,
   revokeDevice,
   verifyDeviceToken,
@@ -72,5 +73,26 @@ describe("device setup + claim lifecycle", () => {
     expect(all).toHaveLength(2);
     expect(all.find((d) => d.name === "Lobby iPad")?.claimed).toBe(false);
     expect(all.find((d) => d.name === "Nursery iPad")?.claimed).toBe(true);
+  });
+});
+
+describe("deleteDevice", () => {
+  it("removes a revoked device's row entirely", async () => {
+    const device = await createDeviceSetupCode("Lobby iPad", "admin@example.org");
+    await revokeDevice(device.id);
+
+    expect(await deleteDevice(device.id)).toBe(true);
+    expect(await listDevices()).toHaveLength(0);
+  });
+
+  it("refuses to delete a device that hasn't been revoked", async () => {
+    const device = await createDeviceSetupCode("Lobby iPad", "admin@example.org");
+
+    expect(await deleteDevice(device.id)).toBe(false);
+    expect(await listDevices()).toHaveLength(1);
+  });
+
+  it("is a no-op for an unknown id", async () => {
+    expect(await deleteDevice("nonexistent")).toBe(false);
   });
 });
