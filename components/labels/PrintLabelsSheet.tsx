@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Printer, X } from "lucide-react";
+import { toBlob } from "html-to-image";
+import { toast } from "sonner";
+import { Printer, Share2, X } from "lucide-react";
 import { ChildLabel, type ChildLabelData } from "./ChildLabel";
 import { ParentMatchTag, type ParentMatchTagData } from "./ParentMatchTag";
 import {
@@ -40,6 +42,21 @@ import {
 // ancestors. It also avoids a second, subtler bug: before the portal, the
 // rest of the page stayed in normal document flow (just invisible), so its
 // full height printed as blank leading pages ahead of the real labels.
+//
+// "Share to print" is a second path alongside window.print(), added after
+// physical testing showed iOS Safari's AirPrint pipeline doesn't reliably
+// respect this app's @page sizing for a label printer — its own print
+// preview renders a full Letter/A4-shaped page regardless of what's
+// declared, a platform limitation no CSS here can override. Instead, each
+// label is captured as its own PNG (via html-to-image, reusing the exact
+// ChildLabel/ParentMatchTag DOM so there's no separate Canvas-drawing code
+// to keep visually in sync) and handed to the native OS share sheet via the
+// Web Share API, so a device with Brother's own iPrint&Label app installed
+// can print through that instead — it talks to the printer directly and
+// isn't subject to AirPrint's page-size guessing. Feature-detected (see
+// canShareFiles below) since Web Share's file support isn't universal —
+// desktop Chrome/Firefox largely don't implement it — so the button only
+// appears where it can actually do something.
 export function PrintLabelsSheet({
   childLabels = [],
   parentTags = [],
@@ -59,6 +76,9 @@ export function PrintLabelsSheet({
   // mismatch to worry about.
   const [stockId, setStockId] = useState<LabelStockId>(() => getStoredLabelStockId());
   const preset = labelStockPreset(stockId);
+  const [sharing, setSharing] = useState(false);
+  const [canShareFiles, setCanShareFiles] = useState(false);
+  const labelsRef = useRef<HTMLDivElement>(null);
 
   function handleStockChange(id: LabelStockId) {
     setStockId(id);
@@ -72,6 +92,41 @@ export function PrintLabelsSheet({
     if (autoPrint) window.print();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A throwaway 1-byte PNG, just to ask the browser "can you share files at
+  // all" without generating anything real yet.
+  useEffect(() => {
+    const probe = new File([new Uint8Array([1])], "probe.png", { type: "image/png" });
+    setCanShareFiles(!!navigator.canShare?.({ files: [probe] }));
+  }, []);
+
+  async function handleShare() {
+    if (!labelsRef.current) return;
+    setSharing(true);
+    try {
+      const nodes = Array.from(labelsRef.current.querySelectorAll<HTMLElement>(".print-label"));
+      const files = await Promise.all(
+        nodes.map(async (node, i) => {
+          const blob = await toBlob(node, { pixelRatio: 3, backgroundColor: "#ffffff" });
+          if (!blob) throw new Error("Could not generate image");
+          return new File([blob], `label-${i + 1}.png`, { type: "image/png" });
+        })
+      );
+      if (!navigator.canShare?.({ files })) {
+        toast.error("This device can't share images — use Print instead.");
+        return;
+      }
+      await navigator.share({ files });
+    } catch (e) {
+      // AbortError: the user closed the share sheet without picking
+      // anything — not a real failure, nothing to report.
+      if (e instanceof Error && e.name !== "AbortError") {
+        toast.error("Could not share labels — try Print instead.");
+      }
+    } finally {
+      setSharing(false);
+    }
+  }
 
   // No SSR/mounted guard needed: this component only ever mounts in
   // response to client-side state a parent sets after user interaction
@@ -122,7 +177,7 @@ export function PrintLabelsSheet({
             ))}
           </select>
         </div>
-        <div className="print-pass-through flex-1 overflow-y-auto px-5 py-4">
+        <div ref={labelsRef} className="print-pass-through flex-1 overflow-y-auto px-5 py-4">
           <div className="print-label-sheet flex flex-col items-center gap-3">
             {childLabels.map((d) => (
               <ChildLabel key={d.id} data={d} />
@@ -140,6 +195,17 @@ export function PrintLabelsSheet({
           >
             Done
           </button>
+          {canShareFiles && (
+            <button
+              type="button"
+              onClick={handleShare}
+              disabled={sharing}
+              className="flex items-center gap-1.5 rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Share2 className="h-4 w-4" />
+              {sharing ? "Preparing…" : "Share to print"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => window.print()}
