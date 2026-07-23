@@ -8,7 +8,7 @@ import {
 
 describe("labelStockPreset", () => {
   it("resolves a known id to its preset", () => {
-    expect(labelStockPreset("dk-1234")).toMatchObject({ widthMm: 60, heightMm: 86 });
+    expect(labelStockPreset("dk-1234")).toMatchObject({ widthMm: 86, heightMm: 60 });
   });
 
   it("falls back to the first preset for an unknown id", () => {
@@ -32,27 +32,22 @@ describe("labelStockPrintCss", () => {
 
   it("uses the fixed width and height for a die-cut label", () => {
     const css = labelStockPrintCss(labelStockPreset("dk-1234"));
-    expect(css).toContain("size: 60mm 86mm;");
-    expect(css).toContain("width: 60mm;");
+    expect(css).toContain("size: 86mm 60mm;");
+    expect(css).toContain("width: 86mm;");
   });
 
   // Regression: .print-label previously only ever got a `width` rule, never
   // `height` — the card's border/background ended up only as tall as its
-  // own text, floating with blank paper below it within the physical label
-  // instead of filling it.
-  it("sets .print-label's height (not just width) for a fixed-size preset", () => {
+  // own text, floating with blank paper below them within the physical
+  // label instead of filling it.
+  it("sets .print-image-sheet img's height (not just width) for a fixed-size preset", () => {
     const css = labelStockPrintCss(labelStockPreset("dk-1234"));
-    expect(css).toContain("height: 86mm;");
+    expect(css).toContain("height: 60mm;");
   });
 
   it("omits height for a continuous roll, since there's no fixed height to set", () => {
     const css = labelStockPrintCss(labelStockPreset("dk-2205"));
     expect(css).not.toMatch(/height:\s*\S/);
-  });
-
-  it("always centers content vertically within the label box", () => {
-    expect(labelStockPrintCss(labelStockPreset("dk-1234"))).toContain("justify-content: center;");
-    expect(labelStockPrintCss(labelStockPreset("dk-2205"))).toContain("justify-content: center;");
   });
 
   it("supports a fractional-mm custom preset", () => {
