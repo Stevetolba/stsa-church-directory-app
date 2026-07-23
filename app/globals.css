@@ -60,95 +60,23 @@
   }
 }
 
-/* Check-in label printing (ADR-0015): isolates PrintLabelsSheet's labels so
-   window.print() outputs only the label stack, not the rest of the app.
-   PrintLabelsSheet renders via createPortal(..., document.body), so it's a
-   direct child of <body> — a sibling of the rest of the app, not nested
-   inside it — and print CSS just hides every *other* body-level element.
-   That's a deliberately different trick from the more common "hide
-   everything, then re-reveal just this subtree via visibility" — two prior,
-   more surgical attempts each broke in their own way:
-     1. display:none (Tailwind's print:hidden) directly on an ancestor of
-        the print target removed the whole subtree from the render tree
-        with no way for a descendant to opt back in — nothing printed at all.
-     2. Switching that ancestor to visibility:hidden instead (so descendants
-        *could* opt back in) fixed that, but position:fixed on the same
-        ancestor turned out to silently defeat CSS fragmentation too —
-        break-after/before (used below to put each label on its own physical
-        piece) only fragments ordinary in-flow content, so labels kept
-        landing on one physical piece regardless of label stock or @page
-        validity. Neutralizing position/overflow on that ancestor
-        (.print-pass-through, still used below) fixed the fragmentation —
-        but then the *rest of the page* (the kiosk/dashboard UI this sheet
-        opens from), still in normal document flow and merely invisible,
-        printed as blank leading pages ahead of the real labels, since
-        nothing pulled it out of flow anymore either.
-   The portal sidesteps both failure modes at once: every other body child
-   can safely be display:none'd, so there's nothing left in flow to print as
-   blank pages, and .print-pass-through only has to neutralize this
-   component's *own* wrappers (still position:fixed/overflow-clipped for
-   normal on-screen modal behavior) for its children to fragment correctly.
-
-   What actually gets printed is NOT the live ChildLabel/ParentMatchTag DOM —
-   physical testing found window.print() on that styled HTML didn't reliably
-   respect page sizing (Safari/AirPrint rendered a full Letter/A4 page
-   regardless of @page), while printing a plain captured image of each label
-   came out correctly proportioned. So PrintLabelsSheet snapshots each label
-   as a PNG (html-to-image) and prints those via the .print-image-sheet
-   below instead; the on-screen preview cards (.print-label, still used as a
-   query selector to find what to capture — see PrintLabelsSheet) are
-   print:hidden and never themselves reach paper.
-
-   Deliberately has no @page/width sizing of its own — different kiosks load
-   different Brother DK label stock (continuous tape vs. die-cut), and a
-   website can't read or set the OS print dialog's paper size, so the actual
-   physical dimensions are a client-side preference instead (lib/labelStock.ts,
-   picked via the "Label size" control in PrintLabelsSheet) rendered as an
-   injected <style>@page{...}</style> tag rather than hardcoded here — CSS's
-   @page at-rule can't be scoped by a class selector, so swapping label stock
-   means replacing that rule's text, not toggling a class. */
-@media print {
-  body > *:not(.print-labels-root) {
-    display: none !important;
-  }
-  .print-pass-through {
-    position: static !important;
-    inset: auto !important;
-    overflow: visible !important;
-    max-height: none !important;
-    /* The outer wrapper's bg-black/40 modal backdrop (a full-viewport
-       overlay — it's .print-labels-root itself, the one element this
-       stylesheet deliberately keeps visible) and the card's own
-       bg-[#FAF7F1]/shadow would otherwise dither into a solid gray/hatched
-       block on a monochrome thermal printer, and since the overlay is
-       full-viewport-sized, it'd also print far longer than the actual
-       label content. */
-    background: none !important;
-    box-shadow: none !important;
-    border-radius: 0 !important;
-  }
-}
-
-/* Hidden on screen — only ever populated with captured label images right
-   before window.print() is called (see PrintLabelsSheet), and shown again
-   here for that moment only. */
-.print-image-sheet {
-  display: none;
-}
-@media print {
-  .print-image-sheet {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  .print-image-sheet img {
-    display: block;
-    break-inside: avoid;
-    break-after: page;
-    page-break-after: always; /* older WebKit fallback for break-after */
-  }
-  .print-image-sheet img:last-child {
-    break-after: auto;
-    page-break-after: auto;
-  }
-}
+/* Check-in label printing (ADR-0015): PrintLabelsSheet no longer prints this
+   page at all. Two earlier approaches both hit real platform limits:
+     1. window.print() on the live styled ChildLabel/ParentMatchTag DOM —
+        iOS Safari's AirPrint pipeline didn't reliably respect this app's
+        @page sizing, rendering a full Letter/A4 page regardless.
+     2. window.print() on captured PNGs of each label (correctly sized/
+        oriented via html-to-image) — better, but a physical test showed
+        the print dialog had no "Paper Size" control at all and merged both
+        labels onto a single "Page 1 of 1" instead of one page each. CSS
+        break-after/fragmentation inside a webpage's own print pipeline is
+        exactly the kind of thing that pipeline was already shown to handle
+        unreliably.
+   Both were still fundamentally "ask Safari to print this HTML page,"
+   which is the part that's unreliable. Now PrintLabelsSheet builds an
+   actual PDF client-side (pdf-lib) — one real page per label, each page's
+   size set directly from the physical label stock's mm dimensions, no CSS
+   @page/break-after guessing involved — and prints it via a hidden iframe's
+   own contentWindow.print(), a separate document/print context from this
+   page. None of this file's rules apply to that PDF; there is nothing left
+   for @media print to do here. */

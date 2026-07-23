@@ -4,10 +4,9 @@
 // exposes printer paper size. So the print dimensions this app assumes are a
 // client-side preference instead, persisted via localStorage (which in
 // practice means each kiosk iPad just remembers its own last choice, since
-// localStorage is already per-device). PrintLabelsSheet renders the chosen
-// preset's dimensions as an injected <style> tag — CSS's @page at-rule can't
-// be scoped by a class selector, so swapping it dynamically means replacing
-// its text rather than toggling a class.
+// localStorage is already per-device). PrintLabelsSheet reads a preset's
+// widthMm/heightMm directly when building each label's PDF page (pdf-lib),
+// rather than as CSS — see its buildLabelPdf.
 export type LabelStockId = "dk-2205" | "dk-1234" | "custom-62x46";
 
 export interface LabelStockPreset {
@@ -48,43 +47,4 @@ export function setStoredLabelStockId(id: LabelStockId): void {
 
 export function labelStockPreset(id: LabelStockId): LabelStockPreset {
   return LABEL_STOCK_PRESETS.find((p) => p.id === id) ?? LABEL_STOCK_PRESETS[0];
-}
-
-// The actual @page/width/height declarations for the chosen preset. Kept
-// separate from globals.css's static print rules (the "hide everything but
-// the label sheet" isolation trick, break-after-page, etc.), which don't
-// vary by label stock and stay put there.
-//
-// @page's `size` descriptor is `<length>{1,2} | auto | <page-size>` — a
-// fixed length and the `auto` keyword can't be mixed (confirmed against
-// MDN/the CSS Paged Media spec). A continuous roll (heightMm === "auto")
-// has no fixed physical height to declare, so `size` is omitted entirely
-// for that case rather than emitting the invalid `62mm auto`, which
-// browsers silently drop anyway — meaning it was never actually applying
-// *any* page size for continuous tape before this fix, falling back to
-// whatever the print target defaulted to. For continuous tape, cut length
-// is left entirely to the OS/driver's own "Media & Quality" selection —
-// it must be set to the actual continuous-roll media, not "Auto Select".
-//
-// Targets .print-image-sheet img rather than the old .print-label cards:
-// printing now goes through a captured PNG of each label (see
-// PrintLabelsSheet's captureLabelImage) rather than the live styled DOM —
-// physical testing found window.print() on the raw HTML/CSS didn't reliably
-// respect page sizing, but printing a plain image came out correctly
-// proportioned. The image is already captured at the right pixel aspect
-// ratio for this preset (captureLabelImage resizes the source node to
-// these same mm dimensions before snapshotting it), so this CSS's width/
-// height just has to match, not derive, that shape.
-export function labelStockPrintCss(preset: LabelStockPreset): string {
-  const size = preset.heightMm === "auto" ? null : `${preset.widthMm}mm ${preset.heightMm}mm`;
-  const height = preset.heightMm === "auto" ? "" : `height: ${preset.heightMm}mm; `;
-  return `
-    @page { ${size ? `size: ${size}; ` : ""}margin: 0; }
-    @media print {
-      .print-image-sheet img {
-        width: ${preset.widthMm}mm;
-        ${height}
-      }
-    }
-  `;
 }

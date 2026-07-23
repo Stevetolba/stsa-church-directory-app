@@ -7,56 +7,42 @@ import { toast } from "sonner";
 import { Printer, X } from "lucide-react";
 import { ChildLabel, type ChildLabelData } from "./ChildLabel";
 import { ParentMatchTag, type ParentMatchTagData } from "./ParentMatchTag";
+import { buildLabelPdf, type LabelPdfPage } from "@/lib/labelPdf";
 import {
   LABEL_STOCK_PRESETS,
   getStoredLabelStockId,
   labelStockPreset,
-  labelStockPrintCss,
   setStoredLabelStockId,
   type LabelStockId,
 } from "@/lib/labelStock";
 
 // Shown right after a batch check-in that included one or more children
 // (ADR-0015): a preview of every label that would print, plus a Print
-// button. The .print-label-sheet / .print-label rules in globals.css
-// isolate this region for @media print so only the labels come out, not
-// the whole page; the actual physical dimensions come from the "Label
-// size" picker below (lib/labelStock.ts) since different kiosks load
-// different DK stock and a website has no way to read that off the
-// printer itself.
+// button. Rendered via createPortal(..., document.body) purely as a normal
+// modal-overlay pattern (so it visually sits above the rest of the app) —
+// printing itself no longer depends on this page's DOM or CSS at all (see
+// below), so the portal isn't doing double duty as print-isolation the way
+// it once did.
 //
-// Rendered via createPortal(..., document.body) rather than in place: the
-// print CSS needs to hide *everything else on the page* (the kiosk/dashboard
-// UI this sheet is opened from), and the only way to do that safely is
-// display:none on every other body-level element — display:none on an
-// *ancestor* of the printable content is not an option (it removes the
-// whole subtree from the render tree with no way for a descendant to opt
-// back in, confirmed the hard way once already). A portal makes this
-// component itself a direct child of <body>, i.e. a sibling of the rest of
-// the app rather than nested inside it, so "hide every other body child" is
-// exactly the right selector and never touches one of this sheet's own
-// ancestors. It also avoids a second, subtler bug: before the portal, the
-// rest of the page stayed in normal document flow (just invisible), so its
-// full height printed as blank leading pages ahead of the real labels.
-//
-// Printing does NOT call window.print() on the live ChildLabel/ParentMatchTag
-// DOM. Physical testing showed iOS Safari's AirPrint pipeline doesn't
-// reliably respect this app's @page sizing for a label printer — its own
-// print preview renders a full Letter/A4-shaped page regardless of what's
-// declared, a platform limitation no CSS here can override, and a captured
-// image instead came out correctly proportioned. So each label is captured
-// as its own PNG (via html-to-image, reusing the exact ChildLabel/
-// ParentMatchTag DOM so there's no separate Canvas-drawing code to keep
-// visually in sync) and printed as a plain <img> through the browser's own
-// print dialog. html-to-image snapshots the node exactly as it's currently
-// painted on screen — and on screen these cards use the wide modal-preview
-// layout, not the narrow/tall shape the physical label stock needs (that
-// shape only exists inside @media print). So captureLabelImage temporarily
-// applies the selected preset's width/height to the node, waits a frame for
-// the resize to actually reflow, snapshots it, then restores the node's
-// original inline style — the exported image ends up already shaped like
-// the physical label instead of whatever the on-screen content happened to
-// render at.
+// Printing builds an actual PDF client-side instead of asking the browser
+// to print this page. Two earlier approaches both ran into real iOS Safari/
+// AirPrint limitations: printing the live styled ChildLabel/ParentMatchTag
+// DOM ignored this app's @page sizing entirely (a full Letter/A4 page came
+// out regardless), and printing a correctly-shaped captured image of each
+// label (still window.print() on this page) left the print dialog with no
+// paper-size control at all and merged multiple labels onto a single page
+// instead of fragmenting them via CSS break-after. Both failures trace back
+// to the same root cause: asking Safari's own print pipeline to print an
+// HTML page just isn't reliable for this. A PDF sidesteps that pipeline's
+// guesswork — each label is still captured as a PNG (html-to-image, reusing
+// the exact ChildLabel/ParentMatchTag DOM so there's no separate Canvas-
+// drawing code to keep visually in sync), but instead of printing those
+// images as part of this page, they're embedded as real PDF pages
+// (lib/labelPdf.ts) with page sizes read directly from the mm dimensions,
+// and that PDF is loaded into a hidden iframe and printed via *its own*
+// contentWindow.print() — a separate document/print context from this page,
+// where page size and page count are both explicit document properties
+// rather than something the print pipeline has to infer.
 export function PrintLabelsSheet({
   childLabels = [],
   parentTags = [],
@@ -77,9 +63,9 @@ export function PrintLabelsSheet({
   const [stockId, setStockId] = useState<LabelStockId>(() => getStoredLabelStockId());
   const preset = labelStockPreset(stockId);
   const [printing, setPrinting] = useState(false);
-  const [printImageUrls, setPrintImageUrls] = useState<string[] | null>(null);
+  const [printPdfUrl, setPrintPdfUrl] = useState<string | null>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
-  const printSheetRef = useRef<HTMLDivElement>(null);
+  const printFrameRef = useRef<HTMLIFrameElement>(null);
 
   function handleStockChange(id: LabelStockId) {
     setStockId(id);
@@ -94,43 +80,16 @@ export function PrintLabelsSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Object URLs are only good for the lifetime of this print pass — revoke
-  // whichever batch just got replaced (or the last one, on unmount) so we
-  // don't leak memory across repeated reprints in the same session.
+  // The object URL is only good for the lifetime of this print pass —
+  // revoke whichever one just got replaced (or the last one, on unmount) so
+  // we don't leak memory across repeated reprints in the same session.
   useEffect(() => {
     return () => {
-      printImageUrls?.forEach((url) => URL.revokeObjectURL(url));
+      if (printPdfUrl) URL.revokeObjectURL(printPdfUrl);
     };
-  }, [printImageUrls]);
+  }, [printPdfUrl]);
 
-  // Once a fresh batch of images lands in state, wait for the <img> tags to
-  // actually finish loading (decoding an object URL is effectively
-  // instant, but still asynchronous) before calling window.print() —
-  // printing before they've painted would produce blank labels.
-  useEffect(() => {
-    if (!printImageUrls || !printSheetRef.current) return;
-    let cancelled = false;
-    const imgs = Array.from(printSheetRef.current.querySelectorAll("img"));
-    Promise.all(
-      imgs.map(
-        (img) =>
-          new Promise<void>((resolve) => {
-            if (img.complete) return resolve();
-            img.onload = () => resolve();
-            img.onerror = () => resolve();
-          })
-      )
-    ).then(() => {
-      if (cancelled) return;
-      window.print();
-      setPrinting(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [printImageUrls]);
-
-  async function captureLabelImage(node: HTMLElement): Promise<string> {
+  async function captureLabelImage(node: HTMLElement): Promise<LabelPdfPage> {
     const original = node.style.cssText;
     node.style.width = `${preset.widthMm}mm`;
     node.style.maxWidth = "none";
@@ -151,9 +110,16 @@ export function PrintLabelsSheet({
     node.style.boxShadow = "none";
     try {
       await new Promise((resolve) => requestAnimationFrame(resolve));
+      // Measured right after the resize above, so this is the node's real
+      // physical shape: width is exactly preset.widthMm by construction; for
+      // a continuous-roll preset (no fixed heightMm) the content's natural
+      // height is derived from that same ratio rather than guessed at.
+      const rect = node.getBoundingClientRect();
+      const heightMm = preset.heightMm === "auto" ? (rect.height / rect.width) * preset.widthMm : preset.heightMm;
       const blob = await toBlob(node, { pixelRatio: 3, backgroundColor: "#ffffff" });
       if (!blob) throw new Error("Could not generate image");
-      return URL.createObjectURL(blob);
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      return { bytes, widthMm: preset.widthMm, heightMm };
     } finally {
       node.style.cssText = original;
     }
@@ -167,11 +133,12 @@ export function PrintLabelsSheet({
       // Captured sequentially: each capture temporarily mutates the live
       // node's inline style, and there's no real speedup from overlapping
       // that dance across nodes.
-      const urls: string[] = [];
+      const pages: LabelPdfPage[] = [];
       for (const node of nodes) {
-        urls.push(await captureLabelImage(node));
+        pages.push(await captureLabelImage(node));
       }
-      setPrintImageUrls(urls);
+      const pdfBlob = await buildLabelPdf(pages);
+      setPrintPdfUrl(URL.createObjectURL(pdfBlob));
     } catch {
       toast.error("Could not generate labels for printing.");
       setPrinting(false);
@@ -184,22 +151,9 @@ export function PrintLabelsSheet({
   // server-rendered payload or the initial hydration pass — `document`
   // is always available by the time this body runs.
   return createPortal(
-    // print-labels-root (globals.css): the one body-level element print CSS
-    // keeps visible; every other body child gets display:none. print-pass-
-    // through: at print time these two wrappers stop being position:fixed /
-    // overflow+max-height clipped, since an ancestor that's out of normal
-    // flow (or clipping overflow) silently defeats the break-after page
-    // rules on .print-image-sheet — CSS fragmentation only fragments
-    // ordinary in-flow content. The chrome that isn't an ancestor of
-    // .print-image-sheet (header, the picker below, the footer buttons) is
-    // hidden the simpler way, via print:hidden.
-    <div className="print-labels-root print-pass-through fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      {/* @page can't be scoped by a class selector, so the chosen preset's
-          size/width rules are injected as raw CSS text rather than toggled
-          via a className — see labelStockPrintCss. */}
-      <style dangerouslySetInnerHTML={{ __html: labelStockPrintCss(preset) }} />
-      <div className="print-pass-through flex max-h-[85vh] w-full max-w-lg flex-col rounded-[16px] bg-[#FAF7F1] shadow-xl">
-        <div className="flex items-center justify-between border-b border-[#EAE2D0] px-5 py-4 print:hidden">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-[16px] bg-[#FAF7F1] shadow-xl">
+        <div className="flex items-center justify-between border-b border-[#EAE2D0] px-5 py-4">
           <h2 className="font-heading text-[17px] font-semibold text-brand-navy">Print labels</h2>
           <button
             type="button"
@@ -210,7 +164,7 @@ export function PrintLabelsSheet({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex items-center gap-2 border-b border-[#EAE2D0] px-5 py-3 print:hidden">
+        <div className="flex items-center gap-2 border-b border-[#EAE2D0] px-5 py-3">
           <label htmlFor="label-stock" className="text-[12.5px] font-semibold text-[#5B7185]">
             Label size
           </label>
@@ -227,7 +181,7 @@ export function PrintLabelsSheet({
             ))}
           </select>
         </div>
-        <div ref={labelsRef} className="flex-1 overflow-y-auto px-5 py-4 print:hidden">
+        <div ref={labelsRef} className="flex-1 overflow-y-auto px-5 py-4">
           <div className="flex flex-col items-center gap-3">
             {childLabels.map((d) => (
               <ChildLabel key={d.id} data={d} />
@@ -237,16 +191,7 @@ export function PrintLabelsSheet({
             ))}
           </div>
         </div>
-        {/* Populated right before window.print() with the captured PNGs —
-            see captureLabelImage/handlePrint above. Hidden on screen
-            (globals.css), shown only for the print pass. */}
-        <div ref={printSheetRef} className="print-image-sheet">
-          {printImageUrls?.map((url, i) => (
-            // eslint-disable-next-line @next/next/no-img-element -- a blob: URL, not a remote image next/image would optimize
-            <img key={i} src={url} alt="" />
-          ))}
-        </div>
-        <div className="flex items-center justify-end gap-2 border-t border-[#EAE2D0] px-5 py-4 print:hidden">
+        <div className="flex items-center justify-end gap-2 border-t border-[#EAE2D0] px-5 py-4">
           <button
             type="button"
             onClick={onClose}
@@ -265,6 +210,22 @@ export function PrintLabelsSheet({
           </button>
         </div>
       </div>
+      {/* Loads the generated PDF and prints it via its own contentWindow —
+          a separate document/print context from this page. Zero-size and
+          off-screen rather than display:none: some browsers skip loading
+          (and therefore never fire onLoad) for an iframe that's never been
+          laid out. */}
+      <iframe
+        ref={printFrameRef}
+        src={printPdfUrl ?? undefined}
+        title="Print labels"
+        className="fixed h-0 w-0 border-0"
+        onLoad={() => {
+          if (!printPdfUrl) return; // the initial about:blank load, before there's anything to print
+          printFrameRef.current?.contentWindow?.print();
+          setPrinting(false);
+        }}
+      />
     </div>,
     document.body
   );
