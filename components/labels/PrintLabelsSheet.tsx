@@ -211,17 +211,23 @@ export function PrintLabelsSheet({
         </div>
       </div>
       {/* Loads the generated PDF and prints it via its own contentWindow —
-          a separate document/print context from this page. Zero-size and
-          off-screen rather than display:none: some browsers skip loading
-          (and therefore never fire onLoad) for an iframe that's never been
-          laid out. */}
+          a separate document/print context from this page. A physical
+          test showed a zero-size iframe isn't a valid print target on iOS
+          Safari: contentWindow.print() silently fell back to printing the
+          *parent* page instead (visible from Safari's auto-injected
+          URL/timestamp/page-count footer, which only ever appears on a
+          printed webpage, never on a viewed PDF) — hence 1px square and
+          offscreen rather than 0×0, and contentWindow.focus() right before
+          print() so iOS treats this frame, not the parent document, as the
+          thing being printed. */}
       <iframe
         ref={printFrameRef}
         src={printPdfUrl ?? undefined}
         title="Print labels"
-        className="fixed h-0 w-0 border-0"
+        className="fixed left-[-9999px] top-0 h-px w-px border-0"
         onLoad={() => {
           if (!printPdfUrl) return; // the initial about:blank load, before there's anything to print
+          printFrameRef.current?.contentWindow?.focus();
           printFrameRef.current?.contentWindow?.print();
           setPrinting(false);
         }}
