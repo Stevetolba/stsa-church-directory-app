@@ -53,11 +53,17 @@ function SidebarContent({
   pathname,
   onNavigate,
 }: {
-  user: { name: string; role: Role };
+  user: { name: string; role: Role; canEmailChildren?: boolean };
   appName: string;
   pathname: string;
   onNavigate?: () => void;
 }) {
+  // ADR-0017: a Team Lead is role "volunteer" under the hood (see
+  // types/auth.ts) — canEmailChildren is the only thing distinguishing them,
+  // so the label falls back to it rather than adding a new Role value just
+  // for display purposes.
+  const roleLabel =
+    user.role === "volunteer" && user.canEmailChildren ? "Team Lead" : ROLE_LABEL[user.role];
   return (
     <>
       <Link href="/" onClick={onNavigate} className="mb-9 flex items-center gap-2.5 px-1">
@@ -105,7 +111,7 @@ function SidebarContent({
           </div>
           <div className="min-w-0">
             <div className="truncate text-[13px] font-semibold text-brand-cream">{user.name}</div>
-            <div className="text-[11.5px] text-[#8FA1B2]">{ROLE_LABEL[user.role]}</div>
+            <div className="text-[11.5px] text-[#8FA1B2]">{roleLabel}</div>
           </div>
           <form action={signOutAction} className="ml-auto">
             <button
@@ -122,7 +128,7 @@ function SidebarContent({
   );
 }
 
-export function Sidebar({ user }: { user: { name: string; role: Role } }) {
+export function Sidebar({ user }: { user: { name: string; role: Role; canEmailChildren?: boolean } }) {
   const pathname = usePathname();
   const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "STSA Church Directory";
   const [drawerOpen, setDrawerOpen] = useState(false);

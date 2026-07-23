@@ -46,6 +46,7 @@ export function EditProfileForm({
       phone_number: profile.phone_number ?? "",
       campus: profile.campus ?? "Arlington",
       directory_access: profile.directory_access ?? false,
+      directory_role: profile.directory_role ?? "Volunteer",
       date_of_birth: profile.date_of_birth ?? "",
       allergy_notes: profile.allergy_notes ?? "",
       care_notes: profile.care_notes ?? "",
@@ -58,15 +59,16 @@ export function EditProfileForm({
 
   async function onSubmit(values: EditFormValues) {
     setSubmitError(null);
-    const { campus, directory_access, ...restValues } = values;
-    // Campus and Directory Access both default to a value even when
-    // unchanged (a controlled <select>/checkbox always reports one) — only
-    // include each in the PATCH if it actually changed, so saving name/
-    // email/phone doesn't trigger a needless custom-field write.
+    const { campus, directory_access, directory_role, ...restValues } = values;
+    // Campus, Directory Access, and Directory Role all default to a value
+    // even when unchanged (a controlled <select>/checkbox always reports
+    // one) — only include each in the PATCH if it actually changed, so
+    // saving name/email/phone doesn't trigger a needless custom-field write.
     const profileValues = {
       ...restValues,
       ...(campus !== (profile.campus ?? "Arlington") ? { campus } : {}),
       ...(directory_access !== (profile.directory_access ?? false) ? { directory_access } : {}),
+      ...(directory_role !== (profile.directory_role ?? "Volunteer") ? { directory_role } : {}),
     };
 
     const profileRes = await fetch(`/api/profiles/${profile.id}`, {
@@ -154,6 +156,26 @@ export function EditProfileForm({
             />
             Grant read-only volunteer sign-in access
           </label>
+        </Field>
+        <Field
+          label="Directory Role"
+          htmlFor="directory_role"
+          error={errors.directory_role?.message}
+          className="sm:col-span-2"
+        >
+          <select
+            id="directory_role"
+            {...register("directory_role")}
+            className={inputClass(!!errors.directory_role)}
+          >
+            <option value="Volunteer">Volunteer</option>
+            <option value="Team Lead">Team Lead — can email Children/Youth parents</option>
+            <option value="Admin">Admin — full access, same as an admin email</option>
+          </select>
+          <p className="mt-1.5 text-[12px] text-[#8A94A0]">
+            Elevates a non-staff person beyond read-only access. Admin and Team Lead both let
+            this person sign in even without Directory Access checked above.
+          </p>
         </Field>
       </div>
 

@@ -7,7 +7,6 @@
 import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 import { authConfig } from "@/lib/auth.config";
-import { resolveRole } from "@/lib/roles";
 
 const { auth } = NextAuth(authConfig);
 
@@ -46,16 +45,17 @@ export default auth((req) => {
   }
 
   if (isLoggedIn && VOLUNTEER_BLOCKED_PATHS.has(req.nextUrl.pathname)) {
-    // authConfig has no session callback, so req.auth doesn't carry `role` —
-    // but it carries the (verified) email, and resolveRole is pure env+string
-    // logic (Edge-safe), giving the same tier as the stored token. Only
-    // redirect when we positively identify a volunteer: this gate is UX/
-    // defense-in-depth, and the real enforcement is the API 403
-    // (requireStaffOrAdmin) plus the detail-page guards — so if the email is
+    // authConfig's session callback (lib/auth.config.ts) projects the same
+    // `role` the full config's jwt callback already resolved and embedded in
+    // the token — including a Subsplash DirectoryRole elevation to admin
+    // (ADR-0017), which a plain email-shape check here couldn't see. Only
+    // redirect when we positively identify a non-admin/staff role: this gate
+    // is UX/defense-in-depth, and the real enforcement is the API 403
+    // (requireStaffOrAdmin) plus the detail-page guards — so if role is
     // somehow absent we let the request through rather than risk bouncing a
     // staff/admin, and the hard guards still protect the data.
-    const email = req.auth?.user?.email;
-    if (email && resolveRole(email) === "volunteer") {
+    const role = req.auth?.user?.role;
+    if (role && role !== "admin" && role !== "staff") {
       return NextResponse.redirect(new URL("/children", req.nextUrl.origin));
     }
   }

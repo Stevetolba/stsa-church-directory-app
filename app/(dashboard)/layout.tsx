@@ -16,6 +16,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         user={{
           name: session.user.name ?? session.user.email ?? "Staff",
           role: session.user.role,
+          canEmailChildren: session.user.canEmailChildren,
         }}
       />
       <main className="min-w-0 flex-1 px-4 pb-10 pt-6 sm:px-6 lg:px-11 lg:pb-[60px] lg:pt-9">

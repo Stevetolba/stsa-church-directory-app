@@ -8,7 +8,7 @@
 // cost; caching the walk is what makes that approach viable at real scale.
 
 import { revalidateTag, unstable_cache } from "next/cache";
-import type { Campus, MemberStatus, Profile } from "@/types/profile";
+import type { Campus, DirectoryRole, MemberStatus, Profile } from "@/types/profile";
 import type { Household, HouseholdAddress } from "@/types/household";
 import { getServiceToken } from "./subsplashToken";
 import { mockHouseholds, mockProfiles } from "./mockData";
@@ -198,6 +198,21 @@ const ACCESS_FIELD_NAME = (process.env.SUBSPLASH_ACCESS_FIELD_NAME ?? "Directory
 // empty, or an unset field) means no access.
 const ACCESS_GRANTED_VALUES = new Set(["yes", "y", "true", "1", "granted", "checked", "on"]);
 
+// ADR-0017: the custom field a church admin sets in Subsplash to elevate a
+// personal-email person beyond the default volunteer tier. Name is
+// configurable for the same reason ACCESS_FIELD_NAME is.
+const ROLE_FIELD_NAME = (process.env.SUBSPLASH_ROLE_FIELD_NAME ?? "DirectoryRole")
+  .trim()
+  .toLowerCase();
+
+const DIRECTORY_ROLE_VALUES: DirectoryRole[] = ["Admin", "Team Lead", "Volunteer"];
+
+function normalizeDirectoryRole(value: string | undefined): DirectoryRole | undefined {
+  if (!value) return undefined;
+  const needle = value.trim().toLowerCase();
+  return DIRECTORY_ROLE_VALUES.find((v) => v.toLowerCase() === needle);
+}
+
 function extractCustomFieldValue(field: RawCustomFieldValue): string | undefined {
   if (field.value.choices?.length) {
     return field.value.choices.map((c) => c.name).join(", ");
@@ -299,6 +314,37 @@ function accessFieldUsesChoices(meta: AccessFieldMeta): boolean {
   return meta.type === "dropdown" || Object.keys(meta.choiceIds).length > 0;
 }
 
+// Same write-metadata problem as Campus/DirectoryAccess (no custom-field-
+// definitions endpoint), for the DirectoryRole field instead — see ADR-0017.
+interface RoleFieldMeta {
+  definitionId: string;
+  revisionId?: string;
+  type?: string;
+  choiceIds: Partial<Record<DirectoryRole, string>>;
+}
+
+function mergeRoleFieldMeta(existing: RoleFieldMeta | null, field: RawCustomFieldValue): RoleFieldMeta {
+  const def = field.custom_field_definition;
+  const meta: RoleFieldMeta = existing ?? { definitionId: def.id, choiceIds: {} };
+  meta.definitionId = def.id;
+  if (def.revision_id) meta.revisionId = def.revision_id;
+  if (def.type) meta.type = def.type;
+  const choices = field.value.choices?.length
+    ? field.value.choices
+    : field.value.choice
+      ? [field.value.choice]
+      : [];
+  for (const choice of choices) {
+    const normalized = normalizeDirectoryRole(choice.name);
+    if (normalized) meta.choiceIds[normalized] = choice.id;
+  }
+  return meta;
+}
+
+function roleFieldUsesChoices(meta: RoleFieldMeta): boolean {
+  return meta.type === "dropdown" || Object.keys(meta.choiceIds).length > 0;
+}
+
 function formatPhone(phone: RawProfile["phone_number"]): string | undefined {
   if (!phone) return undefined;
   const digits = phone.significant;
@@ -333,6 +379,7 @@ function mapProfile(raw: RawProfile): Profile {
     status: statusRaw ? MEMBERSHIP_STATUS_MAP[statusRaw] : "Visitor",
     campus: extractCampus(raw.custom_fields),
     directory_access: extractDirectoryAccess(raw.custom_fields),
+    directory_role: extractDirectoryRole(raw.custom_fields),
     address: formatAddressParts(address_parts),
     address_parts,
     baptism_date: raw.baptism_date ?? undefined,
@@ -486,6 +533,24 @@ const getAccessFieldMetaCached = unstable_cache(
   },
   ["subsplash-access-field-meta"],
   { revalidate: CACHE_REVALIDATE_SECONDS, tags: ["subsplash-access-meta"] }
+);
+
+// Same sampling approach as getAccessFieldMetaCached, for the DirectoryRole
+// field's write metadata (ADR-0017).
+const getRoleFieldMetaCached = unstable_cache(
+  async (): Promise<RoleFieldMeta | null> => {
+    const data = await subsplashFetch<HalCollection<RawProfile>>(
+      `/people/v1/profiles?page[number]=1&page[size]=${MAX_SUBSPLASH_PAGE_SIZE}`
+    );
+    let meta: RoleFieldMeta | null = null;
+    for (const raw of data._embedded.profiles) {
+      const field = findRoleField(raw.custom_fields);
+      if (field) meta = mergeRoleFieldMeta(meta, field);
+    }
+    return meta;
+  },
+  ["subsplash-role-field-meta"],
+  { revalidate: CACHE_REVALIDATE_SECONDS, tags: ["subsplash-role-meta"] }
 );
 
 // --- In-memory search/filter/paginate (shared by mock and real modes) ---
@@ -848,6 +913,17 @@ function extractDirectoryAccess(customFields: RawCustomFieldValue[] | undefined)
   return field ? isAccessValueGranted(extractCustomFieldValue(field)) : false;
 }
 
+function findRoleField(customFields: RawCustomFieldValue[] | undefined): RawCustomFieldValue | undefined {
+  return customFields?.find(
+    (f) => f.custom_field_definition.name.trim().toLowerCase() === ROLE_FIELD_NAME
+  );
+}
+
+function extractDirectoryRole(customFields: RawCustomFieldValue[] | undefined): DirectoryRole | undefined {
+  const field = findRoleField(customFields);
+  return field ? normalizeDirectoryRole(extractCustomFieldValue(field)) : undefined;
+}
+
 // ADR-0010: does this email belong to someone granted read-only directory
 // access via Subsplash? Used by the sign-in gate (lib/auth.ts) to admit
 // personal-email volunteers. Returns false (deny) on any lookup error —
@@ -887,6 +963,37 @@ export async function hasDirectoryAccess(email: string): Promise<boolean> {
   }
 }
 
+// ADR-0017: does this email's Subsplash profile have a DirectoryRole custom
+// field set to Admin or Team Lead? Used by the sign-in gate and role
+// resolution (lib/auth.ts) to admit/elevate a personal-email person beyond
+// the default volunteer tier. Returns undefined (no elevation) on any
+// lookup error or if unset — fails closed, same as hasDirectoryAccess.
+export async function getDirectoryRole(email: string): Promise<DirectoryRole | undefined> {
+  const needle = email.trim().toLowerCase();
+  if (!needle) return undefined;
+
+  if (USE_MOCK_DATA) {
+    const match = mockProfiles.find((p) => p.email?.toLowerCase() === needle);
+    const field = match?.custom_fields?.find((f) => f.label.trim().toLowerCase() === ROLE_FIELD_NAME);
+    return normalizeDirectoryRole(field?.value);
+  }
+
+  try {
+    const data = await subsplashFetch<HalCollection<RawProfile>>(
+      `/people/v1/profiles?filter[email]=${encodeURIComponent(needle)}`
+    );
+    for (const raw of data._embedded.profiles) {
+      const active = !raw.status || raw.status.toLowerCase() === "active";
+      if (!active) continue;
+      const role = extractDirectoryRole(raw.custom_fields);
+      if (role) return role;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // Only the fields actually editable via PATCH /people/v1/profiles/{id} at
 // the top level, plus campus and address_parts (handled separately below —
 // campus lives in custom_fields, address_parts under _embedded.address, not
@@ -901,6 +1008,7 @@ export type UpdateProfileInput = Partial<
     | "phone_number"
     | "campus"
     | "directory_access"
+    | "directory_role"
     | "allergy_notes"
     | "care_notes"
     | "date_of_birth"
@@ -1034,8 +1142,55 @@ async function buildDirectoryAccessFieldInput(
   };
 }
 
+// Builds the custom_fields entry that sets DirectoryRole — same discover-
+// from-real-data approach as buildDirectoryAccessFieldInput, since Subsplash
+// has no custom-field-definitions endpoint to look this up directly (ADR-0017).
+async function buildDirectoryRoleFieldInput(
+  profileId: string,
+  role: DirectoryRole
+): Promise<{ custom_field_definition: { id: string; revision_id?: string }; value: object }> {
+  const currentRaw = await subsplashFetch<RawProfile>(`/people/v1/profiles/${profileId}`).catch(
+    () => null
+  );
+  const fromProfile = currentRaw ? findRoleField(currentRaw.custom_fields) : undefined;
+  let meta = fromProfile ? mergeRoleFieldMeta(null, fromProfile) : null;
+
+  if (!meta || !meta.revisionId || (roleFieldUsesChoices(meta) && !meta.choiceIds[role])) {
+    const sampled = await getRoleFieldMetaCached();
+    if (sampled) {
+      meta = meta
+        ? { ...sampled, ...meta, choiceIds: { ...sampled.choiceIds, ...meta.choiceIds } }
+        : sampled;
+    }
+  }
+
+  if (!meta || !meta.revisionId) {
+    throw new CustomFieldUpdateError(
+      `Could not resolve the ${ROLE_FIELD_NAME} custom field's write metadata from Subsplash — it may not be configured.`
+    );
+  }
+
+  let value: { choice: { id: string } } | { text: string };
+  if (roleFieldUsesChoices(meta)) {
+    const choiceId = meta.choiceIds[role];
+    if (!choiceId) {
+      throw new CustomFieldUpdateError(
+        `No known Subsplash dropdown choice id for "${role}" on the ${ROLE_FIELD_NAME} field — it hasn't appeared on any sampled profile yet.`
+      );
+    }
+    value = { choice: { id: choiceId } };
+  } else {
+    value = { text: role };
+  }
+
+  return {
+    custom_field_definition: { id: meta.definitionId, revision_id: meta.revisionId },
+    value,
+  };
+}
+
 export async function updateProfile(id: string, patch: UpdateProfileInput): Promise<Profile> {
-  const { campus, directory_access, address_parts, date_of_birth, ...topLevelPatch } = patch;
+  const { campus, directory_access, directory_role, address_parts, date_of_birth, ...topLevelPatch } = patch;
 
   if (USE_MOCK_DATA) {
     const existing = mockProfiles.find((p) => p.id === id);
@@ -1068,6 +1223,20 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
         existing.custom_fields = [
           ...(existing.custom_fields ?? []),
           { id: "cf-access", label: "DirectoryAccess", value: accessValue },
+        ];
+      }
+    }
+    if (directory_role !== undefined) {
+      existing.directory_role = directory_role;
+      const roleField = existing.custom_fields?.find(
+        (f) => f.label.trim().toLowerCase() === ROLE_FIELD_NAME
+      );
+      if (roleField) {
+        roleField.value = directory_role;
+      } else {
+        existing.custom_fields = [
+          ...(existing.custom_fields ?? []),
+          { id: "cf-role", label: "DirectoryRole", value: directory_role },
         ];
       }
     }
@@ -1104,6 +1273,9 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
   }
   if (directory_access !== undefined) {
     customFieldInputs.push(await buildDirectoryAccessFieldInput(id, directory_access));
+  }
+  if (directory_role !== undefined) {
+    customFieldInputs.push(await buildDirectoryRoleFieldInput(id, directory_role));
   }
   if (customFieldInputs.length > 0) {
     body.custom_fields = customFieldInputs;

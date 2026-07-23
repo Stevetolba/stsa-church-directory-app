@@ -21,6 +21,9 @@ export const editProfileSchema = z.object({
   // Grants/revokes volunteer read-only sign-in access (ADR-0010) — see
   // updateProfile's DirectoryAccess custom-field write in lib/subsplash.ts.
   directory_access: z.boolean().optional(),
+  // Elevates a non-staff person beyond the default volunteer tier
+  // (ADR-0017) — see updateProfile's DirectoryRole custom-field write.
+  directory_role: z.enum(["Admin", "Team Lead", "Volunteer"]).optional(),
   date_of_birth: z
     .string()
     .trim()
