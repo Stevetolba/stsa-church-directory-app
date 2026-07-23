@@ -24,25 +24,36 @@ import {
 // below), so the portal isn't doing double duty as print-isolation the way
 // it once did.
 //
-// Printing builds an actual PDF client-side instead of asking the browser
-// to print this page. Two earlier approaches both ran into real iOS Safari/
-// AirPrint limitations: printing the live styled ChildLabel/ParentMatchTag
-// DOM ignored this app's @page sizing entirely (a full Letter/A4 page came
-// out regardless), and printing a correctly-shaped captured image of each
-// label (still window.print() on this page) left the print dialog with no
-// paper-size control at all and merged multiple labels onto a single page
-// instead of fragmenting them via CSS break-after. Both failures trace back
-// to the same root cause: asking Safari's own print pipeline to print an
-// HTML page just isn't reliable for this. A PDF sidesteps that pipeline's
-// guesswork — each label is still captured as a PNG (html-to-image, reusing
-// the exact ChildLabel/ParentMatchTag DOM so there's no separate Canvas-
-// drawing code to keep visually in sync), but instead of printing those
-// images as part of this page, they're embedded as real PDF pages
-// (lib/labelPdf.ts) with page sizes read directly from the mm dimensions,
-// and that PDF is loaded into a hidden iframe and printed via *its own*
-// contentWindow.print() — a separate document/print context from this page,
-// where page size and page count are both explicit document properties
-// rather than something the print pipeline has to infer.
+// Printing builds an actual PDF client-side and hands it to the OS via the
+// Web Share API rather than asking the browser to print anything itself.
+// Three earlier approaches all failed on real iOS Safari/AirPrint hardware:
+//   1. window.print() on the live styled ChildLabel/ParentMatchTag DOM —
+//      ignored this app's @page sizing entirely (a full Letter/A4 page came
+//      out regardless).
+//   2. window.print() on correctly-shaped captured images of each label
+//      (still printing this page) — the print dialog had no paper-size
+//      control at all and merged multiple labels onto one page instead of
+//      fragmenting them via CSS break-after.
+//   3. Building an actual PDF (real per-label page sizes, no CSS involved)
+//      and printing it via a hidden iframe's own contentWindow.print() —
+//      confirmed (via Safari's auto-injected URL/timestamp/page-count
+//      footer, which only appears on a printed *webpage*, never on a
+//      viewed PDF) that this silently fell back to printing the parent
+//      page instead of the iframe's PDF, even after giving the iframe real
+//      dimensions and focusing it first.
+// All three share a root cause: asking Safari's own in-page print pipeline
+// to print *anything* on this device isn't reliable. The one thing that
+// did work, earlier in this project, was handing a file to the OS via
+// navigator.share() and letting the user pick "Print" from the native
+// share sheet — a completely different pipeline, outside Safari's in-page
+// print path. So the PDF (still built the same way — each label captured
+// as a PNG via html-to-image, embedded as its own correctly-sized PDF page,
+// see lib/labelPdf.ts) is shared as a file instead of loaded into an
+// iframe. Sharing requires a real user gesture, which the manual Print
+// button provides directly; the auto-print-after-check-in kiosk flow
+// attempts it too, but if the browser rejects it for lacking a fresh
+// gesture, the failure is caught and the modal simply stays open with its
+// Print button available for a real tap.
 export function PrintLabelsSheet({
   childLabels = [],
   parentTags = [],
@@ -63,9 +74,7 @@ export function PrintLabelsSheet({
   const [stockId, setStockId] = useState<LabelStockId>(() => getStoredLabelStockId());
   const preset = labelStockPreset(stockId);
   const [printing, setPrinting] = useState(false);
-  const [printPdfUrl, setPrintPdfUrl] = useState<string | null>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
-  const printFrameRef = useRef<HTMLIFrameElement>(null);
 
   function handleStockChange(id: LabelStockId) {
     setStockId(id);
@@ -79,15 +88,6 @@ export function PrintLabelsSheet({
     if (autoPrint) handlePrint();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // The object URL is only good for the lifetime of this print pass —
-  // revoke whichever one just got replaced (or the last one, on unmount) so
-  // we don't leak memory across repeated reprints in the same session.
-  useEffect(() => {
-    return () => {
-      if (printPdfUrl) URL.revokeObjectURL(printPdfUrl);
-    };
-  }, [printPdfUrl]);
 
   async function captureLabelImage(node: HTMLElement): Promise<LabelPdfPage> {
     const original = node.style.cssText;
@@ -138,9 +138,21 @@ export function PrintLabelsSheet({
         pages.push(await captureLabelImage(node));
       }
       const pdfBlob = await buildLabelPdf(pages);
-      setPrintPdfUrl(URL.createObjectURL(pdfBlob));
-    } catch {
-      toast.error("Could not generate labels for printing.");
+      const file = new File([pdfBlob], "labels.pdf", { type: "application/pdf" });
+      if (!navigator.canShare?.({ files: [file] })) {
+        toast.error("This browser can't share files for printing.");
+        return;
+      }
+      await navigator.share({ files: [file] });
+    } catch (e) {
+      // AbortError: the user closed the share sheet without picking
+      // anything — not a real failure, nothing to report. Anything else
+      // (including a missing-gesture rejection from an auto-print attempt)
+      // leaves the modal open with Print still available for a real tap.
+      if (e instanceof Error && e.name !== "AbortError") {
+        toast.error("Could not prepare labels for printing — tap Print to try again.");
+      }
+    } finally {
       setPrinting(false);
     }
   }
@@ -210,28 +222,6 @@ export function PrintLabelsSheet({
           </button>
         </div>
       </div>
-      {/* Loads the generated PDF and prints it via its own contentWindow —
-          a separate document/print context from this page. A physical
-          test showed a zero-size iframe isn't a valid print target on iOS
-          Safari: contentWindow.print() silently fell back to printing the
-          *parent* page instead (visible from Safari's auto-injected
-          URL/timestamp/page-count footer, which only ever appears on a
-          printed webpage, never on a viewed PDF) — hence 1px square and
-          offscreen rather than 0×0, and contentWindow.focus() right before
-          print() so iOS treats this frame, not the parent document, as the
-          thing being printed. */}
-      <iframe
-        ref={printFrameRef}
-        src={printPdfUrl ?? undefined}
-        title="Print labels"
-        className="fixed left-[-9999px] top-0 h-px w-px border-0"
-        onLoad={() => {
-          if (!printPdfUrl) return; // the initial about:blank load, before there's anything to print
-          printFrameRef.current?.contentWindow?.focus();
-          printFrameRef.current?.contentWindow?.print();
-          setPrinting(false);
-        }}
-      />
     </div>,
     document.body
   );
