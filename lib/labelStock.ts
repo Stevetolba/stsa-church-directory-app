@@ -22,7 +22,10 @@ export interface LabelStockPreset {
 
 export const LABEL_STOCK_PRESETS: LabelStockPreset[] = [
   { id: "dk-2205", label: "DK-2205 — 62mm continuous tape", widthMm: 62, heightMm: "auto" },
-  { id: "dk-1234", label: "DK-1234 — 60mm × 86mm name badge", widthMm: 60, heightMm: 86 },
+  // Printed landscape (86mm wide × 60mm tall) rather than the die-cut's
+  // native portrait orientation — physical testing showed the name badge
+  // reads better held/clipped horizontally.
+  { id: "dk-1234", label: "DK-1234 — 86mm × 60mm name badge (landscape)", widthMm: 86, heightMm: 60 },
   // No DK part number confirmed for this one yet — rename once known.
   { id: "custom-62x46", label: "62mm × 46.5mm (custom)", widthMm: 62, heightMm: 46.5 },
 ];
@@ -63,23 +66,24 @@ export function labelStockPreset(id: LabelStockId): LabelStockPreset {
 // is left entirely to the OS/driver's own "Media & Quality" selection —
 // it must be set to the actual continuous-roll media, not "Auto Select".
 //
-// .print-label's own height is set explicitly for a fixed-height preset too
-// (not just width) — without it, the card's border/background were only as
-// tall as their own text content, floating with blank paper below them
-// within the physical label rather than filling it. justify-content:center
-// then spreads that card's content vertically within the now-full-height
-// box instead of leaving it packed at the top.
+// Targets .print-image-sheet img rather than the old .print-label cards:
+// printing now goes through a captured PNG of each label (see
+// PrintLabelsSheet's captureLabelImage) rather than the live styled DOM —
+// physical testing found window.print() on the raw HTML/CSS didn't reliably
+// respect page sizing, but printing a plain image came out correctly
+// proportioned. The image is already captured at the right pixel aspect
+// ratio for this preset (captureLabelImage resizes the source node to
+// these same mm dimensions before snapshotting it), so this CSS's width/
+// height just has to match, not derive, that shape.
 export function labelStockPrintCss(preset: LabelStockPreset): string {
   const size = preset.heightMm === "auto" ? null : `${preset.widthMm}mm ${preset.heightMm}mm`;
   const height = preset.heightMm === "auto" ? "" : `height: ${preset.heightMm}mm; `;
   return `
     @page { ${size ? `size: ${size}; ` : ""}margin: 0; }
     @media print {
-      .print-label-sheet { width: ${preset.widthMm}mm; }
-      .print-label {
+      .print-image-sheet img {
         width: ${preset.widthMm}mm;
-        max-width: ${preset.widthMm}mm;
-        ${height}justify-content: center;
+        ${height}
       }
     }
   `;
