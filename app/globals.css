@@ -115,6 +115,17 @@
     inset: auto !important;
     overflow: visible !important;
     max-height: none !important;
+    /* The outer wrapper's bg-black/40 modal backdrop (a full-viewport
+       overlay — it's .print-labels-root itself, the one element this
+       stylesheet deliberately keeps visible) and the card's own
+       bg-[#FAF7F1]/shadow were never stripped before, only the individual
+       label cards' were. On a monochrome thermal printer a ~40%-opacity
+       black fill dithers into a solid gray/hatched block, and since the
+       overlay is full-viewport-sized, it also explains print output far
+       longer than the actual label content. */
+    background: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
   }
   .print-label-sheet {
     gap: 0 !important;
