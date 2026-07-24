@@ -8,6 +8,7 @@ import { formatDate } from "@/lib/utils";
 import { StatusBadge } from "@/components/StatusBadge";
 import { CopyableField } from "@/components/CopyableField";
 import { HouseholdTypeBadge } from "@/components/HouseholdTypeBadge";
+import { CareNotesEditor } from "@/components/CareNotesEditor";
 import { householdMemberType } from "@/lib/household";
 
 // No mockup exists for this screen — matches the card/typography treatment
@@ -163,11 +164,15 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
             </div>
           </Section>
 
-          {/* Care & Safety (ADR-0012): allergy notes for anyone; care notes
-              only for children (Subsplash-"private", child-only). Both are
-              viewable by anyone who can reach this page — the volunteer
-              visibility guard above already governs that. */}
-          {(profile.allergy_notes || (isChild && profile.care_notes)) && (
+          {/* Care & Safety (ADR-0012/0018): allergy notes for anyone,
+              read-only here (admin-editable via the full edit form only).
+              Care notes are child-only (Subsplash-"private") — shown and
+              editable by anyone who can reach this page (admin, staff, and
+              volunteer, per ADR-0018), including when there's nothing
+              written yet, so the block has to render for every child even
+              with no allergy_notes/care_notes set, not just when one is
+              already present. */}
+          {(profile.allergy_notes || isChild) && (
             <>
               <div className="h-px bg-[#F0EBDF]" />
               <Section label="Care & Safety">
@@ -183,15 +188,8 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
                       </div>
                     </div>
                   )}
-                  {isChild && profile.care_notes && (
-                    <div className="rounded-[10px] border border-[#E5DCC8] bg-[#FBF9F4] px-4 py-3">
-                      <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
-                        Care Notes · Private
-                      </div>
-                      <div className="whitespace-pre-wrap text-[14px] text-[#3E5670]">
-                        {profile.care_notes}
-                      </div>
-                    </div>
+                  {isChild && (
+                    <CareNotesEditor profileId={profile.id} initialValue={profile.care_notes ?? ""} />
                   )}
                 </div>
               </Section>
