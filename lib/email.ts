@@ -5,8 +5,13 @@ import { Resend } from "resend";
 // accidentally emails real parents from a dev environment.
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
-// Resend caps recipients (to+cc+bcc combined) per send — batch to stay under it.
+// Resend caps recipients (to+cc+bcc combined) per send at 50 — confirmed via
+// a real rejected send: a batch with a full 50-entry bcc list plus the
+// mandatory "to" recipient below (51 combined) was refused for exceeding it.
+// Reserve one slot for that "to" recipient so every batch's combined total
+// (bcc + the always-present to) stays at or under the real cap.
 const MAX_RECIPIENTS_PER_SEND = 50;
+const MAX_BCC_PER_BATCH = MAX_RECIPIENTS_PER_SEND - 1;
 
 // Shared with app/(dashboard)/children/page.tsx, which needs the real From
 // address to show the sender an accurate preview of what recipients will see.
@@ -57,7 +62,7 @@ export async function sendBulkEmail({
   // Always at least one batch (even an empty one) — the "to: fromAddress"
   // copy below must still go out when every real recipient turned out to be
   // fromAddress itself and got filtered above.
-  const batches = uniqueBcc.length > 0 ? chunk(uniqueBcc, MAX_RECIPIENTS_PER_SEND) : [[]];
+  const batches = uniqueBcc.length > 0 ? chunk(uniqueBcc, MAX_BCC_PER_BATCH) : [[]];
 
   const attachmentCount = attachments?.length ?? 0;
 
@@ -80,10 +85,11 @@ export async function sendBulkEmail({
     // requires a non-empty "to", and addressing it to EMAIL_FROM_ADDRESS
     // means every send always lands a copy there (a record of what went
     // out) without exposing it to parents, who only appear in bcc. If a
-    // send spans multiple batches (>50 recipients), EMAIL_FROM_ADDRESS gets
-    // one copy per batch rather than a single merged copy — acceptable
-    // since most sends are well under the 50-recipient batch size. The same
-    // attachments are re-sent with every batch for the same reason.
+    // send spans multiple batches (>49 recipients — MAX_BCC_PER_BATCH
+    // already reserves this "to" slot out of Resend's 50-recipient combined
+    // cap), EMAIL_FROM_ADDRESS gets one copy per batch rather than a single
+    // merged copy — acceptable since most sends are well under that. The
+    // same attachments are re-sent with every batch for the same reason.
     const { error } = await resend.emails.send({
       from,
       to: fromAddress,
