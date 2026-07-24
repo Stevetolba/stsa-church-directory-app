@@ -21,9 +21,9 @@ Originally scoped open to any authenticated role (volunteers included), matching
 
 ### Privacy: BCC, sender identity via Reply-To
 
-Sends go through Resend (`lib/email.ts`) with all real recipients in `bcc` (max 50 per Resend call — larger sends batch into multiple calls) so no parent's address is exposed to another. The `From` address is a fixed, domain-verified `EMAIL_FROM_ADDRESS`; the signed-in user's name becomes the display name and their email becomes `Reply-To`, so replies land with the sender, not a shared inbox, without needing them to have their own verified sending domain.
+Sends go through Resend (`lib/email.ts`) with all real recipients in `bcc` (max 49 per Resend call, larger sends batch into multiple calls) so no parent's address is exposed to another. The `From` address is a fixed, domain-verified `EMAIL_FROM_ADDRESS`; the signed-in user's name becomes the display name and their email becomes `Reply-To`, so replies land with the sender, not a shared inbox, without needing them to have their own verified sending domain.
 
-`EMAIL_FROM_ADDRESS` is also always the `to` recipient on every send — Resend requires a non-empty `to`, and pointing it at the from address doubles that requirement as an always-on copy: a record of what went out lands in that inbox without ever being exposed to parents. A multi-batch send (>50 recipients) lands one copy per batch rather than a single merged copy.
+`EMAIL_FROM_ADDRESS` is also always the `to` recipient on every send — Resend requires a non-empty `to`, and pointing it at the from address doubles that requirement as an always-on copy: a record of what went out lands in that inbox without ever being exposed to parents. Resend's actual recipient cap is 50, combined across `to`+`cc`+`bcc` — confirmed by a real rejected send when the bcc batch size was still 50 (50 bcc + 1 to = 51), so the per-batch bcc count is 49, reserving one slot for that always-present `to`. A multi-batch send (>49 recipients) lands one copy per batch rather than a single merged copy.
 
 ### Dev-safe by default
 
