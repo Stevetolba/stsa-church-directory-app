@@ -16,6 +16,11 @@ import type { Role } from "@/types/auth";
 export const authConfig = {
   pages: {
     signIn: "/login",
+    // Without this, Auth.js falls back to its own plain built-in error page
+    // (/api/auth/error) instead of appending ?error=<code> to signIn — the
+    // styled error banner already built into the login page (AccessDenied's
+    // contextual copy, etc.) was never actually reachable.
+    error: "/login",
   },
   providers: [],
   callbacks: {
