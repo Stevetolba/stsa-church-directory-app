@@ -40,6 +40,15 @@ export const editProfileSchema = z.object({
 
 export type EditProfileValues = z.infer<typeof editProfileSchema>;
 
+// A narrower schema for PATCH /api/profiles/[id]/care-notes (ADR-0018) —
+// unlike the full editProfileSchema (admin-only), that route is reachable by
+// any authenticated role, so it validates only the one field it's allowed to
+// touch. Pick keeps the length/trim rule in sync with editProfileSchema
+// automatically rather than duplicating it.
+export const updateCareNotesSchema = editProfileSchema.pick({ care_notes: true });
+
+export type UpdateCareNotesValues = z.infer<typeof updateCareNotesSchema>;
+
 // The edit form also collects the profile's own address (street/city/state/
 // postal_code) — same shape households use, reused here rather than
 // duplicated. Kept as a separate schema so API routes that only touch the
