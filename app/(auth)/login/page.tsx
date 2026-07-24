@@ -3,8 +3,10 @@ import Link from "next/link";
 import { Tablet } from "lucide-react";
 import { signInWithGoogle } from "./actions";
 
-// NextAuth appends ?error=<code> to pages.signIn on failure. AccessDenied
-// is what our signIn callback (lib/auth.ts) produces when an account is
+// Auth.js appends ?error=<code> to pages.error on failure — pointed at this
+// same page (lib/auth.config.ts), rather than its own plain built-in error
+// page, which is what shows up if that config is missing. AccessDenied is
+// what our signIn callback (lib/auth.ts) produces when an account is
 // neither on the church Workspace domain nor an approved volunteer
 // (ADR-0010), since it returns false rather than throwing.
 const ERROR_MESSAGES: Record<string, string> = {
