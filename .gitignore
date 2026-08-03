@@ -45,3 +45,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# native (Capacitor, ADR-0019) — Brother's BRLMPrinterKit.xcframework is a
+# proprietary binary downloaded separately from their developer portal
+# (see ios/LocalPackages/BRLMPrinterKit/Package.swift), not ours to
+# redistribute; everything else here is generated/local build output.
+ios/LocalPackages/BRLMPrinterKit/Sources/*.xcframework
+ios/App/Pods/
+ios/App/build/
+ios/App/DerivedData/
+ios/**/xcuserdata/
+ios/**/.swiftpm/
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
