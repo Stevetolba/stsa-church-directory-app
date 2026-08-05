@@ -70,10 +70,11 @@ interface RawProfile {
   academic_grade?: { name: string; value: number } | null;
   graduation_year?: number | null;
   baptism_date?: string | null;
-  // Plain top-level string fields (openapi.yaml → Profile, maxLength 1500).
-  // care_notes is child-only + flagged "private" — see ADR-0012.
+  // Plain top-level string field (openapi.yaml → Profile, maxLength 1500).
+  // care_notes moved off its own plain top-level field onto the
+  // VOLUNTEERNOTES custom field (see NOTES_FIELD_NAME below and ADR-0020) —
+  // it now lives in custom_fields instead, same as campus/directory_access.
   allergy_notes?: string | null;
-  care_notes?: string | null;
   custom_fields?: RawCustomFieldValue[];
   // Lifecycle status (active/archived/merged/gdpr/fraud) — distinct from the
   // membership status in `_embedded.latest-membership-status-change`. Only
@@ -202,6 +203,15 @@ const ACCESS_GRANTED_VALUES = new Set(["yes", "y", "true", "1", "granted", "chec
 // personal-email person beyond the default volunteer tier. Name is
 // configurable for the same reason ACCESS_FIELD_NAME is.
 const ROLE_FIELD_NAME = (process.env.SUBSPLASH_ROLE_FIELD_NAME ?? "DirectoryRole")
+  .trim()
+  .toLowerCase();
+
+// ADR-0020: the custom field a church admin sets in Subsplash to hold a
+// child's care/safety notes, editable by any signed-in role (ADR-0018).
+// Replaces the plain top-level care_notes Profile field so the church can
+// configure/rename/hide it like any other Subsplash custom field. Name is
+// configurable for the same reason ACCESS_FIELD_NAME is.
+const NOTES_FIELD_NAME = (process.env.SUBSPLASH_NOTES_FIELD_NAME ?? "VOLUNTEERNOTES")
   .trim()
   .toLowerCase();
 
@@ -345,6 +355,24 @@ function roleFieldUsesChoices(meta: RoleFieldMeta): boolean {
   return meta.type === "dropdown" || Object.keys(meta.choiceIds).length > 0;
 }
 
+// Same write-metadata problem as Campus/DirectoryAccess/DirectoryRole (no
+// custom-field-definitions endpoint), for the VolunteerNotes field instead
+// (ADR-0020). Unlike those, this field always holds free-form text rather
+// than a value from a fixed set, so there's no choiceIds to resolve — a
+// definition/revision id is all a write needs.
+interface NotesFieldMeta {
+  definitionId: string;
+  revisionId?: string;
+}
+
+function mergeNotesFieldMeta(existing: NotesFieldMeta | null, field: RawCustomFieldValue): NotesFieldMeta {
+  const def = field.custom_field_definition;
+  const meta: NotesFieldMeta = existing ?? { definitionId: def.id };
+  meta.definitionId = def.id;
+  if (def.revision_id) meta.revisionId = def.revision_id;
+  return meta;
+}
+
 function formatPhone(phone: RawProfile["phone_number"]): string | undefined {
   if (!phone) return undefined;
   const digits = phone.significant;
@@ -384,7 +412,7 @@ function mapProfile(raw: RawProfile): Profile {
     address_parts,
     baptism_date: raw.baptism_date ?? undefined,
     allergy_notes: raw.allergy_notes ?? undefined,
-    care_notes: raw.care_notes ?? undefined,
+    care_notes: extractCareNotes(raw.custom_fields),
     photo_url: raw._embedded?.photo?._links?.self?.href,
     custom_fields: raw.custom_fields?.map((f) => ({
       id: f.custom_field_definition.id,
@@ -551,6 +579,24 @@ const getRoleFieldMetaCached = unstable_cache(
   },
   ["subsplash-role-field-meta"],
   { revalidate: CACHE_REVALIDATE_SECONDS, tags: ["subsplash-role-meta"] }
+);
+
+// Same sampling approach as getAccessFieldMetaCached, for the VolunteerNotes
+// field's write metadata (ADR-0020).
+const getNotesFieldMetaCached = unstable_cache(
+  async (): Promise<NotesFieldMeta | null> => {
+    const data = await subsplashFetch<HalCollection<RawProfile>>(
+      `/people/v1/profiles?page[number]=1&page[size]=${MAX_SUBSPLASH_PAGE_SIZE}`
+    );
+    let meta: NotesFieldMeta | null = null;
+    for (const raw of data._embedded.profiles) {
+      const field = findNotesField(raw.custom_fields);
+      if (field) meta = mergeNotesFieldMeta(meta, field);
+    }
+    return meta;
+  },
+  ["subsplash-notes-field-meta"],
+  { revalidate: CACHE_REVALIDATE_SECONDS, tags: ["subsplash-notes-meta"] }
 );
 
 // --- In-memory search/filter/paginate (shared by mock and real modes) ---
@@ -924,6 +970,17 @@ function extractDirectoryRole(customFields: RawCustomFieldValue[] | undefined): 
   return field ? normalizeDirectoryRole(extractCustomFieldValue(field)) : undefined;
 }
 
+function findNotesField(customFields: RawCustomFieldValue[] | undefined): RawCustomFieldValue | undefined {
+  return customFields?.find(
+    (f) => f.custom_field_definition.name.trim().toLowerCase() === NOTES_FIELD_NAME
+  );
+}
+
+function extractCareNotes(customFields: RawCustomFieldValue[] | undefined): string | undefined {
+  const field = findNotesField(customFields);
+  return field ? extractCustomFieldValue(field) : undefined;
+}
+
 // ADR-0010: does this email belong to someone granted read-only directory
 // access via Subsplash? Used by the sign-in gate (lib/auth.ts) to admit
 // personal-email volunteers. Returns false (deny) on any lookup error —
@@ -1189,8 +1246,46 @@ async function buildDirectoryRoleFieldInput(
   };
 }
 
+// Builds the custom_fields entry that sets a child's care/safety notes —
+// same discover-from-real-data approach as the others, but always writes
+// plain text since VolunteerNotes has no fixed set of choices (ADR-0020).
+async function buildVolunteerNotesFieldInput(
+  profileId: string,
+  notes: string
+): Promise<{ custom_field_definition: { id: string; revision_id?: string }; value: object }> {
+  const currentRaw = await subsplashFetch<RawProfile>(`/people/v1/profiles/${profileId}`).catch(
+    () => null
+  );
+  const fromProfile = currentRaw ? findNotesField(currentRaw.custom_fields) : undefined;
+  let meta = fromProfile ? mergeNotesFieldMeta(null, fromProfile) : null;
+
+  if (!meta || !meta.revisionId) {
+    const sampled = await getNotesFieldMetaCached();
+    if (sampled) meta = meta ? { ...sampled, ...meta } : sampled;
+  }
+
+  if (!meta || !meta.revisionId) {
+    throw new CustomFieldUpdateError(
+      `Could not resolve the ${NOTES_FIELD_NAME} custom field's write metadata from Subsplash — it may not be configured.`
+    );
+  }
+
+  return {
+    custom_field_definition: { id: meta.definitionId, revision_id: meta.revisionId },
+    value: { text: notes },
+  };
+}
+
 export async function updateProfile(id: string, patch: UpdateProfileInput): Promise<Profile> {
-  const { campus, directory_access, directory_role, address_parts, date_of_birth, ...topLevelPatch } = patch;
+  const {
+    campus,
+    directory_access,
+    directory_role,
+    care_notes,
+    address_parts,
+    date_of_birth,
+    ...topLevelPatch
+  } = patch;
 
   if (USE_MOCK_DATA) {
     const existing = mockProfiles.find((p) => p.id === id);
@@ -1240,6 +1335,20 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
         ];
       }
     }
+    if (care_notes !== undefined) {
+      existing.care_notes = care_notes;
+      const notesField = existing.custom_fields?.find(
+        (f) => f.label.trim().toLowerCase() === NOTES_FIELD_NAME
+      );
+      if (notesField) {
+        notesField.value = care_notes;
+      } else {
+        existing.custom_fields = [
+          ...(existing.custom_fields ?? []),
+          { id: "cf-notes", label: "VOLUNTEERNOTES", value: care_notes },
+        ];
+      }
+    }
     if (address_parts !== undefined) {
       const mergedParts: HouseholdAddress = { ...(existing.address_parts ?? {}), ...address_parts };
       existing.address_parts = mergedParts;
@@ -1261,9 +1370,9 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
     // isn't a valid date, so clearing the field means sending null.
     body.date_of_birth = date_of_birth || null;
   }
-  // Campus and DirectoryAccess both live in custom fields, not top-level
-  // columns, so they ride along in the same PATCH via the custom_fields
-  // array (openapi.yaml → CustomFieldValueInput).
+  // Campus, DirectoryAccess, DirectoryRole, and VolunteerNotes all live in
+  // custom fields, not top-level columns, so they ride along in the same
+  // PATCH via the custom_fields array (openapi.yaml → CustomFieldValueInput).
   const customFieldInputs: Array<{
     custom_field_definition: { id: string; revision_id?: string };
     value: object;
@@ -1276,6 +1385,9 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
   }
   if (directory_role !== undefined) {
     customFieldInputs.push(await buildDirectoryRoleFieldInput(id, directory_role));
+  }
+  if (care_notes !== undefined) {
+    customFieldInputs.push(await buildVolunteerNotesFieldInput(id, care_notes));
   }
   if (customFieldInputs.length > 0) {
     body.custom_fields = customFieldInputs;
