@@ -198,10 +198,20 @@ const SEED_PROFILES: Profile[] = [
     status: "Member",
     campus: "Arlington",
     baptism_date: "2016-08-21",
-    // Safety fields (ADR-0012) — care_notes is child-only + "private".
+    // Safety fields (ADR-0012) — care_notes is child-only. It's stored via
+    // the VOLUNTEERNOTES custom field (ADR-0020), not a plain top-level
+    // field, so it's mirrored into custom_fields below like
+    // campus/directory_access — see the comment on Margaret's profile above.
     allergy_notes: "Severe peanut allergy — carries an EpiPen.",
     care_notes: "Needs quiet space if overstimulated. Pickup by parent or grandmother only.",
-    custom_fields: [{ id: "cf-campus", label: "Campus", value: "Arlington" }],
+    custom_fields: [
+      { id: "cf-campus", label: "Campus", value: "Arlington" },
+      {
+        id: "cf-notes",
+        label: "VOLUNTEERNOTES",
+        value: "Needs quiet space if overstimulated. Pickup by parent or grandmother only.",
+      },
+    ],
     created_at: "2019-03-11T14:00:00Z",
     updated_at: "2025-11-02T09:30:00Z",
   },
@@ -433,7 +443,10 @@ const SEED_PROFILES: Profile[] = [
     status: "Visitor",
     campus: "Leesburg",
     care_notes: "Pickup by parent only.",
-    custom_fields: [{ id: "cf-campus", label: "Campus", value: "Leesburg" }],
+    custom_fields: [
+      { id: "cf-campus", label: "Campus", value: "Leesburg" },
+      { id: "cf-notes", label: "VOLUNTEERNOTES", value: "Pickup by parent only." },
+    ],
     created_at: "2024-12-01T14:00:00Z",
     updated_at: "2025-12-01T09:30:00Z",
   },
