@@ -13,9 +13,12 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/preferences": "^8.0.1",
     "@ducanh2912/next-pwa": "^10.2.9",
     "@hookform/resolvers": "^5.4.0",
     "@neondatabase/serverless": "^1.1.0",
+    "@rdlabo/capacitor-brotherprint": "^8.1.1",
     "@tiptap/extension-link": "^3.27.4",
     "@tiptap/extension-placeholder": "^3.27.4",
     "@tiptap/pm": "^3.27.4",
@@ -44,6 +47,9 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/ios": "^8.4.2",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

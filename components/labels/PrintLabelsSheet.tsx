@@ -7,7 +7,9 @@ import { toast } from "sonner";
 import { Printer, X } from "lucide-react";
 import { ChildLabel, type ChildLabelData } from "./ChildLabel";
 import { ParentMatchTag, type ParentMatchTagData } from "./ParentMatchTag";
+import { PrinterPairing } from "./PrinterPairing";
 import { buildLabelPdf, type LabelPdfPage } from "@/lib/labelPdf";
+import { bytesToBase64, isNativePrintAvailable, printLabelImage } from "@/lib/nativePrint";
 import {
   LABEL_STOCK_PRESETS,
   getStoredLabelStockId,
@@ -54,6 +56,14 @@ import {
 // attempts it too, but if the browser rejects it for lacking a fresh
 // gesture, the failure is caught and the modal simply stays open with its
 // Print button available for a real tap.
+//
+// ADR-0019: inside the native Capacitor shell, none of the above is needed
+// at all — the same captured PNG per label is instead sent straight to a
+// paired Brother printer's own SDK via lib/nativePrint.ts, bypassing every
+// OS print/share dialog. isNativePrintAvailable() gates which path runs;
+// the capture step (captureLabelImage) is shared by both, since it's the
+// part that gets each label correctly sized/oriented/stripped of its
+// on-screen card styling — only what happens to the resulting PNG differs.
 export function PrintLabelsSheet({
   childLabels = [],
   parentTags = [],
@@ -137,6 +147,20 @@ export function PrintLabelsSheet({
       for (const node of nodes) {
         pages.push(await captureLabelImage(node));
       }
+
+      if (isNativePrintAvailable()) {
+        // One printImage() call per label, straight to the paired Brother
+        // printer's SDK connection — no PDF, no OS dialog. Sequential for
+        // the same reason capture is: printLabelImage waits for a real
+        // print-outcome event per call, so overlapping calls would race
+        // against each other's listeners.
+        for (const page of pages) {
+          await printLabelImage(bytesToBase64(page.bytes), stockId);
+        }
+        toast.success(pages.length > 1 ? "Labels sent to the printer." : "Label sent to the printer.");
+        return;
+      }
+
       const pdfBlob = await buildLabelPdf(pages);
       const file = new File([pdfBlob], "labels.pdf", { type: "application/pdf" });
       if (!navigator.canShare?.({ files: [file] })) {
@@ -147,10 +171,12 @@ export function PrintLabelsSheet({
     } catch (e) {
       // AbortError: the user closed the share sheet without picking
       // anything — not a real failure, nothing to report. Anything else
-      // (including a missing-gesture rejection from an auto-print attempt)
-      // leaves the modal open with Print still available for a real tap.
+      // (including a missing-gesture rejection from an auto-print attempt,
+      // or a native print failure — printLabelImage's own error message is
+      // specific enough to surface directly) leaves the modal open with
+      // Print still available for a real tap.
       if (e instanceof Error && e.name !== "AbortError") {
-        toast.error("Could not prepare labels for printing — tap Print to try again.");
+        toast.error(isNativePrintAvailable() ? e.message : "Could not prepare labels for printing — tap Print to try again.");
       }
     } finally {
       setPrinting(false);
@@ -193,6 +219,7 @@ export function PrintLabelsSheet({
             ))}
           </select>
         </div>
+        {isNativePrintAvailable() && <PrinterPairing />}
         <div ref={labelsRef} className="flex-1 overflow-y-auto px-5 py-4">
           <div className="flex flex-col items-center gap-3">
             {childLabels.map((d) => (
