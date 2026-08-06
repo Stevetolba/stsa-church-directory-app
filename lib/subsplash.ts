@@ -188,8 +188,12 @@ const CAMPUS_FIELD_NAME = "campus";
 
 // ADR-0010: the custom field a church admin sets in Subsplash to grant a
 // personal-email volunteer read-only access. Name is configurable so the
-// church can call it whatever they like without a code change.
-const ACCESS_FIELD_NAME = (process.env.SUBSPLASH_ACCESS_FIELD_NAME ?? "Directory Access")
+// church can call it whatever they like without a code change. Default
+// matches this org's actual field name — one word, no space, same
+// convention as DirectoryRole/VOLUNTEERNOTES below — so a deployment
+// missing the SUBSPLASH_ACCESS_FIELD_NAME override still resolves correctly
+// instead of silently never matching any profile's custom field.
+const ACCESS_FIELD_NAME = (process.env.SUBSPLASH_ACCESS_FIELD_NAME ?? "DirectoryAccess")
   .trim()
   .toLowerCase();
 
