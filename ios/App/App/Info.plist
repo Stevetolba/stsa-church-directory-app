@@ -22,6 +22,27 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- ADR-0021: Google Sign-In (@capawesome/capacitor-google-sign-in) needs
+	     its own iOS-type OAuth client, separate from AUTH_GOOGLE_ID (that one
+	     is a "Web" client and stays server-side only). REPLACE_WITH_IOS_CLIENT_ID
+	     is a placeholder — create an "iOS" OAuth client for this app's bundle
+	     id in the same Google Cloud project as AUTH_GOOGLE_ID, then put its
+	     client id here and its reversed form in CFBundleURLSchemes below
+	     (Google Cloud Console shows both directly on the client's detail
+	     page). This only drives the on-device sign-in UI/redirect — the
+	     resulting ID token's audience is still AUTH_GOOGLE_ID (see
+	     lib/nativeAuth.ts), which is what the server actually verifies. -->
+	<key>GIDClientID</key>
+	<string>REPLACE_WITH_IOS_CLIENT_ID.apps.googleusercontent.com</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.REPLACE_WITH_IOS_CLIENT_ID</string>
+			</array>
+		</dict>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
