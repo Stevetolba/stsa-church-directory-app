@@ -3,6 +3,7 @@ import { Lora, Public_Sans } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner";
+import { DisableServiceWorkerInNativeShell } from "@/components/DisableServiceWorkerInNativeShell";
 
 const lora = Lora({
   subsets: ["latin"],
@@ -49,6 +50,7 @@ export default function RootLayout({
       <body className="antialiased">
         {children}
         <Toaster />
+        <DisableServiceWorkerInNativeShell />
       </body>
     </html>
   );

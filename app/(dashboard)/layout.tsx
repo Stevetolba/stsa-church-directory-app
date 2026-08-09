@@ -19,7 +19,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
           canEmailChildren: session.user.canEmailChildren,
         }}
       />
-      <main className="min-w-0 flex-1 px-4 pb-10 pt-6 sm:px-6 lg:px-11 lg:pb-[60px] lg:pt-9">
+      {/* pb-24 clears the fixed bottom tab bar (components/Sidebar.tsx,
+          ~52px + the device's safe-area inset) below `lg`, where that bar
+          is rendered; lg:pb-[60px] is unchanged since it's lg:hidden there. */}
+      <main className="min-w-0 flex-1 px-4 pb-24 pt-6 sm:px-6 lg:px-11 lg:pb-[60px] lg:pt-9">
         {children}
       </main>
     </div>

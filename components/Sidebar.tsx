@@ -4,7 +4,21 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Baby, BarChart3, Cake, CalendarCheck, History, Home, LogOut, Menu, Tablet, Users, X } from "lucide-react";
+import {
+  Baby,
+  BarChart3,
+  Cake,
+  CalendarCheck,
+  History,
+  Home,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  MoreHorizontal,
+  Tablet,
+  Users,
+  X,
+} from "lucide-react";
 import { signOutAction } from "@/app/(dashboard)/actions";
 import type { Role } from "@/types/auth";
 
@@ -13,10 +27,14 @@ import type { Role } from "@/types/auth";
 // placeholder CSS-shape icons (its own README notes those aren't meant to
 // be recreated literally — "not SVGs or an icon font").
 //
-// No mobile app exists yet, so below the `lg` breakpoint this collapses to
-// a top bar + slide-out drawer (same nav content) instead of the always-
-// visible desktop rail — a stopgap responsive treatment, not a mobile
-// redesign.
+// Below the `lg` breakpoint this is a top bar + slide-out drawer (same nav
+// content as the desktop rail) PLUS a fixed bottom tab bar for one-tap
+// access to the handful of surfaces people actually reach for constantly
+// (ADR-0019 Phase 3 — the native-app-feel mitigation for Apple's Guideline
+// 4.2 "just a website" scrutiny). The drawer stays as the "everything else"
+// surface (Households, Birthdays, Reports, Settings, sign out) behind the
+// tab bar's "More" tab, rather than duplicating that whole list into two
+// places.
 
 // ADR-0011: nav is role-scoped. Volunteers only ever see Children; staff/admin
 // get the full directory plus Children.
@@ -29,6 +47,19 @@ const NAV_ITEMS: Array<{ href: string; label: string; icon: typeof Users; roles:
   { href: "/reports", label: "Reports", icon: BarChart3, roles: ["admin", "staff"] },
   { href: "/settings/devices", label: "Kiosk devices", icon: Tablet, roles: ["admin"] },
   { href: "/settings/activity", label: "Activity Log", icon: History, roles: ["admin"] },
+];
+
+// The curated subset of NAV_ITEMS (plus a "Home" tab, which isn't in the
+// drawer at all — the logo/app name link already covers that there) that
+// gets its own always-visible bottom tab, capped at four real destinations
+// so the bar never needs to scroll or shrink below a comfortable tap
+// target. Everything else in NAV_ITEMS stays reachable via the "More" tab,
+// which opens the same drawer the top bar's hamburger button does.
+const BOTTOM_TAB_ITEMS: Array<{ href: string; label: string; icon: typeof Users; roles: Role[] }> = [
+  { href: "/", label: "Home", icon: LayoutDashboard, roles: ["admin", "staff", "volunteer"] },
+  { href: "/people", label: "People", icon: Users, roles: ["admin", "staff"] },
+  { href: "/children", label: "Children", icon: Baby, roles: ["admin", "staff", "volunteer"] },
+  { href: "/events", label: "Events", icon: CalendarCheck, roles: ["admin", "staff", "volunteer"] },
 ];
 
 const ROLE_LABEL: Record<Role, string> = {
@@ -139,6 +170,14 @@ export function Sidebar({ user }: { user: { name: string; role: Role; canEmailCh
     setDrawerOpen(false);
   }, [pathname]);
 
+  const bottomTabs = BOTTOM_TAB_ITEMS.filter((item) => item.roles.includes(user.role));
+  // The "More" tab represents everything in the drawer that ISN'T already a
+  // bottom tab — active when the current page only lives there (e.g.
+  // /reports), so the bar never leaves every tab looking unselected.
+  const moreActive = NAV_ITEMS.filter((item) => item.roles.includes(user.role))
+    .filter((item) => !bottomTabs.some((tab) => tab.href === item.href))
+    .some((item) => pathname.startsWith(item.href));
+
   return (
     <>
       {/* Mobile top bar — replaces the desktop rail below `lg`. */}
@@ -188,6 +227,43 @@ export function Sidebar({ user }: { user: { name: string; role: Role; canEmailCh
           </aside>
         </div>
       )}
+
+      {/* Bottom tab bar — primary mobile nav (ADR-0019 Phase 3). The
+          safe-area padding keeps tap targets clear of the home indicator on
+          notch-style iPhones; viewport's viewportFit: "cover" (app/layout.tsx)
+          is what makes env(safe-area-inset-bottom) resolve to something
+          nonzero in the first place. */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-white/10 bg-brand-navy pb-[env(safe-area-inset-bottom)] lg:hidden"
+        aria-label="Primary"
+      >
+        {bottomTabs.map(({ href, label, icon: Icon }) => {
+          const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 text-[10.5px] font-semibold transition-colors ${
+                active ? "text-brand-sky" : "text-[#8FA1B2]"
+              }`}
+            >
+              <Icon className="h-5 w-5" />
+              {label}
+            </Link>
+          );
+        })}
+        <button
+          type="button"
+          aria-label="More"
+          onClick={() => setDrawerOpen(true)}
+          className={`flex min-h-[52px] flex-1 flex-col items-center justify-center gap-0.5 text-[10.5px] font-semibold transition-colors ${
+            moreActive ? "text-brand-sky" : "text-[#8FA1B2]"
+          }`}
+        >
+          <MoreHorizontal className="h-5 w-5" />
+          More
+        </button>
+      </nav>
 
       {/* Desktop rail — always visible at `lg` and up. */}
       <aside className="hidden w-[248px] shrink-0 flex-col bg-brand-navy px-5 py-7 lg:flex">

@@ -33,13 +33,13 @@
 	     resulting ID token's audience is still AUTH_GOOGLE_ID (see
 	     lib/nativeAuth.ts), which is what the server actually verifies. -->
 	<key>GIDClientID</key>
-	<string>REPLACE_WITH_IOS_CLIENT_ID.apps.googleusercontent.com</string>
+	<string>1032915488688-bmtn1d6sl03i7bqac861kbb65aq7e6lp.apps.googleusercontent.com</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.REPLACE_WITH_IOS_CLIENT_ID</string>
+				<string>com.googleusercontent.apps.1032915488688-bmtn1d6sl03i7bqac861kbb65aq7e6lp</string>
 			</array>
 		</dict>
 	</array>
