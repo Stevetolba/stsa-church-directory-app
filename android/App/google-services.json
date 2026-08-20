@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "416875030134",
+    "project_id": "stsa-church-directory",
+    "storage_bucket": "stsa-church-directory.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:416875030134:android:fd8cec57910ca324366157",
+        "android_client_info": {
+          "package_name": "church.stsa.directory"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCMeGsyqOrz4RsfnXyk_LZ34GeTjma39-c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
