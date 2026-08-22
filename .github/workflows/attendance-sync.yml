@@ -33,3 +33,15 @@ jobs:
           ATTENDANCE_IMPORT_TOKEN: ${{ secrets.ATTENDANCE_IMPORT_TOKEN }}
           SUBSPLASH_DASHBOARD_EMAIL: ${{ secrets.SUBSPLASH_DASHBOARD_EMAIL }}
           SUBSPLASH_DASHBOARD_PASSWORD: ${{ secrets.SUBSPLASH_DASHBOARD_PASSWORD }}
+          SUBSPLASH_LOGIN_DEBUG_DIR: ${{ runner.temp }}
+
+      # A screenshot of the password *field* only ever shows masked dots, not
+      # the value — safe to upload even on a public repo. Short retention
+      # since it's a debugging aid, not something to keep around.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: subsplash-login-failure
+          path: ${{ runner.temp }}/subsplash-login-failure.png
+          if-no-files-found: ignore
+          retention-days: 7

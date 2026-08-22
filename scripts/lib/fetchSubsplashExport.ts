@@ -55,10 +55,24 @@ export async function loginToSubsplashDashboard(
   ]);
 
   if (page.url().startsWith(LOGIN_URL)) {
+    // Capture what's actually on screen before closing — a CI failure here
+    // is otherwise a black box: "login failed" could mean a wrong password,
+    // an unrecognized-device/verification prompt, or something else
+    // entirely, and there's no way to tell without seeing the page.
+    const debugDir = process.env.SUBSPLASH_LOGIN_DEBUG_DIR ?? ".";
+    const screenshotPath = `${debugDir}/subsplash-login-failure.png`;
+    let pageText = "";
+    try {
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      pageText = (await page.locator("body").innerText()).trim().slice(0, 500);
+    } catch {
+      // Best-effort — a broken page shouldn't hide the more useful error below.
+    }
     await browser.close();
     throw new Error(
       "Subsplash dashboard login failed — check SUBSPLASH_DASHBOARD_EMAIL/SUBSPLASH_DASHBOARD_PASSWORD, " +
-        "or the account may be getting an unrecognized-device/verification prompt this script can't complete unattended."
+        "or the account may be getting an unrecognized-device/verification prompt this script can't complete " +
+        `unattended. Screenshot saved to ${screenshotPath}. Page text: ${JSON.stringify(pageText)}`
     );
   }
 
