@@ -19,18 +19,17 @@
 //   ATTENDANCE_IMPORT_TOKEN      same value as the app's ATTENDANCE_IMPORT_TOKEN
 //   SUBSPLASH_DASHBOARD_EMAIL    a dedicated service account, not a real admin's login
 //   SUBSPLASH_DASHBOARD_PASSWORD
-//   SUBSPLASH_BASE_URL / SUBSPLASH_ORG_KEY / SUBSPLASH_CLIENT_ID / SUBSPLASH_CLIENT_SECRET
-//                                 same Core API service credentials the app itself uses
-//                                 (lib/events.ts's listSeries() is what discovers which
-//                                 series to sync — this is a different credential surface
-//                                 than the dashboard login above, needed for a different reason)
 // Optional env:
 //   ORG_TIMEZONE                 default "America/New_York"
 //   SYNC_LOOKBACK_DAYS           default 14
+//
+// This script only ever talks to the Subsplash dashboard (Playwright) and
+// the deployed app's own API (GET /api/attendance/series, POST
+// /api/attendance/import) — never Subsplash's Core API directly, so it
+// doesn't need SUBSPLASH_CLIENT_ID/SECRET etc.; those stay app-side only.
 
-import { listSeries } from "../lib/events";
 import { parseSubsplashCheckInsCsv } from "../lib/subsplashExportCsv";
-import { postAndReportAll } from "./lib/importClient";
+import { fetchCheckInEnabledSeries, postAndReportAll } from "./lib/importClient";
 import { fetchCheckInExportCsv, loginToSubsplashDashboard } from "./lib/fetchSubsplashExport";
 
 function requireEnv(name: string): string {
@@ -53,7 +52,7 @@ async function main() {
   const minDate = new Date();
   minDate.setDate(minDate.getDate() - lookbackDays);
 
-  const series = await listSeries();
+  const series = await fetchCheckInEnabledSeries(baseUrl, token);
   if (series.length === 0) {
     console.log("No check-in-enabled series found — nothing to sync.");
     return;

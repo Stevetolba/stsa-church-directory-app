@@ -6,6 +6,27 @@
 import type { AttendanceImportOccurrence } from "../../lib/validation/attendance";
 import type { ParsedRowIssue } from "../../lib/subsplashExportCsv";
 
+export interface SeriesForSync {
+  seriesId: string;
+  title: string;
+}
+
+// GET /api/attendance/series — discovers which check-in-enabled series to
+// sync. Goes over HTTP to the running app rather than importing lib/events.ts
+// directly: that module uses Next.js's unstable_cache, which only works
+// inside a live Next.js server, not a standalone tsx script process.
+export async function fetchCheckInEnabledSeries(baseUrl: string, token: string): Promise<SeriesForSync[]> {
+  const res = await fetch(new URL("/api/attendance/series", baseUrl), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`GET /api/attendance/series failed: ${res.status} ${body}`);
+  }
+  const data = (await res.json()) as { series: SeriesForSync[] };
+  return data.series;
+}
+
 export interface ImportOccurrenceResult {
   occurrenceDate: string;
   seriesId: string | null;

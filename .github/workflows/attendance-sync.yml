@@ -23,14 +23,13 @@ jobs:
 
       - run: npx playwright install --with-deps chromium
 
+      # Only talks to the Subsplash dashboard (Playwright login) and this
+      # app's own API (GET /api/attendance/series, POST /api/attendance/import)
+      # — never Subsplash's Core API directly, so no SUBSPLASH_CLIENT_ID/SECRET
+      # etc. here; those stay app-side (Vercel), not in this workflow.
       - run: npm run sync:subsplash:scheduled
         env:
           APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
           ATTENDANCE_IMPORT_TOKEN: ${{ secrets.ATTENDANCE_IMPORT_TOKEN }}
           SUBSPLASH_DASHBOARD_EMAIL: ${{ secrets.SUBSPLASH_DASHBOARD_EMAIL }}
           SUBSPLASH_DASHBOARD_PASSWORD: ${{ secrets.SUBSPLASH_DASHBOARD_PASSWORD }}
-          SUBSPLASH_BASE_URL: ${{ secrets.SUBSPLASH_BASE_URL }}
-          SUBSPLASH_ORG_KEY: ${{ secrets.SUBSPLASH_ORG_KEY }}
-          SUBSPLASH_CLIENT_ID: ${{ secrets.SUBSPLASH_CLIENT_ID }}
-          SUBSPLASH_CLIENT_SECRET: ${{ secrets.SUBSPLASH_CLIENT_SECRET }}
-          SUBSPLASH_USE_MOCK: "false"
