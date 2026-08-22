@@ -121,7 +121,11 @@ export async function openSubsplashDashboard(storageStateJson: string): Promise<
   const browser = await chromium.launch();
   const context = await browser.newContext({ storageState: statePath });
   const page = await context.newPage();
-  await page.goto(DASHBOARD_ROOT_URL, { waitUntil: "domcontentloaded" });
+  // networkidle, not domcontentloaded — give the Ember app a moment to fully
+  // boot (including any of its own initial redirects) before the sync loop
+  // starts hash-navigating into it; reduces the chance of racing an
+  // in-flight app-level transition on the very first series.
+  await page.goto(DASHBOARD_ROOT_URL, { waitUntil: "networkidle" });
 
   if (page.url().startsWith(LOGIN_URL)) {
     await browser.close();
@@ -151,10 +155,15 @@ export function formatDashboardDate(date: Date): string {
 // always already sitting on a booted dashboard and click through to the
 // report, i.e. a same-document hash change, not a fresh top-level
 // navigation. So this sets location.hash via page.evaluate() instead — a
-// real hashchange event, exactly what an in-app click produces — and lets
-// the already-booted app's own router handle it, rather than repeating
-// whatever cold-boot-into-a-protected-deep-route check is rejecting the
-// saved session.
+// real hashchange event, exactly what an in-app click produces.
+//
+// CONFIRMED on the next run: the evaluate() call itself then throws
+// "Execution context was destroyed, most likely because of a navigation" —
+// Ember's own route transition tears down/rebuilds enough of the page that
+// Playwright reports the assigning call's own context as gone, even though
+// the transition itself is legitimate (this is a known false-alarm shape
+// for exactly this kind of app-triggered transition, not a real failure).
+// Swallowed here for that one specific error; anything else still throws.
 export async function fetchCheckInExportCsv(
   page: Page,
   repeatingEventId: string,
@@ -164,9 +173,13 @@ export async function fetchCheckInExportCsv(
     `#/library/repeating-events/${encodeURIComponent(repeatingEventId)}` +
     `/check-in-report?minDate=${encodeURIComponent(formatDashboardDate(minDate))}`;
 
-  await page.evaluate((h) => {
-    window.location.hash = h;
-  }, hash);
+  try {
+    await page.evaluate((h) => {
+      window.location.hash = h;
+    }, hash);
+  } catch (err) {
+    if (!String(err).includes("Execution context was destroyed")) throw err;
+  }
   await page.getByRole("button", { name: "Export" }).waitFor({ timeout: 30_000 });
 
   const [download] = await Promise.all([
