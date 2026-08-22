@@ -5,10 +5,12 @@
 // attendee export for a lookback window, and POSTs it to
 // /api/attendance/import — no human clicking Export.
 //
-// Meant to run on a schedule (see .github/workflows/attendance-sync.yml)
-// with a 14-day lookback: a missed or failed run self-heals on the next
-// one at zero cost, because re-importing an overlapping date range is
-// idempotent (see lib/attendanceImport.ts).
+// Meant to run on a schedule on your own machine (see
+// scripts/run-scheduled-sync-local.sh and its own comments for why it's a
+// local launchd job, not GitHub Actions) with a 14-day lookback: a missed
+// or failed run self-heals on the next one at zero cost, because
+// re-importing an overlapping date range is idempotent (see
+// lib/attendanceImport.ts).
 //
 // Usage:
 //   nvm use 24
@@ -18,15 +20,13 @@
 //   APP_BASE_URL                 e.g. https://directory.gracechapel.org
 //   ATTENDANCE_IMPORT_TOKEN      same value as the app's ATTENDANCE_IMPORT_TOKEN
 // Dashboard auth — provide ONE of these:
-//   SUBSPLASH_SESSION_STATE      preferred; a saved session from
-//                                 scripts/capture-subsplash-session.ts. A fresh
-//                                 username/password login from CI was confirmed
-//                                 unreliable (Subsplash silently rejects it,
-//                                 most likely flagging the runner's IP/device)
-//                                 — see scripts/lib/fetchSubsplashExport.ts.
+//   SUBSPLASH_PROFILE_DIR        preferred; a persistent Chrome profile
+//                                 directory from scripts/capture-subsplash-session.ts
+//                                 (defaults to scripts/.subsplash-profile if unset
+//                                 and that directory exists).
 //   SUBSPLASH_DASHBOARD_EMAIL /
 //   SUBSPLASH_DASHBOARD_PASSWORD fresh login fallback; reliable when run
-//                                 locally/interactively, not from CI.
+//                                 locally/interactively.
 // Optional env:
 //   ORG_TIMEZONE                 default "America/New_York"
 //   SYNC_LOOKBACK_DAYS           default 14
@@ -36,6 +36,7 @@
 // /api/attendance/import) — never Subsplash's Core API directly, so it
 // doesn't need SUBSPLASH_CLIENT_ID/SECRET etc.; those stay app-side only.
 
+import { existsSync } from "node:fs";
 import { parseSubsplashCheckInsCsv } from "../lib/subsplashExportCsv";
 import { fetchCheckInEnabledSeries, postAndReportAll } from "./lib/importClient";
 import {
@@ -44,6 +45,8 @@ import {
   openSubsplashDashboard,
   type SubsplashDashboardSession,
 } from "./lib/fetchSubsplashExport";
+
+const DEFAULT_PROFILE_DIR = "scripts/.subsplash-profile";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -55,20 +58,20 @@ function requireEnv(name: string): string {
 }
 
 async function openDashboard(): Promise<SubsplashDashboardSession> {
-  const sessionState = process.env.SUBSPLASH_SESSION_STATE;
-  if (sessionState) {
-    console.log("Using saved Subsplash session (SUBSPLASH_SESSION_STATE).");
-    return openSubsplashDashboard(sessionState);
+  const profileDir = process.env.SUBSPLASH_PROFILE_DIR ?? DEFAULT_PROFILE_DIR;
+  if (existsSync(profileDir)) {
+    console.log(`Using saved Subsplash session (${profileDir}).`);
+    return openSubsplashDashboard(profileDir);
   }
   const email = process.env.SUBSPLASH_DASHBOARD_EMAIL;
   const password = process.env.SUBSPLASH_DASHBOARD_PASSWORD;
   if (email && password) {
-    console.log("No SUBSPLASH_SESSION_STATE — falling back to a fresh dashboard login.");
+    console.log(`No saved session at ${profileDir} — falling back to a fresh dashboard login.`);
     return loginToSubsplashDashboard(email, password);
   }
   console.error(
-    "Missing dashboard auth: set SUBSPLASH_SESSION_STATE (preferred — see " +
-      "scripts/capture-subsplash-session.ts), or both SUBSPLASH_DASHBOARD_EMAIL and SUBSPLASH_DASHBOARD_PASSWORD."
+    `Missing dashboard auth: run \`npx tsx scripts/capture-subsplash-session.ts\` to create ${profileDir} ` +
+      "(preferred), or set both SUBSPLASH_DASHBOARD_EMAIL and SUBSPLASH_DASHBOARD_PASSWORD."
   );
   process.exit(1);
 }
@@ -113,7 +116,7 @@ async function main() {
       }
     }
   } finally {
-    await session.browser.close();
+    await session.close();
   }
 
   if (anyFailed) {

@@ -1,5 +1,5 @@
 // Drives the Subsplash dashboard itself to produce a Check-In attendee
-// export, for the fully-unattended half of ADR-0021's sync design.
+// export, for the automated half of ADR-0021's sync design.
 //
 // Confirmed directly against the live dashboard (2026-08-21) rather than
 // guessed:
@@ -29,13 +29,10 @@
 // bounces back to the same plain login page (no error text, no 2FA/OTP
 // screen shown either), with valid, human-confirmed credentials. Most
 // consistent explanation: Subsplash flags the runner's IP/device as
-// unrecognized and rejects the attempt outright, rather than presenting a
-// challenge an unattended script could complete. So openSubsplashDashboard
-// below (a saved, pre-authenticated session) is the primary path for CI;
-// loginToSubsplashDashboard (fresh username/password) is kept for local/
-// interactive use where that device-trust problem doesn't apply, and as the
-// mechanism scripts/capture-subsplash-session.ts itself uses to establish
-// the session in the first place.
+// unrecognized and rejects the attempt outright. loginToSubsplashDashboard
+// (fresh username/password) is kept for local/interactive use where that
+// doesn't apply, but is not the primary path for the scheduled sync — see
+// openSubsplashDashboard below.
 //
 // CONFIRMED on a full real run against all 34 of the org's series (with a
 // valid saved session): a fresh page.goto() straight to a series' deep hash
@@ -46,21 +43,34 @@
 // which is a same-document hash change, not a fresh top-level navigation.
 // fetchCheckInExportCsv now sets location.hash via page.evaluate() instead
 // of page.goto() for exactly that reason — see its own comment.
+//
+// CONFIRMED after that: a Playwright storageState() snapshot of the signed-
+// in session is not enough. Inspecting a captured snapshot directly showed
+// only Google Analytics and reCAPTCHA cookies — no real Subsplash auth data
+// at all — despite the browser visibly showing the signed-in dashboard.
+// storageState() only captures cookies and localStorage; Subsplash's actual
+// session apparently lives elsewhere (IndexedDB is the common place modern
+// auth libraries put it), which storageState() silently omits. So
+// openSubsplashDashboard below uses a persistent Chrome profile directory
+// instead (chromium.launchPersistentContext) — the same mechanism a normal
+// Chrome profile is, so nothing about how Subsplash keeps you signed in
+// gets lost. See scripts/capture-subsplash-session.ts, which creates it.
 
-import { randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { chromium, type Browser, type Page } from "playwright";
+import { readFile } from "node:fs/promises";
+import { chromium, type Page } from "playwright";
 import { strFromU8, unzipSync } from "fflate";
 
 const LOGIN_URL = "https://dashboard.subsplash.com/auth/login";
+const DASHBOARD_ROOT_URL = "https://dashboard.subsplash.com/-d/";
 
 export interface SubsplashDashboardSession {
-  browser: Browser;
   page: Page;
+  close: () => Promise<void>;
 }
 
+// Fresh username/password login — reliable when run locally/interactively,
+// not from CI (see module comment). Kept as a fallback and as the mechanism
+// scripts/capture-subsplash-session.ts itself uses.
 export async function loginToSubsplashDashboard(
   email: string,
   password: string
@@ -97,30 +107,15 @@ export async function loginToSubsplashDashboard(
     );
   }
 
-  return { browser, page };
+  return { page, close: () => browser.close() };
 }
 
-const DASHBOARD_ROOT_URL = "https://dashboard.subsplash.com/-d/";
-
-// Opens a dashboard session from a previously-captured storageState (see
-// scripts/capture-subsplash-session.ts) instead of logging in fresh — the
-// path CI actually uses, since a fresh login from CI is unreliable (see the
-// module comment above).
-export async function openSubsplashDashboard(storageStateJson: string): Promise<SubsplashDashboardSession> {
-  try {
-    JSON.parse(storageStateJson);
-  } catch {
-    throw new Error("SUBSPLASH_SESSION_STATE is not valid JSON — re-run scripts/capture-subsplash-session.ts");
-  }
-
-  // Playwright's storageState option treats a string as a *file path*, not
-  // raw JSON — write it out to a temp file first.
-  const statePath = join(tmpdir(), `subsplash-session-${randomUUID()}.json`);
-  await writeFile(statePath, storageStateJson, "utf-8");
-
-  const browser = await chromium.launch();
-  const context = await browser.newContext({ storageState: statePath });
-  const page = await context.newPage();
+// Opens a dashboard session from a previously-captured persistent Chrome
+// profile directory (see scripts/capture-subsplash-session.ts) instead of
+// logging in fresh — the primary path for the scheduled sync.
+export async function openSubsplashDashboard(profileDir: string): Promise<SubsplashDashboardSession> {
+  const context = await chromium.launchPersistentContext(profileDir, { headless: true });
+  const page = context.pages()[0] ?? (await context.newPage());
   // networkidle, not domcontentloaded — give the Ember app a moment to fully
   // boot (including any of its own initial redirects) before the sync loop
   // starts hash-navigating into it; reduces the chance of racing an
@@ -128,14 +123,14 @@ export async function openSubsplashDashboard(storageStateJson: string): Promise<
   await page.goto(DASHBOARD_ROOT_URL, { waitUntil: "networkidle" });
 
   if (page.url().startsWith(LOGIN_URL)) {
-    await browser.close();
+    await context.close();
     throw new Error(
       "Saved Subsplash session is no longer valid (expired or revoked). Re-run " +
-        "`npx tsx scripts/capture-subsplash-session.ts` locally and update the SUBSPLASH_SESSION_STATE secret."
+        "`npx tsx scripts/capture-subsplash-session.ts` locally to re-authenticate."
     );
   }
 
-  return { browser, page };
+  return { page, close: () => context.close() };
 }
 
 // M/D/YYYY, no leading zeros — the exact format observed in a real

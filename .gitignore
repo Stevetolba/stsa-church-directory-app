@@ -36,9 +36,15 @@ yarn-error.log*
 # local env files
 .env*.local
 
-# captured Subsplash dashboard session (ADR-0021) — a bearer credential,
-# never commit it; see scripts/capture-subsplash-session.ts
-scripts/.subsplash-session.json
+# captured Subsplash dashboard session (ADR-0021) — a persistent Chrome
+# profile directory, a bearer credential, never commit it; see
+# scripts/capture-subsplash-session.ts
+scripts/.subsplash-profile/
+
+# local-machine attendance sync config/logs (ADR-0021) — see
+# scripts/run-scheduled-sync-local.sh
+scripts/.sync-local.env
+scripts/.sync-local.log
 
 # vercel
 .vercel
