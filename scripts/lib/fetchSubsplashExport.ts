@@ -21,15 +21,26 @@
 //     capture it, rather than reverse-engineering an internal data API that
 //     doesn't exist as a stable request.
 //
-// Not confirmed by direct testing (no service-account credentials were
-// available during discovery): the exact `maxDate` query param name/format
-// for narrowing the report's upper bound, and whether Subsplash occasionally
-// interposes a "verify it's you" step on an unfamiliar IP/device — a real
-// possibility for a CI runner's IP. If login intermittently fails from CI
-// but works when run locally, that's the likely cause; there is no
-// unattended fallback for it today.
+// Not confirmed by direct testing: the exact `maxDate` query param
+// name/format for narrowing the report's upper bound.
+//
+// CONFIRMED on the first real CI run: a fresh username/password login is
+// silently rejected from a GitHub Actions runner — the form submits and
+// bounces back to the same plain login page (no error text, no 2FA/OTP
+// screen shown either), with valid, human-confirmed credentials. Most
+// consistent explanation: Subsplash flags the runner's IP/device as
+// unrecognized and rejects the attempt outright, rather than presenting a
+// challenge an unattended script could complete. So openSubsplashDashboard
+// below (a saved, pre-authenticated session) is the primary path for CI;
+// loginToSubsplashDashboard (fresh username/password) is kept for local/
+// interactive use where that device-trust problem doesn't apply, and as the
+// mechanism scripts/capture-subsplash-session.ts itself uses to establish
+// the session in the first place.
 
-import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { chromium, type Browser, type Page } from "playwright";
 import { strFromU8, unzipSync } from "fflate";
 
@@ -73,6 +84,40 @@ export async function loginToSubsplashDashboard(
       "Subsplash dashboard login failed — check SUBSPLASH_DASHBOARD_EMAIL/SUBSPLASH_DASHBOARD_PASSWORD, " +
         "or the account may be getting an unrecognized-device/verification prompt this script can't complete " +
         `unattended. Screenshot saved to ${screenshotPath}. Page text: ${JSON.stringify(pageText)}`
+    );
+  }
+
+  return { browser, page };
+}
+
+const DASHBOARD_ROOT_URL = "https://dashboard.subsplash.com/-d/";
+
+// Opens a dashboard session from a previously-captured storageState (see
+// scripts/capture-subsplash-session.ts) instead of logging in fresh — the
+// path CI actually uses, since a fresh login from CI is unreliable (see the
+// module comment above).
+export async function openSubsplashDashboard(storageStateJson: string): Promise<SubsplashDashboardSession> {
+  try {
+    JSON.parse(storageStateJson);
+  } catch {
+    throw new Error("SUBSPLASH_SESSION_STATE is not valid JSON — re-run scripts/capture-subsplash-session.ts");
+  }
+
+  // Playwright's storageState option treats a string as a *file path*, not
+  // raw JSON — write it out to a temp file first.
+  const statePath = join(tmpdir(), `subsplash-session-${randomUUID()}.json`);
+  await writeFile(statePath, storageStateJson, "utf-8");
+
+  const browser = await chromium.launch();
+  const context = await browser.newContext({ storageState: statePath });
+  const page = await context.newPage();
+  await page.goto(DASHBOARD_ROOT_URL, { waitUntil: "domcontentloaded" });
+
+  if (page.url().startsWith(LOGIN_URL)) {
+    await browser.close();
+    throw new Error(
+      "Saved Subsplash session is no longer valid (expired or revoked). Re-run " +
+        "`npx tsx scripts/capture-subsplash-session.ts` locally and update the SUBSPLASH_SESSION_STATE secret."
     );
   }
 

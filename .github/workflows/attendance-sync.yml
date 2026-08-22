@@ -23,14 +23,22 @@ jobs:
 
       - run: npx playwright install --with-deps chromium
 
-      # Only talks to the Subsplash dashboard (Playwright login) and this
-      # app's own API (GET /api/attendance/series, POST /api/attendance/import)
-      # — never Subsplash's Core API directly, so no SUBSPLASH_CLIENT_ID/SECRET
-      # etc. here; those stay app-side (Vercel), not in this workflow.
+      # Only talks to the Subsplash dashboard (Playwright) and this app's own
+      # API (GET /api/attendance/series, POST /api/attendance/import) — never
+      # Subsplash's Core API directly, so no SUBSPLASH_CLIENT_ID/SECRET etc.
+      # here; those stay app-side (Vercel), not in this workflow.
+      #
+      # SUBSPLASH_SESSION_STATE is the auth path that actually works from CI —
+      # a fresh username/password login from a GitHub runner was confirmed to
+      # be silently rejected (see scripts/lib/fetchSubsplashExport.ts). The
+      # DASHBOARD_EMAIL/PASSWORD secrets are kept as a fallback the script
+      # will use if SUBSPLASH_SESSION_STATE isn't set, but don't expect them
+      # to work unattended.
       - run: npm run sync:subsplash:scheduled
         env:
           APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
           ATTENDANCE_IMPORT_TOKEN: ${{ secrets.ATTENDANCE_IMPORT_TOKEN }}
+          SUBSPLASH_SESSION_STATE: ${{ secrets.SUBSPLASH_SESSION_STATE }}
           SUBSPLASH_DASHBOARD_EMAIL: ${{ secrets.SUBSPLASH_DASHBOARD_EMAIL }}
           SUBSPLASH_DASHBOARD_PASSWORD: ${{ secrets.SUBSPLASH_DASHBOARD_PASSWORD }}
           SUBSPLASH_LOGIN_DEBUG_DIR: ${{ runner.temp }}
