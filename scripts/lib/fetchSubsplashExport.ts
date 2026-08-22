@@ -36,6 +36,16 @@
 // interactive use where that device-trust problem doesn't apply, and as the
 // mechanism scripts/capture-subsplash-session.ts itself uses to establish
 // the session in the first place.
+//
+// CONFIRMED on a full real run against all 34 of the org's series (with a
+// valid saved session): a fresh page.goto() straight to a series' deep hash
+// route — i.e. what fetchCheckInExportCsv originally did — bounces through
+// /auth/logout?redirect=... and never returns, 100% reproducibly, on every
+// single series. The dashboard is an Ember app (hash-routed); a real user
+// is always already sitting on a booted instance of it and clicks through,
+// which is a same-document hash change, not a fresh top-level navigation.
+// fetchCheckInExportCsv now sets location.hash via page.evaluate() instead
+// of page.goto() for exactly that reason — see its own comment.
 
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
@@ -132,16 +142,31 @@ export function formatDashboardDate(date: Date): string {
 
 // Navigates to one series' Check-In attendance report and captures the
 // Export button's downloaded ZIP, returning the CSV text inside it.
+//
+// CONFIRMED against a real run syncing all 34 real series: a fresh
+// page.goto() straight to a deep hash route — the equivalent of pasting the
+// URL into a new tab — makes the dashboard (an Ember app, hash-routed)
+// bounce through /auth/logout?redirect=... and never come back, on every
+// single series, 100% reproducibly. A real user never does that; they're
+// always already sitting on a booted dashboard and click through to the
+// report, i.e. a same-document hash change, not a fresh top-level
+// navigation. So this sets location.hash via page.evaluate() instead — a
+// real hashchange event, exactly what an in-app click produces — and lets
+// the already-booted app's own router handle it, rather than repeating
+// whatever cold-boot-into-a-protected-deep-route check is rejecting the
+// saved session.
 export async function fetchCheckInExportCsv(
   page: Page,
   repeatingEventId: string,
   minDate: Date
 ): Promise<string> {
-  const url =
-    `https://dashboard.subsplash.com/-d/#/library/repeating-events/${encodeURIComponent(repeatingEventId)}` +
+  const hash =
+    `#/library/repeating-events/${encodeURIComponent(repeatingEventId)}` +
     `/check-in-report?minDate=${encodeURIComponent(formatDashboardDate(minDate))}`;
 
-  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.evaluate((h) => {
+    window.location.hash = h;
+  }, hash);
   await page.getByRole("button", { name: "Export" }).waitFor({ timeout: 30_000 });
 
   const [download] = await Promise.all([
