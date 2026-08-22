@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { ArrowLeft, BarChart3, Download, Mail, UserX } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BarChart3, Download, Mail, UserX } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { EmailAbsenteesDialog } from "@/components/EmailAbsenteesDialog";
 import { FilterPill } from "@/components/FilterPill";
@@ -25,6 +25,7 @@ import {
 import type { AppEvent } from "@/types/event";
 import type { AttendanceSummary, CheckInRecord } from "@/types/attendance";
 import type { SeriesFrequencyResult } from "@/lib/attendance";
+import type { AttendanceImportRun } from "@/lib/attendanceImport";
 import type { Campus, MemberStatus, Profile } from "@/types/profile";
 
 async function fetcher(url: string) {
@@ -378,6 +379,42 @@ function NameAvatar({ displayName }: { displayName: string }) {
 
 // --- Occurrence tab ---
 
+// Surfaces the series' most recent Subsplash attendance-import run (ADR-0021)
+// — when it ran, and, critically, any attendees the import couldn't match to
+// a directory profile. An unmatched attendee is still counted in the
+// occurrence totals (as a guest row), but without this banner they'd quietly
+// show up on the Absentees tab as though they'd missed the service, with no
+// visible reason why. Silent for a series with no import history yet (e.g.
+// entirely backfilled) — nothing to report.
+function ImportStatusBanner({ seriesId }: { seriesId: string }) {
+  const { data } = useSWR<{ run: AttendanceImportRun | null }>(
+    `/api/attendance/imports?seriesId=${encodeURIComponent(seriesId)}`,
+    fetcher
+  );
+  const run = data?.run;
+  if (!run) return null;
+
+  return (
+    <div className="mb-4 flex flex-col gap-1.5 rounded-[12px] border border-[#E5DCC8] bg-[#FBF8F1] px-3.5 py-2.5 text-[12.5px] text-[#5B7185]">
+      <div>
+        Last imported from Subsplash: {formatDate(run.occurrenceDate)} occurrence, on{" "}
+        {new Date(run.ranAt).toLocaleString()}
+      </div>
+      {run.rowsUnmatched > 0 && (
+        <div className="flex items-start gap-1.5 text-[#8A5A2B]">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            {run.rowsUnmatched} attendee{run.rowsUnmatched === 1 ? "" : "s"} couldn&apos;t be matched to a
+            directory profile — counted in totals, but will show up as absent unless fixed:{" "}
+            {run.unmatchedNames.join(", ")}
+          </span>
+        </div>
+      )}
+      {run.error && <div className="text-[#B3453C]">Last import error: {run.error}</div>}
+    </div>
+  );
+}
+
 function OccurrenceTab({ event, occurrences }: { event: AppEvent; occurrences: SeriesOccurrence[] }) {
   const [occurrenceDate, setOccurrenceDate] = useState(
     occurrences.find((o) => o.occurrence_date === event.occurrence_date)?.occurrence_date ??
@@ -422,6 +459,8 @@ function OccurrenceTab({ event, occurrences }: { event: AppEvent; occurrences: S
         <ExportButton onClick={handleExport} disabled={records.length === 0} />
       </div>
 
+      <ImportStatusBanner seriesId={event.series_id} />
+
       {summary && (
         <div className="mb-5 flex flex-wrap gap-2">
           <Stat label="Present" value={summary.present} accent />
@@ -460,8 +499,23 @@ function AttendeeTable({ title, records, timezone }: { title: string; records: C
               <div className="text-[14.5px] font-semibold text-brand-navy">{r.displayName}</div>
               <div className="text-[12px] text-[#8A94A0]">
                 {r.sessionName ? `${r.sessionName} · ` : ""}
-                In {timeLabelInTz(new Date(r.checkedInAt), timezone)} by {r.checkedInBy}
-                {r.checkedOutAt ? ` · Out ${timeLabelInTz(new Date(r.checkedOutAt), timezone)} by ${r.checkedOutBy}` : ""}
+                {r.method === "subsplash" ? (
+                  <>
+                    <span className="rounded-full bg-[#EEF2F6] px-1.5 py-0.5 text-[11px] font-semibold text-[#4C6178]">
+                      Subsplash
+                    </span>{" "}
+                    · In {timeLabelInTz(new Date(r.checkedInAt), timezone)}
+                    {r.checkedOutAt ? ` · Out ${timeLabelInTz(new Date(r.checkedOutAt), timezone)}` : ""}
+                    {r.droppedOffByName ? ` · Dropped off by ${r.droppedOffByName}` : ""}
+                  </>
+                ) : (
+                  <>
+                    In {timeLabelInTz(new Date(r.checkedInAt), timezone)} by {r.checkedInBy}
+                    {r.checkedOutAt
+                      ? ` · Out ${timeLabelInTz(new Date(r.checkedOutAt), timezone)} by ${r.checkedOutBy}`
+                      : ""}
+                  </>
+                )}
               </div>
             </div>
           </div>

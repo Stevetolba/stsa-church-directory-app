@@ -9,12 +9,13 @@ import { EventAgenda } from "@/components/EventAgenda";
 import { useEvents } from "@/hooks/useEvents";
 import { occurrenceDateInTz, windowState } from "@/lib/eventTime";
 
-// The check-in landing page. Events whose check-in window is open right now are
-// pinned at the top in a highlighted "Check in now" section; everything else
-// follows as a date-grouped agenda (like the birthdays page). ADR-0015.
-export function EventsPageClient({ canStartKiosk }: { canStartKiosk: boolean }) {
+// The events landing page. Events happening right now are pinned at the top in
+// a highlighted section; everything else follows as a date-grouped agenda
+// (like the birthdays page). Attendance itself is captured in Subsplash and
+// imported (ADR-0021), so the cards link to reports, not to check-in.
+export function EventsPageClient({ canViewReports }: { canViewReports: boolean }) {
   const [search, setSearch] = useState("");
-  // Fetch from today onward — the check-in surface is about now and upcoming.
+  // Fetch from today onward — this surface is about now and upcoming.
   const today = occurrenceDateInTz(new Date().toISOString(), "America/New_York");
   const { events, isLoading } = useEvents({ from: today, search: search || undefined });
 
@@ -36,7 +37,7 @@ export function EventsPageClient({ canStartKiosk }: { canStartKiosk: boolean }) 
       <div className="mb-7">
         <h1 className="font-heading text-3xl font-semibold text-brand-navy">Events</h1>
         <p className="mt-1 text-[14.5px] text-[#5B7185]">
-          Check people in and out of services and classes.
+          Services and classes, and their attendance reports.
         </p>
       </div>
 
@@ -64,7 +65,7 @@ export function EventsPageClient({ canStartKiosk }: { canStartKiosk: boolean }) 
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#3F6B45] opacity-60" />
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-[#3F6B45]" />
                 </span>
-                Check in now
+                Happening now
               </div>
               <div className="flex flex-col gap-2.5">
                 {openNow.map((event) => (
@@ -72,7 +73,7 @@ export function EventsPageClient({ canStartKiosk }: { canStartKiosk: boolean }) 
                     key={event.id}
                     event={event}
                     highlighted
-                    canStartKiosk={canStartKiosk}
+                    canViewReports={canViewReports}
                     now={now}
                   />
                 ))}
@@ -81,7 +82,7 @@ export function EventsPageClient({ canStartKiosk }: { canStartKiosk: boolean }) 
           )}
 
           {upcoming.length > 0 && (
-            <EventAgenda events={upcoming} canStartKiosk={canStartKiosk} now={now} />
+            <EventAgenda events={upcoming} canViewReports={canViewReports} now={now} />
           )}
         </div>
       )}

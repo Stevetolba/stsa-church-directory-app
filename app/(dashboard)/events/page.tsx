@@ -3,10 +3,10 @@ import { EventsPageClient } from "@/components/EventsPageClient";
 
 export default async function EventsPage() {
   const session = await auth();
-  // Any authenticated role can run check-in (children's-ministry volunteers
-  // included) — attendance data itself is guarded server-side per record.
-  // "Start kiosk" is available to everyone signed in; device-authorized
-  // (no-login) kiosks are set up separately by an admin (ADR-0015).
-  const canStartKiosk = !!session?.user;
-  return <EventsPageClient canStartKiosk={canStartKiosk} />;
+  // Attendance reports are staff/admin only (ADR-0015's RBAC table, enforced
+  // by requireStaffOrAdmin on the report routes) — volunteers still see the
+  // events list itself, just without the report links.
+  const role = session?.user?.role;
+  const canViewReports = role === "admin" || role === "staff";
+  return <EventsPageClient canViewReports={canViewReports} />;
 }

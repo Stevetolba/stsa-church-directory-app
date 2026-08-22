@@ -58,7 +58,7 @@ function eventFor(event: AccessEventRecord): { label: string; className: string 
 
 // Admin-only audit trail (ADR-0016): every sign-in (allowed or denied) and
 // every directory read, most recent first. Read-only — there's nothing to
-// create/revoke here, unlike DeviceManager.
+// create/revoke here.
 export function ActivityLog() {
   const { data, error, isLoading } = useSWR<{ events: AccessEventRecord[] }>(
     "/api/access-events",

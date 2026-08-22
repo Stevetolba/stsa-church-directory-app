@@ -26,18 +26,18 @@ export default async function DashboardPage() {
   if (session?.user?.role === "volunteer") {
     return <VolunteerDashboard name={name} />;
   }
-  return <StaffDashboard name={name} canStartKiosk={!!session?.user} />;
+  return <StaffDashboard name={name} canViewReports />;
 }
 
 // Not async: the shell below (header, search form, action cards) needs
-// nothing but `name`/`canStartKiosk`, so it renders on the very first paint
+// nothing but `name`/`canViewReports`, so it renders on the very first paint
 // instead of blocking behind Subsplash's full profile walk (ADR-0009 warns
 // that walk can take several seconds on a cold cache — this used to stall
 // the *entire* page, including the static parts, behind it). The three data
 // fetches below are kicked off here (not awaited) so they run in parallel
 // while each dependent section streams in on its own via its own Suspense
 // boundary once ready.
-function StaffDashboard({ name, canStartKiosk }: { name: string | null; canStartKiosk: boolean }) {
+function StaffDashboard({ name, canViewReports }: { name: string | null; canViewReports: boolean }) {
   const now = new Date();
   // Birthdays reuses the same "walk up to 5000 profiles" cap the standalone
   // /birthdays page already accepts (its SHOW_ALL_PAGE_SIZE convention) — the
@@ -58,7 +58,7 @@ function StaffDashboard({ name, canStartKiosk }: { name: string | null; canStart
       </div>
 
       <Suspense fallback={null}>
-        <TodaysEventsSection eventsPromise={eventsPromise} canStartKiosk={canStartKiosk} now={now} />
+        <TodaysEventsSection eventsPromise={eventsPromise} canViewReports={canViewReports} now={now} />
       </Suspense>
 
       <Suspense fallback={null}>
@@ -170,11 +170,11 @@ async function VolunteerStatPill({ childrenPromise }: { childrenPromise: Promise
 
 async function TodaysEventsSection({
   eventsPromise,
-  canStartKiosk,
+  canViewReports,
   now,
 }: {
   eventsPromise: ReturnType<typeof listTodaysEvents>;
-  canStartKiosk: boolean;
+  canViewReports: boolean;
   now: Date;
 }) {
   const todaysEvents = await eventsPromise;
@@ -191,7 +191,7 @@ async function TodaysEventsSection({
             key={event.id}
             event={event}
             highlighted={windowState(event, now) === "open"}
-            canStartKiosk={canStartKiosk}
+            canViewReports={canViewReports}
             now={now}
           />
         ))}
