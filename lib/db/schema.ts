@@ -1,7 +1,10 @@
-// Drizzle schema for the app-owned attendance store (ADR-0015). Subsplash's
-// Events API exposes only a `check_in_enabled` toggle and a read-only
-// `has_check_ins` flag — there is no endpoint to read or write per-person
-// check-ins — so attendance lives here, keyed to Subsplash profile/event ids.
+// Drizzle schema for the app-owned attendance store (ADR-0015, capture
+// retired in favor of Subsplash import per ADR-0021). Subsplash's Events API
+// exposes only a `check_in_enabled` toggle and a read-only `has_check_ins`
+// flag — there is no endpoint to read or write per-person check-ins, and no
+// check-in webhook — so attendance lives here, keyed to Subsplash
+// profile/event ids and populated by a scheduled import from the Subsplash
+// Check-In dashboard's own attendee export.
 //
 // People are NOT duplicated: a check-in stores only the Subsplash profile_id
 // plus a display-name snapshot (so reports still render if a profile is later
@@ -14,6 +17,8 @@ import {
   check,
   date,
   index,
+  integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -62,7 +67,10 @@ export const checkIns = pgTable(
     matchCode: text("match_code"),
     checkedOutAt: timestamp("checked_out_at", { withTimezone: true }),
     checkedOutBy: text("checked_out_by"),
-    method: text("method").notNull().default("live"), // 'live' | 'backfill' | 'kiosk'
+    // 'live'/'kiosk' are retired capture methods (ADR-0015, superseded by
+    // ADR-0021) kept in the constraint so historical rows stay valid;
+    // 'backfill' is a staff/admin manual entry; 'subsplash' is an imported row.
+    method: text("method").notNull().default("live"), // 'live' | 'backfill' | 'kiosk' | 'subsplash'
     isGuest: boolean("is_guest").notNull().default(false),
   },
   (t) => ({
@@ -77,7 +85,10 @@ export const checkIns = pgTable(
       t.occurrenceDate
     ),
     profileIdx: index("check_ins_profile_idx").on(t.profileId),
-    methodCheck: check("check_ins_method_check", sql`${t.method} in ('live','backfill','kiosk')`),
+    methodCheck: check(
+      "check_ins_method_check",
+      sql`${t.method} in ('live','backfill','kiosk','subsplash')`
+    ),
     checkoutOrderCheck: check(
       "check_ins_checkout_order_check",
       sql`${t.checkedOutAt} is null or ${t.checkedOutAt} >= ${t.checkedInAt}`
@@ -85,20 +96,36 @@ export const checkIns = pgTable(
   })
 );
 
-// Kiosk devices authorized via a one-time setup code, so an iPad at the door
-// can run check-in/out without a user signing in (ADR-0015). The device token
-// is stored only as a sha256 hash; the raw token lives in an httpOnly cookie.
-export const devices = pgTable("devices", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  tokenHash: text("token_hash"), // null until the setup code is claimed
-  setupCode: text("setup_code").unique(), // nulled once claimed
-  setupExpires: timestamp("setup_expires", { withTimezone: true }),
-  createdBy: text("created_by").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
-  revokedAt: timestamp("revoked_at", { withTimezone: true }),
-});
+// One row per attempted attendance-import run for one series/occurrence
+// (ADR-0021) — the last-run status the Reports UI shows, and the record of
+// which attendees couldn't be matched to a directory profile (they're still
+// counted via a guest row, per lib/attendanceImport.ts, but need a human to
+// notice and fix them or they silently pollute the absentee list).
+export const attendanceImports = pgTable(
+  "attendance_imports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ranAt: timestamp("ran_at", { withTimezone: true }).notNull().defaultNow(),
+    source: text("source").notNull(), // currently always 'subsplash'
+    seriesId: text("series_id").notNull(),
+    occurrenceDate: date("occurrence_date").notNull(),
+    rowsSeen: integer("rows_seen").notNull(),
+    rowsMatched: integer("rows_matched").notNull(),
+    rowsUnmatched: integer("rows_unmatched").notNull(),
+    // Names Subsplash exported that couldn't be resolved to a profile —
+    // surfaced verbatim in the report UI so an admin can go fix the mismatch
+    // (typo, name change, not yet in the directory) rather than it silently
+    // showing that person as absent forever.
+    unmatchedNames: jsonb("unmatched_names").$type<string[]>().notNull().default([]),
+    error: text("error"),
+  },
+  (t) => ({
+    seriesOccurrenceIdx: index("attendance_imports_series_occurrence_idx").on(
+      t.seriesId,
+      t.occurrenceDate
+    ),
+  })
+);
 
 // Audit log (ADR-0016): every sign-in attempt (allowed or denied) and every
 // directory read (People/Households/Children search, attendance reports) —
@@ -133,6 +160,7 @@ export const accessEvents = pgTable(
 
 export type CheckInRow = typeof checkIns.$inferSelect;
 export type NewCheckInRow = typeof checkIns.$inferInsert;
-export type DeviceRow = typeof devices.$inferSelect;
+export type AttendanceImportRow = typeof attendanceImports.$inferSelect;
+export type NewAttendanceImportRow = typeof attendanceImports.$inferInsert;
 export type AccessEventRow = typeof accessEvents.$inferSelect;
 export type NewAccessEventRow = typeof accessEvents.$inferInsert;

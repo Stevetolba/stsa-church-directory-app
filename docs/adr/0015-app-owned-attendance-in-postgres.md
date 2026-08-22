@@ -1,7 +1,17 @@
 # ADR-0015: App-owned attendance (event check-in) in Postgres
 
-**Status:** Accepted
+**Status:** Partially superseded by [ADR-0021](0021-subsplash-attendance-import.md) (2026-08-21)
 **Date:** 2026-07-16
+
+> **2026-08-21 update:** The *capture* half of this decision — the `/kiosk`
+> web surface, device-authorized tokens, and printed labels described below
+> — was retired in favor of importing attendance from Subsplash Check-In,
+> which is what the church actually runs at the door (ADR-0021). The
+> *storage* half survives unchanged and is what makes that import clean: the
+> Neon/Drizzle `check_ins` table, keyed on `(series_id, occurrence_date,
+> profile_id)`, and the reporting/absentee/email-parents logic built on top
+> of it. Read the RBAC table and device/kiosk sections below as history, not
+> as the current design.
 
 ## Context
 

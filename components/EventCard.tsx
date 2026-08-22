@@ -1,39 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarCheck, Clock, LogIn, MonitorPlay } from "lucide-react";
+import { BarChart3, CalendarCheck, Clock } from "lucide-react";
 import type { AppEvent } from "@/types/event";
-import { checkInWindow, occurrenceDateInTz, timeLabelInTz, windowState } from "@/lib/eventTime";
+import { occurrenceDateInTz, timeLabelInTz } from "@/lib/eventTime";
 
-// One event in the agenda. When its check-in window is open it's rendered
-// highlighted (accent border) with prominent Check-in / Kiosk actions; other
-// events show a muted status chip.
+// One event in the agenda. Attendance is captured in Subsplash Check-In, not
+// here (ADR-0021), so this card is informational — it links to the event's
+// attendance report rather than offering a check-in action.
 export function EventCard({
   event,
   highlighted = false,
-  canStartKiosk = false,
+  canViewReports = false,
   now = new Date(),
 }: {
   event: AppEvent;
   highlighted?: boolean;
-  canStartKiosk?: boolean;
+  canViewReports?: boolean;
   now?: Date;
 }) {
-  const state = windowState(event, now);
-  const { opensAt, closesAt } = checkInWindow(event);
   const startLabel = timeLabelInTz(new Date(event.start_at), event.timezone);
   const endLabel = event.end_at ? timeLabelInTz(new Date(event.end_at), event.timezone) : null;
-  // Check-in only ever opens the same day (45 min before start_at at the
-  // earliest), so a future-dated event has nothing to do yet — no point
-  // showing a button for it days or weeks ahead of time.
-  const isToday = event.occurrence_date === occurrenceDateInTz(now.toISOString(), event.timezone);
-
-  const statusChip =
-    state === "open"
-      ? { text: `Check-in open · closes ${timeLabelInTz(closesAt, event.timezone)}`, cls: "bg-[#E6EEE1] text-[#3F6B45]" }
-      : state === "upcoming"
-        ? { text: `Opens ${timeLabelInTz(opensAt, event.timezone)}`, cls: "bg-[#EEF2F6] text-[#4C6178]" }
-        : { text: "Check-in closed", cls: "bg-[#F1EEE7] text-[#8A94A0]" };
+  // A report is only worth linking to once the event has actually happened —
+  // attendance is imported from Subsplash after the fact, so a future-dated
+  // occurrence has nothing to show yet.
+  const hasHappened = event.occurrence_date <= occurrenceDateInTz(now.toISOString(), event.timezone);
 
   return (
     <div
@@ -57,36 +48,21 @@ export function EventCard({
               {event.sessions.length} session{event.sessions.length === 1 ? "" : "s"}
             </span>
           )}
-          <span className={`rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${statusChip.cls}`}>
-            {statusChip.text}
-          </span>
         </div>
       </div>
 
-      {isToday && (
+      {canViewReports && hasHappened && (
         <div className="flex shrink-0 items-center gap-2 pl-[26px] sm:pl-0">
           <Link
-            href={`/events/${event.id}/check-in`}
-            className={`flex items-center gap-1.5 whitespace-nowrap rounded-[10px] px-3.5 py-2 text-[13px] font-semibold transition-colors ${
-              state === "open"
-                ? "bg-brand-navy text-brand-cream hover:bg-brand-navy/90"
-                : "border border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
-            }`}
+            href={`/events/${event.id}/report`}
+            className="flex items-center gap-1.5 whitespace-nowrap rounded-[10px] border border-[#E5DCC8] bg-white px-3.5 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30"
           >
-            <LogIn className="h-3.5 w-3.5" />
-            Check in
+            <BarChart3 className="h-3.5 w-3.5" />
+            Report
           </Link>
-          {canStartKiosk && state === "open" && (
-            <Link
-              href={`/kiosk?eventId=${encodeURIComponent(event.id)}`}
-              className="flex items-center gap-1.5 whitespace-nowrap rounded-[10px] border border-[#E5DCC8] bg-white px-3.5 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30"
-            >
-              <MonitorPlay className="h-3.5 w-3.5" />
-              Kiosk
-            </Link>
-          )}
         </div>
       )}
+
     </div>
   );
 }

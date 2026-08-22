@@ -8,11 +8,9 @@ import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { getDb, isDbConfigured } from "./db";
 import { checkIns, type CheckInRow } from "./db/schema";
 import { mockCheckIns } from "./mockData";
-import { attachParentContacts, getProfile, searchChildren, searchProfiles } from "./subsplash";
+import { attachParentContacts, searchChildren, searchProfiles } from "./subsplash";
 import type { AttendanceSummary, CheckInMethod, CheckInRecord } from "@/types/attendance";
 import type { Campus, MemberStatus, Profile } from "@/types/profile";
-import type { ChildLabelData } from "@/components/labels/ChildLabel";
-import type { ParentMatchTagData } from "@/components/labels/ParentMatchTag";
 
 // --- Row mapping (DB <-> app record) ---
 
@@ -54,28 +52,42 @@ export interface RecordCheckInInput {
   seriesId: string;
   eventId: string;
   occurrenceDate: string; // YYYY-MM-DD
-  profileId: string; // Subsplash id or "guest:<uuid>"
+  profileId: string; // Subsplash id, or a "guest:..." synthetic id for someone with no directory match
   displayName: string;
   isChild: boolean;
   sessionId?: string | null;
   sessionName?: string | null;
+  // ISO 8601. The Subsplash import (the only remaining caller, ADR-0021)
+  // carries the real check-in timestamp from the export; omitted only
+  // defaults to "now" for a hand-built payload that doesn't have one.
+  checkedInAt?: string;
   checkedInBy: string;
   // The adult household member who dropped this child off (not who operated
   // the screen). Only meaningful for a child; ignored otherwise.
   droppedOffByProfileId?: string | null;
   droppedOffByName?: string | null;
   matchCode?: string | null;
+  // ISO 8601 or null. Set explicitly from the import's own Check-out Time
+  // column — unlike the retired live check-in flow, a repeat import is not
+  // "the person returned" (clearing checkout); it's just Subsplash's export
+  // being re-fetched, so whatever it says now (present or still null) wins.
+  checkedOutAt?: string | null;
+  checkedOutBy?: string | null;
   method?: CheckInMethod;
   isGuest?: boolean;
 }
 
-// Idempotent check-in. On a repeat (same person/occurrence) it updates the
-// chosen session and clears any prior check-out (the person returned), rather
-// than creating a duplicate — enforced by the (series, date, profile) unique
-// constraint in the DB and mirrored in the mock.
+// Idempotent upsert keyed on (series, date, profile) — enforced by the DB's
+// unique constraint and mirrored in the mock. Written for the Subsplash
+// import (ADR-0021): re-importing the same occurrence updates a row to
+// match the export's current state rather than creating a duplicate or
+// blowing away real checkout data with each pass.
 export async function recordCheckIn(input: RecordCheckInInput): Promise<CheckInRecord> {
   const method = input.method ?? "live";
   const isGuest = input.isGuest ?? input.profileId.startsWith("guest:");
+  const checkedInAt = input.checkedInAt ? new Date(input.checkedInAt) : undefined;
+  const checkedOutAt = input.checkedOutAt ? new Date(input.checkedOutAt) : null;
+  const checkedOutBy = checkedOutAt ? (input.checkedOutBy ?? null) : null;
 
   if (isDbConfigured()) {
     const db = getDb();
@@ -90,10 +102,13 @@ export async function recordCheckIn(input: RecordCheckInInput): Promise<CheckInR
         isChild: input.isChild,
         sessionId: input.sessionId ?? null,
         sessionName: input.sessionName ?? null,
+        ...(checkedInAt ? { checkedInAt } : {}),
         checkedInBy: input.checkedInBy,
         droppedOffByProfileId: input.droppedOffByProfileId ?? null,
         droppedOffByName: input.droppedOffByName ?? null,
         matchCode: input.matchCode ?? null,
+        checkedOutAt,
+        checkedOutBy,
         method,
         isGuest,
       })
@@ -102,11 +117,12 @@ export async function recordCheckIn(input: RecordCheckInInput): Promise<CheckInR
         set: {
           sessionId: input.sessionId ?? null,
           sessionName: input.sessionName ?? null,
+          ...(checkedInAt ? { checkedInAt } : {}),
           droppedOffByProfileId: input.droppedOffByProfileId ?? null,
           droppedOffByName: input.droppedOffByName ?? null,
           matchCode: input.matchCode ?? null,
-          checkedOutAt: null,
-          checkedOutBy: null,
+          checkedOutAt,
+          checkedOutBy,
         },
       })
       .returning();
@@ -123,11 +139,12 @@ export async function recordCheckIn(input: RecordCheckInInput): Promise<CheckInR
   if (existing) {
     existing.sessionId = input.sessionId ?? null;
     existing.sessionName = input.sessionName ?? null;
+    if (checkedInAt) existing.checkedInAt = checkedInAt.toISOString();
     existing.droppedOffByProfileId = input.droppedOffByProfileId ?? null;
     existing.droppedOffByName = input.droppedOffByName ?? null;
     existing.matchCode = input.matchCode ?? null;
-    existing.checkedOutAt = null;
-    existing.checkedOutBy = null;
+    existing.checkedOutAt = checkedOutAt ? checkedOutAt.toISOString() : null;
+    existing.checkedOutBy = checkedOutBy;
     return existing;
   }
   const record: CheckInRecord = {
@@ -140,127 +157,18 @@ export async function recordCheckIn(input: RecordCheckInInput): Promise<CheckInR
     isChild: input.isChild,
     sessionId: input.sessionId ?? null,
     sessionName: input.sessionName ?? null,
-    checkedInAt: new Date().toISOString(),
+    checkedInAt: (checkedInAt ?? new Date()).toISOString(),
     checkedInBy: input.checkedInBy,
     droppedOffByProfileId: input.droppedOffByProfileId ?? null,
     droppedOffByName: input.droppedOffByName ?? null,
     matchCode: input.matchCode ?? null,
-    checkedOutAt: null,
-    checkedOutBy: null,
+    checkedOutAt: checkedOutAt ? checkedOutAt.toISOString() : null,
+    checkedOutBy,
     method,
     isGuest,
   };
   store.push(record);
   return record;
-}
-
-export interface CheckOutInput {
-  seriesId: string;
-  occurrenceDate: string;
-  profileId: string;
-  checkedOutBy: string;
-}
-
-export async function checkOut(input: CheckOutInput): Promise<CheckInRecord | null> {
-  if (isDbConfigured()) {
-    const db = getDb();
-    const [row] = await db
-      .update(checkIns)
-      .set({ checkedOutAt: new Date(), checkedOutBy: input.checkedOutBy })
-      .where(
-        and(
-          eq(checkIns.seriesId, input.seriesId),
-          eq(checkIns.occurrenceDate, input.occurrenceDate),
-          eq(checkIns.profileId, input.profileId)
-        )
-      )
-      .returning();
-    return row ? fromRow(row) : null;
-  }
-
-  const record = mockStore().find(
-    (r) =>
-      r.seriesId === input.seriesId &&
-      r.occurrenceDate === input.occurrenceDate &&
-      r.profileId === input.profileId
-  );
-  if (!record) return null;
-  record.checkedOutAt = new Date().toISOString();
-  record.checkedOutBy = input.checkedOutBy;
-  return record;
-}
-
-export interface RemoveCheckInInput {
-  seriesId: string;
-  occurrenceDate: string;
-  profileId: string;
-}
-
-// Undo — deletes a mis-tap entirely (distinct from check-out).
-export async function removeCheckIn(input: RemoveCheckInInput): Promise<void> {
-  if (isDbConfigured()) {
-    const db = getDb();
-    await db
-      .delete(checkIns)
-      .where(
-        and(
-          eq(checkIns.seriesId, input.seriesId),
-          eq(checkIns.occurrenceDate, input.occurrenceDate),
-          eq(checkIns.profileId, input.profileId)
-        )
-      );
-    return;
-  }
-  const store = mockStore();
-  const idx = store.findIndex(
-    (r) =>
-      r.seriesId === input.seriesId &&
-      r.occurrenceDate === input.occurrenceDate &&
-      r.profileId === input.profileId
-  );
-  if (idx !== -1) store.splice(idx, 1);
-}
-
-// The existing row for a person at this occurrence, if any — used by the
-// check-in route to preserve drop-off/match-code data across a repeat
-// submission that doesn't itself carry it (e.g. changing a session after the
-// fact shouldn't blank out who dropped the child off or reissue their code).
-export async function getCheckIn(
-  seriesId: string,
-  occurrenceDate: string,
-  profileId: string
-): Promise<CheckInRecord | null> {
-  if (isDbConfigured()) {
-    const db = getDb();
-    const [row] = await db
-      .select()
-      .from(checkIns)
-      .where(
-        and(
-          eq(checkIns.seriesId, seriesId),
-          eq(checkIns.occurrenceDate, occurrenceDate),
-          eq(checkIns.profileId, profileId)
-        )
-      );
-    return row ? fromRow(row) : null;
-  }
-  return (
-    mockStore().find(
-      (r) => r.seriesId === seriesId && r.occurrenceDate === occurrenceDate && r.profileId === profileId
-    ) ?? null
-  );
-}
-
-// Pickup match codes currently in play for an occurrence (still-present
-// check-ins only — a departed child's old code is fair game to reuse), so a
-// freshly generated code doesn't collide with another family's.
-export async function activeMatchCodes(seriesId: string, occurrenceDate: string): Promise<Set<string>> {
-  const records = await listCheckIns(seriesId, occurrenceDate);
-  return new Set(
-    records.filter((r): r is CheckInRecord & { matchCode: string } => !r.checkedOutAt && !!r.matchCode).map(
-      (r) => r.matchCode
-    )
-  );
 }
 
 export async function listCheckIns(
@@ -539,71 +447,4 @@ export async function resolveAbsenteeEmails(absentees: Profile[]): Promise<Set<s
     }
   }
   return emails;
-}
-
-// --- Reprint (rebuild printable label data for an already-checked-in person) ---
-
-export interface ReprintLabelResult {
-  childLabel: ChildLabelData | null;
-  parentTag: ParentMatchTagData | null;
-}
-
-// Rebuilds exactly what a "Reprint label" action needs from a persisted
-// CheckInRecord. Only children ever get a printed label (matches the
-// original check-in flow), so a non-child record yields nulls. Allergy/care
-// notes and the drop-off adult's phone are never persisted on the check_ins
-// row itself (see ChildLabel.tsx / ParentMatchTag.tsx) — they're normally
-// only available in the original check-in POST response, which a reprint
-// obviously can't replay, so they're re-fetched from Subsplash here instead.
-// Shared by /api/attendance/reprint and /api/kiosk/attendance/reprint (the
-// two parallel staff/kiosk surfaces, mirroring the existing GET/POST/PATCH
-// split between those routes) so both surfaces stay in sync with exactly one
-// implementation of "how to rebuild a label."
-export async function buildReprintLabelData(
-  record: CheckInRecord,
-  eventTitle: string
-): Promise<ReprintLabelResult> {
-  if (!record.isChild) {
-    return { childLabel: null, parentTag: null };
-  }
-
-  let firstName = record.displayName;
-  let lastName = "";
-  let allergyNotes: string | null = null;
-  let careNotes: string | null = null;
-  if (!record.isGuest) {
-    const profile = await getProfile(record.profileId);
-    if (profile) {
-      firstName = profile.first_name;
-      lastName = profile.last_name;
-      allergyNotes = profile.allergy_notes ?? null;
-      careNotes = profile.care_notes ?? null;
-    }
-  }
-
-  let contactPhone: string | null = null;
-  if (record.droppedOffByProfileId) {
-    const dropOffProfile = await getProfile(record.droppedOffByProfileId);
-    contactPhone = dropOffProfile?.phone_number ?? null;
-  }
-
-  const childLabel: ChildLabelData = {
-    id: record.id,
-    firstName,
-    lastName,
-    matchCode: record.matchCode ?? "",
-    eventTitle,
-    sessionName: record.sessionName,
-    contactName: record.droppedOffByName,
-    contactPhone,
-    allergyNotes,
-    careNotes,
-  };
-
-  const fullName = `${firstName} ${lastName}`.trim();
-  const parentTag: ParentMatchTagData | null = record.matchCode
-    ? { matchCode: record.matchCode, childNames: [fullName], dropOffName: record.droppedOffByName }
-    : null;
-
-  return { childLabel, parentTag };
 }

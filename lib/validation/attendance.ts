@@ -1,44 +1,49 @@
 import { z } from "zod";
 
-// Request bodies for the attendance API (ADR-0015). The server derives
-// seriesId/eventId/occurrenceDate/isChild from the authoritative event +
-// profile records — the client only names who to check in and (optionally)
-// into which session — so a client can't forge occurrence keys or a child flag.
+// Request body for the attendance import endpoint (ADR-0021). Attendance is
+// captured in Subsplash Check-In and pulled in on a schedule — this is the
+// shape the importer script POSTs, one occurrence at a time.
 
-export const checkInSchema = z.object({
-  eventId: z.string().trim().min(1, "eventId is required"),
-  // Subsplash profile id, or "guest:<uuid>" for a walk-in (isGuest true).
-  profileId: z.string().trim().min(1).optional(),
-  sessionId: z.string().trim().min(1).optional(),
-  // Guest walk-in: no directory profile, just a typed name.
-  isGuest: z.boolean().optional(),
-  guestName: z.string().trim().min(1, "Name is required").max(120).optional(),
-  // For a child, the adult household member who dropped them off. The server
-  // re-derives isChild from the authoritative profile and only persists this
-  // when the checked-in profile actually is a child — a client can't use this
-  // to tag an adult's own check-in.
-  dropOffProfileId: z.string().trim().min(1).optional(),
-  // Client-generated pickup code shared by siblings checked in in the same
-  // batch (see components/labels). Re-validated server-side; an invalid or
-  // missing value falls back to a freshly generated one.
-  matchCode: z.string().trim().regex(/^\d{4}$/).optional(),
-  // Staff/admin only — records after the fact and bypasses the check-in window.
-  backfill: z.boolean().optional(),
-}).refine((d) => d.isGuest ? !!d.guestName : !!d.profileId, {
-  message: "profileId is required (or provide guestName for a guest)",
-  path: ["profileId"],
+export const attendanceImportAttendeeSchema = z.object({
+  name: z.string().trim().min(1, "name is required").max(200),
+  // Confirmed against a real Subsplash export (ADR-0021): for a child, this
+  // column is often the *guardian's* email, not the child's own — Subsplash
+  // check-in populates it from the household's default contact. Never used
+  // as the sole match key against the directory for exactly that reason
+  // (see resolveAttendee in lib/attendanceImport.ts) — treated as a
+  // disambiguation signal only, not an identity one.
+  email: z.string().trim().email().optional(),
+  subsplashProfileId: z.string().trim().min(1).optional(),
+  sessionName: z.string().trim().min(1).optional(),
+  checkedInAt: z.string().trim().min(1).optional(), // ISO 8601, defaults to now
+  checkedOutAt: z.string().trim().min(1).optional(), // ISO 8601, omitted = not checked out
+  isChild: z.boolean().optional(),
+  // The adult who dropped this attendee off ("[Checked in by]" in the
+  // export) — reliably that adult's own name/email, unlike the attendee's
+  // own email column above. Optional since a guest/adult self-check-in row
+  // has no separate drop-off adult.
+  droppedOffByName: z.string().trim().min(1).max(200).optional(),
+  droppedOffByEmail: z.string().trim().email().optional(),
+  // Subsplash's own pickup/security code, printed on their label — stored
+  // and displayed as-is, not validated to a format we don't control.
+  matchCode: z.string().trim().min(1).max(20).optional(),
 });
 
-export type CheckInValues = z.infer<typeof checkInSchema>;
-
-export const checkOutSchema = z.object({
-  eventId: z.string().trim().min(1, "eventId is required"),
-  profileId: z.string().trim().min(1, "profileId is required"),
+export const attendanceImportOccurrenceSchema = z.object({
+  // At least one of these must resolve to a known series/event — validated
+  // in lib/attendanceImport.ts, not here, since it needs a DB/Subsplash
+  // lookup this schema can't perform.
+  subsplashEventId: z.string().trim().min(1).optional(),
+  eventTitle: z.string().trim().min(1).optional(),
+  occurrenceDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "occurrenceDate must be YYYY-MM-DD"),
+  attendees: z.array(attendanceImportAttendeeSchema),
 });
 
-export type CheckOutValues = z.infer<typeof checkOutSchema>;
-
-export const removeCheckInSchema = z.object({
-  eventId: z.string().trim().min(1, "eventId is required"),
-  profileId: z.string().trim().min(1, "profileId is required"),
+export const attendanceImportRequestSchema = z.object({
+  source: z.literal("subsplash"),
+  occurrences: z.array(attendanceImportOccurrenceSchema).min(1),
 });
+
+export type AttendanceImportAttendee = z.infer<typeof attendanceImportAttendeeSchema>;
+export type AttendanceImportOccurrence = z.infer<typeof attendanceImportOccurrenceSchema>;
+export type AttendanceImportRequest = z.infer<typeof attendanceImportRequestSchema>;

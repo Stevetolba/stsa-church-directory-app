@@ -3,7 +3,10 @@
 // to the client and to store in the mock (globalThis) implementation. See
 // ADR-0015.
 
-export type CheckInMethod = "live" | "backfill" | "kiosk";
+// "live"/"kiosk" are retired capture methods (ADR-0015, superseded by
+// ADR-0021) kept in the union so historical rows still type-check;
+// "backfill" is a staff/admin manual entry; "subsplash" is an imported row.
+export type CheckInMethod = "live" | "backfill" | "kiosk" | "subsplash";
 
 export interface CheckInRecord {
   id: string;

@@ -91,26 +91,47 @@ export function childProfileToExportRow(child: ChildWithParents): Record<string,
   };
 }
 
-// Occurrence attendance report export (ADR-0015 Phase 4).
+// Occurrence attendance report export (ADR-0015 Phase 4; source column added
+// ADR-0021 — imported rows carry no check-in operator or check-out data, so
+// "Checked In By"/"Checked Out *" are only meaningful for a pre-ADR-0021
+// live/backfill row).
 export const OCCURRENCE_REPORT_COLUMNS: { key: string; label: string }[] = [
   { key: "name", label: "Name" },
   { key: "type", label: "Type" },
   { key: "session", label: "Session" },
+  { key: "source", label: "Source" },
   { key: "checked_in_at", label: "Checked In At" },
   { key: "checked_in_by", label: "Checked In By" },
   { key: "checked_out_at", label: "Checked Out At" },
   { key: "checked_out_by", label: "Checked Out By" },
+  { key: "dropped_off_by", label: "Dropped Off By" },
 ];
 
+const METHOD_LABEL: Record<CheckInRecord["method"], string> = {
+  subsplash: "Subsplash",
+  backfill: "Backfill",
+  live: "Live",
+  kiosk: "Kiosk",
+};
+
+// An imported row's check-in/check-out times are real (Subsplash's own
+// Check-In export), so they're exported like any other row. "Checked In
+// By"/"Checked Out By" stay blank for an import, since there's no real
+// operator identity behind them (`checkedInBy` is a synthetic
+// "import:subsplash" marker, not a person) — Dropped Off By is the
+// meaningful "who" for an imported child row instead.
 export function checkInToExportRow(record: CheckInRecord, timezone: string): Record<string, string> {
+  const isImported = record.method === "subsplash";
   return {
     name: record.displayName,
     type: record.isGuest ? "Guest" : record.isChild ? "Child" : "Adult",
     session: record.sessionName ?? "",
+    source: METHOD_LABEL[record.method],
     checked_in_at: timeLabelInTz(new Date(record.checkedInAt), timezone),
-    checked_in_by: record.checkedInBy,
+    checked_in_by: isImported ? "" : record.checkedInBy,
     checked_out_at: record.checkedOutAt ? timeLabelInTz(new Date(record.checkedOutAt), timezone) : "",
-    checked_out_by: record.checkedOutBy ?? "",
+    checked_out_by: isImported ? "" : (record.checkedOutBy ?? ""),
+    dropped_off_by: record.droppedOffByName ?? "",
   };
 }
 

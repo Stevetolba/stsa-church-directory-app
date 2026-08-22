@@ -8,11 +8,11 @@ import { EventCard } from "@/components/EventCard";
 // check-in window are pinned separately by the page and excluded here.
 export function EventAgenda({
   events,
-  canStartKiosk = false,
+  canViewReports = false,
   now = new Date(),
 }: {
   events: AppEvent[];
-  canStartKiosk?: boolean;
+  canViewReports?: boolean;
   now?: Date;
 }) {
   const groups = groupEventsByDate(events, now);
@@ -26,7 +26,7 @@ export function EventAgenda({
           </div>
           <div className="flex flex-col gap-2.5">
             {group.events.map((event) => (
-              <EventCard key={event.id} event={event} canStartKiosk={canStartKiosk} now={now} />
+              <EventCard key={event.id} event={event} canViewReports={canViewReports} now={now} />
             ))}
           </div>
         </div>
