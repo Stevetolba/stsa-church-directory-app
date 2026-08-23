@@ -5,6 +5,20 @@
 import type { AttendanceImportOccurrence } from "../../lib/validation/attendance";
 import type { ParsedRowIssue } from "../../lib/subsplashExportCsv";
 
+// Node's fetch() wraps the real failure (DNS, connection refused, TLS, …) in
+// TypeError's `cause`, which a plain String(err)/console.error(err) doesn't
+// show — leaving "TypeError: fetch failed" as the only visible detail
+// regardless of the actual problem. This unwraps the full chain.
+function describeError(err: unknown): string {
+  const parts: string[] = [];
+  let current: unknown = err;
+  while (current instanceof Error) {
+    parts.push(current.message);
+    current = current.cause;
+  }
+  return parts.length > 0 ? parts.join(" → caused by: ") : String(err);
+}
+
 export interface ImportOccurrenceResult {
   occurrenceDate: string;
   seriesId: string | null;
@@ -68,7 +82,7 @@ export async function postAndReportAll(
         anyFailed = true;
       }
     } catch (err) {
-      console.error(String(err));
+      console.error(`${occurrence.occurrenceDate}: ${describeError(err)}`);
       anyFailed = true;
     }
   }
