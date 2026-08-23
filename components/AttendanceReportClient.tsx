@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR, { mutate as globalMutate } from "swr";
-import { AlertTriangle, ArrowLeft, BarChart3, Download, Mail, Upload, UserX } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BarChart3, Download, ExternalLink, Mail, Upload, UserX } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { EmailAbsenteesDialog } from "@/components/EmailAbsenteesDialog";
 import { FilterPill } from "@/components/FilterPill";
@@ -476,6 +476,52 @@ function NameAvatar({ displayName }: { displayName: string }) {
 
 // --- Occurrence tab ---
 
+// The dashboard's shareable per-series Check-In report — confirmed against
+// the real dashboard while investigating automation (ADR-0021's "Full
+// automation was investigated and abandoned" section). {seriesId} is exactly
+// the Subsplash repeating-event id already on hand as event.series_id, so
+// this always deep-links straight to the right series, not just the
+// dashboard's home page.
+function subsplashCheckInReportUrl(seriesId: string): string {
+  return `https://dashboard.subsplash.com/-d/#/library/repeating-events/${encodeURIComponent(seriesId)}/check-in-report`;
+}
+
+// Walks an admin through the manual half of ADR-0021: Subsplash has no API
+// for per-person check-in data, so getting a CSV out of it is an
+// authenticated dashboard click-through, not something this app can fetch on
+// its own. Kept right next to the Upload CSV button it feeds.
+function ExportAndUploadSteps({ seriesId }: { seriesId: string }) {
+  return (
+    <div className="mb-4 rounded-[12px] border border-[#E5DCC8] bg-[#FBF8F1] px-3.5 py-3 text-[12.5px] text-[#5B7185]">
+      <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+        Import attendance from Subsplash
+      </div>
+      <ol className="list-decimal space-y-1 pl-4">
+        <li>
+          <a
+            href={subsplashCheckInReportUrl(seriesId)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 font-semibold text-brand-navy underline underline-offset-2"
+          >
+            Click here to open this series in Subsplash
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        </li>
+        <li>Pick the Sunday (occurrence) you want to import.</li>
+        <li>
+          Click <strong className="text-brand-navy">Total Attendance</strong>, then{" "}
+          <strong className="text-brand-navy">Export</strong> to download the CSV.
+        </li>
+        <li>
+          Come back here, click <strong className="text-brand-navy">Upload CSV</strong> above, and choose the file
+          you just downloaded.
+        </li>
+      </ol>
+    </div>
+  );
+}
+
 // Surfaces the series' most recent Subsplash attendance-import run (ADR-0021)
 // — when it ran, and, critically, any attendees the import couldn't match to
 // a directory profile. An unmatched attendee is still counted in the
@@ -574,6 +620,8 @@ function OccurrenceTab({
           />
         )}
       </div>
+
+      {isAdmin && <ExportAndUploadSteps seriesId={event.series_id} />}
 
       {isAdmin && uploadStatus && (
         <div
