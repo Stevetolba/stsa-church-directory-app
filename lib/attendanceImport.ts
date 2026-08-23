@@ -31,36 +31,68 @@ export interface ResolveOccurrenceInput {
   occurrenceDate: string;
 }
 
+// "not_found": neither input resolved to any known series.
+// "ambiguous": the title matched more than one series — confirmed to
+// happen for real (see below) — so the caller must not silently guess.
+export type ResolveOccurrenceResult =
+  | ({ status: "resolved" } & ResolvedOccurrence)
+  | { status: "not_found" }
+  | { status: "ambiguous"; candidateSeriesIds: string[] };
+
 function normalizeTitle(title: string): string {
   return title.trim().toLowerCase();
+}
+
+export interface SeriesForTitleMatch {
+  seriesId: string;
+  title: string;
+}
+
+// Every series whose title matches, case/whitespace-insensitively — pulled
+// out as its own pure function specifically so the ambiguous-title case
+// (below) is unit-testable without needing two real, same-titled series in
+// the shared mock fixtures.
+export function findSeriesByTitle<T extends SeriesForTitleMatch>(series: T[], title: string): T[] {
+  const target = normalizeTitle(title);
+  return series.filter((s) => normalizeTitle(s.title) === target);
 }
 
 // Finds which series/event a CSV occurrence belongs to. Prefers a real
 // Subsplash event id (exact — no ambiguity); falls back to matching the
 // exported event title against known series, which is all a plain
-// attendance CSV usually carries. Returns null when neither resolves, so the
-// caller can report the whole occurrence as failed rather than guessing.
-export async function resolveOccurrence(input: ResolveOccurrenceInput): Promise<ResolvedOccurrence | null> {
+// attendance CSV usually carries.
+//
+// CONFIRMED against the real org: Subsplash can have two distinct
+// repeating-event series sharing the exact same title — e.g. an old "Sunday
+// School [Arlington]" series retired in favor of a newer one with the same
+// name. Picking `.find()`'s first match here previously placed a real
+// import's attendance under the *stale* series, silently — the report for
+// the live series showed nothing, and nothing ever errored to reveal why.
+// Ambiguity is now a distinct outcome the caller must surface, not something
+// this function guesses through.
+export async function resolveOccurrence(input: ResolveOccurrenceInput): Promise<ResolveOccurrenceResult> {
   if (input.subsplashEventId) {
     const event = await getEvent(input.subsplashEventId);
-    if (event) return { seriesId: event.series_id, eventId: event.id };
+    if (event) return { status: "resolved", seriesId: event.series_id, eventId: event.id };
     // Fall through to title matching — an id that doesn't resolve (e.g. an
     // occurrence Subsplash re-materialized under a new id) shouldn't fail
     // the whole occurrence if we can still place it by title.
   }
   if (input.eventTitle) {
     const series = await listSeries();
-    const target = normalizeTitle(input.eventTitle);
-    const match = series.find((s) => normalizeTitle(s.title) === target);
-    if (match) {
+    const matches = findSeriesByTitle(series, input.eventTitle);
+    if (matches.length > 1) {
+      return { status: "ambiguous", candidateSeriesIds: matches.map((s) => s.seriesId) };
+    }
+    if (matches.length === 1) {
       // No specific Subsplash event id for this exact date is required —
       // eventId on a check-in row is a display-only snapshot never read
       // back by any report (only series_id + occurrence_date are queried).
       // A one-off event already degenerates this way (series_id === id).
-      return { seriesId: match.seriesId, eventId: match.seriesId };
+      return { status: "resolved", seriesId: matches[0].seriesId, eventId: matches[0].seriesId };
     }
   }
-  return null;
+  return { status: "not_found" };
 }
 
 export type AttendeeResolution =
@@ -300,14 +332,20 @@ export async function importOccurrence(
   lookup: ProfileLookup,
   source: string
 ): Promise<ImportOccurrenceResult> {
-  const resolved = await resolveOccurrence({
+  const resolution = await resolveOccurrence({
     subsplashEventId: occurrence.subsplashEventId,
     eventTitle: occurrence.eventTitle,
     occurrenceDate: occurrence.occurrenceDate,
   });
 
-  if (!resolved) {
-    const error = `Could not resolve event/series for "${occurrence.eventTitle ?? occurrence.subsplashEventId ?? "unknown"}" on ${occurrence.occurrenceDate}`;
+  if (resolution.status !== "resolved") {
+    const label = occurrence.eventTitle ?? occurrence.subsplashEventId ?? "unknown";
+    const error =
+      resolution.status === "ambiguous"
+        ? `"${label}" matches more than one Subsplash series (ids: ${resolution.candidateSeriesIds.join(", ")}) ` +
+          `on ${occurrence.occurrenceDate} — re-run with --event-id to say which one, rather than risk placing ` +
+          `attendance under the wrong (possibly retired) series.`
+        : `Could not resolve event/series for "${label}" on ${occurrence.occurrenceDate}`;
     await recordImportRun({
       source,
       seriesId: occurrence.subsplashEventId ?? occurrence.eventTitle ?? "unknown",
@@ -327,6 +365,7 @@ export async function importOccurrence(
       error,
     };
   }
+  const resolved = resolution;
 
   let matched = 0;
   const unmatchedNames: string[] = [];

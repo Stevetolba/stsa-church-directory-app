@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  findSeriesByTitle,
   importOccurrence,
   indexProfiles,
   lastImportRunForSeries,
@@ -137,7 +138,11 @@ describe("resolveOccurrence", () => {
       subsplashEventId: series.representativeEventId,
       occurrenceDate: "2026-01-04",
     });
-    expect(resolved).toEqual({ seriesId: series.seriesId, eventId: series.representativeEventId });
+    expect(resolved).toEqual({
+      status: "resolved",
+      seriesId: series.seriesId,
+      eventId: series.representativeEventId,
+    });
   });
 
   it("resolves by event title, case-insensitively, when no id is given", async () => {
@@ -146,7 +151,7 @@ describe("resolveOccurrence", () => {
       eventTitle: series.title.toUpperCase(),
       occurrenceDate: "2026-01-04",
     });
-    expect(resolved).toEqual({ seriesId: series.seriesId, eventId: series.seriesId });
+    expect(resolved).toEqual({ status: "resolved", seriesId: series.seriesId, eventId: series.seriesId });
   });
 
   it("falls back to title matching when the given event id doesn't resolve", async () => {
@@ -156,15 +161,46 @@ describe("resolveOccurrence", () => {
       eventTitle: series.title,
       occurrenceDate: "2026-01-04",
     });
-    expect(resolved).toEqual({ seriesId: series.seriesId, eventId: series.seriesId });
+    expect(resolved).toEqual({ status: "resolved", seriesId: series.seriesId, eventId: series.seriesId });
   });
 
-  it("returns null when neither id nor title resolves to a known series", async () => {
+  it("returns not_found when neither id nor title resolves to a known series", async () => {
     const resolved = await resolveOccurrence({
       eventTitle: "Some Event Nobody Has Heard Of",
       occurrenceDate: "2026-01-04",
     });
-    expect(resolved).toBeNull();
+    expect(resolved).toEqual({ status: "not_found" });
+  });
+
+});
+
+describe("findSeriesByTitle", () => {
+  // Regression: confirmed against the real org that Subsplash can have two
+  // distinct repeating-event series sharing the exact same title (an old
+  // series retired in favor of a same-named replacement). resolveOccurrence
+  // used to take the first title match without checking for this — which
+  // silently placed a real import's attendance under the *stale* series;
+  // the live series' report showed nothing, and nothing ever errored to
+  // reveal why. This is the piece of logic responsible for catching it now.
+  const SERIES = [
+    { seriesId: "old-arlington-ss", title: "Sunday School [Arlington]" },
+    { seriesId: "new-arlington-ss", title: "Sunday School [Arlington]" },
+    { seriesId: "liturgy", title: "LITURGY" },
+  ];
+
+  it("returns every series matching the title, case/whitespace-insensitively", () => {
+    expect(findSeriesByTitle(SERIES, "  sunday school [arlington] ")).toEqual([
+      { seriesId: "old-arlington-ss", title: "Sunday School [Arlington]" },
+      { seriesId: "new-arlington-ss", title: "Sunday School [Arlington]" },
+    ]);
+  });
+
+  it("returns exactly one match for an unambiguous title", () => {
+    expect(findSeriesByTitle(SERIES, "liturgy")).toEqual([{ seriesId: "liturgy", title: "LITURGY" }]);
+  });
+
+  it("returns an empty array for a title with no match", () => {
+    expect(findSeriesByTitle(SERIES, "Nothing Like This Exists")).toEqual([]);
   });
 });
 
