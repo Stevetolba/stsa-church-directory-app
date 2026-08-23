@@ -10,7 +10,8 @@
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "sync:subsplash": "tsx scripts/sync-subsplash-attendance.ts"
+    "sync:subsplash": "tsx scripts/sync-subsplash-attendance.ts",
+    "sync:all": "scripts/sync-all-attendance.sh"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
