@@ -2,11 +2,13 @@
 // Attendance sync (ADR-0021): reads a Subsplash Check-In attendee export and
 // POSTs it to /api/attendance/import, one occurrence at a time.
 //
-// This is the manual half of the design: point it at a CSV you exported
-// yourself from the Subsplash dashboard (Events → Check-In → an occurrence
-// → Export, or the "All Check-ins" range export for a backfill). For the
-// scheduled, fully-unattended version (drives the dashboard itself, no CSV
-// to download by hand), see scripts/scheduled-sync-subsplash.ts.
+// This is the whole design, not a fallback half of one — full automation of
+// the Subsplash dashboard was investigated thoroughly (a scheduled script
+// driving a real browser) and abandoned; see ADR-0021's "Local automation
+// setup" / Consequences sections for the full story of what was tried and
+// why. Point this at a CSV you export yourself from the Subsplash dashboard
+// (Events → Check-In → an occurrence → Export, or the "All Check-ins" range
+// export for a backfill).
 //
 // Usage:
 //   nvm use 24

@@ -4,11 +4,10 @@ import { isAuthorizedForAttendanceImport } from "@/lib/attendanceImportAuth";
 import { attendanceImportRequestSchema } from "@/lib/validation/attendance";
 
 // ADR-0021. Ingests one attendance-sync run from the Subsplash Check-In
-// dashboard export (scripts/sync-subsplash-attendance.ts /
-// scripts/scheduled-sync-subsplash.ts). Idempotent: recordCheckIn's
-// (series_id, occurrence_date, profile_id) unique constraint means
-// re-importing the same occurrence just updates the existing rows rather
-// than duplicating them.
+// dashboard export (scripts/sync-subsplash-attendance.ts). Idempotent:
+// recordCheckIn's (series_id, occurrence_date, profile_id) unique constraint
+// means re-importing the same occurrence just updates the existing rows
+// rather than duplicating them.
 
 export async function POST(request: NextRequest) {
   if (!(await isAuthorizedForAttendanceImport(request))) {

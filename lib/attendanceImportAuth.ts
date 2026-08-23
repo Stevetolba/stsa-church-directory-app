@@ -1,7 +1,6 @@
-// Shared auth check for the attendance-import surfaces (ADR-0021):
-// POST /api/attendance/import and GET /api/attendance/series. Both accept
-// either the sync script's bearer token (no user session available when run
-// unattended) or an admin's own signed-in session.
+// Auth check for POST /api/attendance/import (ADR-0021). Accepts either the
+// sync script's bearer token (it has no user session) or an admin's own
+// signed-in session.
 
 import { timingSafeEqual } from "crypto";
 import type { NextRequest } from "next/server";
