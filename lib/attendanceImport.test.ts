@@ -172,6 +172,20 @@ describe("resolveOccurrence", () => {
     expect(resolved).toEqual({ status: "not_found" });
   });
 
+  it("resolves a repeating-event/series id passed as --event-id, with no title given", async () => {
+    // Regression: --event-id previously only tried getEvent() (a concrete
+    // Subsplash event lookup), so passing a repeating-event/series id
+    // directly — exactly what an operator has after being told "this title
+    // is ambiguous, use --event-id with one of these ids" — failed with
+    // "could not resolve", even though the id was completely valid, just in
+    // a different id space (series vs. concrete event).
+    const [series] = await listSeries();
+    const resolved = await resolveOccurrence({
+      subsplashEventId: series.seriesId,
+      occurrenceDate: "2026-01-04",
+    });
+    expect(resolved).toEqual({ status: "resolved", seriesId: series.seriesId, eventId: series.seriesId });
+  });
 });
 
 describe("findSeriesByTitle", () => {

@@ -14,7 +14,15 @@
 //   nvm use 24
 //   npx tsx scripts/sync-subsplash-attendance.ts \
 //     --file ~/Downloads/sunday-school-arlington-check-ins.csv \
-//     --event-title "Sunday School — Arlington"
+//     --event-title "Sunday School [Arlington]"
+//
+// --event-id accepts EITHER a concrete Subsplash event id OR a
+// repeating-event/series id directly (different id spaces in Subsplash's
+// model, but you shouldn't have to know or care which one you have) —
+// useful when a title matches more than one series (the script will tell
+// you the candidate ids to choose from) or you just already know the exact
+// series id you want:
+//     --event-id "cf945785-424e-4537-9026-97260f911a6e"
 //
 // Required env (or pass the equivalent flag):
 //   APP_BASE_URL             e.g. https://directory.gracechapel.org

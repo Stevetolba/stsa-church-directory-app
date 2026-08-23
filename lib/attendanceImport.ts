@@ -58,7 +58,9 @@ export function findSeriesByTitle<T extends SeriesForTitleMatch>(series: T[], ti
 }
 
 // Finds which series/event a CSV occurrence belongs to. Prefers a real
-// Subsplash event id (exact — no ambiguity); falls back to matching the
+// Subsplash id (accepting either a concrete event id — exact, no ambiguity —
+// or a repeating-event/series id directly, e.g. when an operator already
+// knows exactly which series they mean); falls back to matching the
 // exported event title against known series, which is all a plain
 // attendance CSV usually carries.
 //
@@ -74,6 +76,14 @@ export async function resolveOccurrence(input: ResolveOccurrenceInput): Promise<
   if (input.subsplashEventId) {
     const event = await getEvent(input.subsplashEventId);
     if (event) return { status: "resolved", seriesId: event.series_id, eventId: event.id };
+    // Not a concrete event id — check whether it's actually a repeating-event
+    // (series) id directly, exactly what an operator targeting a whole
+    // series by id (rather than one specific occurrence) would pass. Series
+    // ids and event ids are different id spaces in Subsplash's model, but a
+    // CLI caller shouldn't have to know or care which one they have.
+    const bySeriesId = await listSeries();
+    const seriesMatch = bySeriesId.find((s) => s.seriesId === input.subsplashEventId);
+    if (seriesMatch) return { status: "resolved", seriesId: seriesMatch.seriesId, eventId: seriesMatch.seriesId };
     // Fall through to title matching — an id that doesn't resolve (e.g. an
     // occurrence Subsplash re-materialized under a new id) shouldn't fail
     // the whole occurrence if we can still place it by title.
