@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import useSWR from "swr";
-import { AlertTriangle, ArrowLeft, BarChart3, Download, Mail, UserX } from "lucide-react";
+import useSWR, { mutate as globalMutate } from "swr";
+import { AlertTriangle, ArrowLeft, BarChart3, Download, Mail, Upload, UserX } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { EmailAbsenteesDialog } from "@/components/EmailAbsenteesDialog";
 import { FilterPill } from "@/components/FilterPill";
@@ -280,11 +280,13 @@ export function AttendanceReportClient({
   occurrences,
   user,
   fromAddress,
+  isAdmin,
 }: {
   event: AppEvent;
   occurrences: SeriesOccurrence[];
   user: { name: string; email: string };
   fromAddress: string;
+  isAdmin: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("occurrence");
 
@@ -315,7 +317,7 @@ export function AttendanceReportClient({
         </TabButton>
       </div>
 
-      {tab === "occurrence" && <OccurrenceTab event={event} occurrences={occurrences} />}
+      {tab === "occurrence" && <OccurrenceTab event={event} occurrences={occurrences} isAdmin={isAdmin} />}
       {tab === "series" && <SeriesTab event={event} />}
       {tab === "absentees" && <AbsenteesTab event={event} user={user} fromAddress={fromAddress} />}
     </div>
@@ -360,6 +362,101 @@ function ExportButton({ onClick, disabled }: { onClick: () => void; disabled?: b
       <Download className="h-3.5 w-3.5" />
       Export CSV
     </button>
+  );
+}
+
+interface UploadOccurrenceResult {
+  occurrenceDate: string;
+  matched: number;
+  unmatched: number;
+  unmatchedNames: string[];
+  error: string | null;
+}
+
+interface UploadResponse {
+  results: UploadOccurrenceResult[];
+  skipped: { rowNumber: number; reason: string }[];
+}
+
+// Lets an admin import a Subsplash Check-In export straight from the report
+// page (ADR-0021), as an alternative to running scripts/sync-subsplash-
+// attendance.ts from the command line. Posts to the same idempotent import
+// path the CLI script uses, so re-uploading the same export is safe.
+function UploadCsvButton({
+  seriesId,
+  timezone,
+  onResult,
+}: {
+  seriesId: string;
+  timezone: string;
+  onResult: (result: { kind: "success" | "error"; message: string }) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  async function handleFile(file: File) {
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("seriesId", seriesId);
+      form.append("timezone", timezone);
+      const res = await fetch("/api/attendance/import/upload", { method: "POST", body: form });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data) {
+        onResult({ kind: "error", message: data?.error ?? `Upload failed (${res.status})` });
+        return;
+      }
+      const { results, skipped } = data as UploadResponse;
+      const errors = results.filter((r) => r.error);
+      const skippedNote = skipped.length > 0 ? ` ${skipped.length} row(s) skipped (couldn't parse).` : "";
+      if (results.length === 0) {
+        onResult({ kind: "error", message: `No attendance rows found in that file.${skippedNote}` });
+        return;
+      }
+      if (errors.length > 0) {
+        onResult({ kind: "error", message: errors.map((e) => e.error).join(" ") });
+        return;
+      }
+      const matched = results.reduce((sum, r) => sum + r.matched, 0);
+      const unmatched = results.reduce((sum, r) => sum + r.unmatched, 0);
+      onResult({
+        kind: "success",
+        message:
+          `Imported ${results.length} occurrence${results.length === 1 ? "" : "s"}: ` +
+          `${matched} matched, ${unmatched} unmatched.${skippedNote}`,
+      });
+      await globalMutate(`/api/attendance/imports?seriesId=${encodeURIComponent(seriesId)}`);
+    } catch (err) {
+      onResult({ kind: "error", message: err instanceof Error ? err.message : "Upload failed" });
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={uploading}
+        className="flex items-center gap-1.5 rounded-[10px] border border-[#E5DCC8] bg-white px-3.5 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <Upload className="h-3.5 w-3.5" />
+        {uploading ? "Uploading…" : "Upload CSV"}
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".csv,text/csv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFile(file);
+        }}
+      />
+    </>
   );
 }
 
@@ -415,7 +512,15 @@ function ImportStatusBanner({ seriesId }: { seriesId: string }) {
   );
 }
 
-function OccurrenceTab({ event, occurrences }: { event: AppEvent; occurrences: SeriesOccurrence[] }) {
+function OccurrenceTab({
+  event,
+  occurrences,
+  isAdmin,
+}: {
+  event: AppEvent;
+  occurrences: SeriesOccurrence[];
+  isAdmin: boolean;
+}) {
   const [occurrenceDate, setOccurrenceDate] = useState(
     occurrences.find((o) => o.occurrence_date === event.occurrence_date)?.occurrence_date ??
       occurrences[0]?.occurrence_date ??
@@ -423,8 +528,9 @@ function OccurrenceTab({ event, occurrences }: { event: AppEvent; occurrences: S
   );
   const [filters, setFilters] = useState<ReportFilters>(EMPTY_REPORT_FILTERS);
   const filterQuery = reportFiltersToParams(filters).toString();
+  const [uploadStatus, setUploadStatus] = useState<{ kind: "success" | "error"; message: string } | null>(null);
 
-  const { data, isLoading } = useSWR<{ records: CheckInRecord[]; summary: AttendanceSummary }>(
+  const { data, isLoading, mutate } = useSWR<{ records: CheckInRecord[]; summary: AttendanceSummary }>(
     `/api/attendance/report?seriesId=${encodeURIComponent(event.series_id)}&occurrenceDate=${occurrenceDate}${
       filterQuery ? `&${filterQuery}` : ""
     }`,
@@ -457,7 +563,29 @@ function OccurrenceTab({ event, occurrences }: { event: AppEvent; occurrences: S
         </select>
         <ReportFilterBar filters={filters} onChange={setFilters} />
         <ExportButton onClick={handleExport} disabled={records.length === 0} />
+        {isAdmin && (
+          <UploadCsvButton
+            seriesId={event.series_id}
+            timezone={event.timezone}
+            onResult={(result) => {
+              setUploadStatus(result);
+              if (result.kind === "success") mutate();
+            }}
+          />
+        )}
       </div>
+
+      {isAdmin && uploadStatus && (
+        <div
+          className={`mb-4 rounded-[12px] border px-3.5 py-2.5 text-[12.5px] ${
+            uploadStatus.kind === "error"
+              ? "border-[#E9C9C2] bg-[#F6EDEA] text-[#B04A3A]"
+              : "border-[#CFE0CF] bg-[#EEF6EE] text-[#3F6B45]"
+          }`}
+        >
+          {uploadStatus.message}
+        </div>
+      )}
 
       <ImportStatusBanner seriesId={event.series_id} />
 

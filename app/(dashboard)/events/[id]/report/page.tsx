@@ -33,8 +33,15 @@ export default async function EventReportPage({ params }: { params: { id: string
     name: session?.user?.name ?? session?.user?.email ?? "Staff",
     email: session?.user?.email ?? "",
   };
+  const isAdmin = session?.user?.role === "admin";
 
   return (
-    <AttendanceReportClient event={event} occurrences={occurrences} user={user} fromAddress={getFromAddress()} />
+    <AttendanceReportClient
+      event={event}
+      occurrences={occurrences}
+      user={user}
+      fromAddress={getFromAddress()}
+      isAdmin={isAdmin}
+    />
   );
 }
