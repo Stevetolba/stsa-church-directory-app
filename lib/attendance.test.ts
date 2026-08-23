@@ -26,16 +26,15 @@ function rec(partial: Partial<CheckInRecord>): CheckInRecord {
 }
 
 describe("summarize", () => {
-  it("counts present, children, adults, guests and per-session", () => {
+  it("counts total, children, adults, guests and per-session", () => {
     const records = [
       rec({ isChild: true, sessionId: "a", sessionName: "Pre-K" }),
-      rec({ isChild: true, sessionId: "a", sessionName: "Pre-K", checkedOutAt: "2026-07-19T14:00:00Z" }),
+      rec({ isChild: true, sessionId: "a", sessionName: "Pre-K" }),
       rec({ isChild: false, sessionId: "g", sessionName: "General" }),
       rec({ isGuest: true, sessionId: "g", sessionName: "General" }),
     ];
     const s = summarize(records);
     expect(s.total).toBe(4);
-    expect(s.present).toBe(3); // one checked out
     expect(s.children).toBe(2);
     expect(s.adults).toBe(2);
     expect(s.guests).toBe(1);

@@ -36,7 +36,6 @@ export interface CheckInRecord {
 
 export interface AttendanceSummary {
   total: number;
-  present: number; // checked in and not yet checked out
   children: number;
   adults: number;
   guests: number;

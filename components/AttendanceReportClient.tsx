@@ -463,8 +463,7 @@ function OccurrenceTab({ event, occurrences }: { event: AppEvent; occurrences: S
 
       {summary && (
         <div className="mb-5 flex flex-wrap gap-2">
-          <Stat label="Present" value={summary.present} accent />
-          <Stat label="Checked in" value={summary.total} />
+          <Stat label="Checked in" value={summary.total} accent />
           <Stat label="Children" value={summary.children} />
           <Stat label="Adults" value={summary.adults} />
           {summary.guests > 0 && <Stat label="Guests" value={summary.guests} />}

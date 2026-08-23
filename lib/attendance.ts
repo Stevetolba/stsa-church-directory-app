@@ -192,11 +192,9 @@ export async function listCheckIns(
 // Pure summary over a set of check-in records — unit-tested.
 export function summarize(records: CheckInRecord[]): AttendanceSummary {
   const bySessionMap = new Map<string, { sessionId: string | null; sessionName: string; count: number }>();
-  let present = 0;
   let children = 0;
   let guests = 0;
   for (const r of records) {
-    if (!r.checkedOutAt) present++;
     if (r.isChild) children++;
     if (r.isGuest) guests++;
     const key = r.sessionId ?? "__none__";
@@ -207,7 +205,6 @@ export function summarize(records: CheckInRecord[]): AttendanceSummary {
   }
   return {
     total: records.length,
-    present,
     children,
     adults: records.length - children,
     guests,
