@@ -35,6 +35,14 @@ describe("accessLog (mock mode)", () => {
     expect(event.resource).toBeNull();
   });
 
+  it("stores the display name when given, and defaults to null when omitted", async () => {
+    await recordAccessEvent({ email: "a@example.org", name: "Alice Admin", role: "admin", eventType: "sign_in" });
+    await recordAccessEvent({ email: "b@example.org", role: "staff", eventType: "sign_in" });
+    const events = await listAccessEvents();
+    expect(events[0].name).toBeNull();
+    expect(events[1].name).toBe("Alice Admin");
+  });
+
   it("logs a denied sign-in distinctly from a granted one", async () => {
     await recordAccessEvent({ email: "v@gmail.com", role: "volunteer", eventType: "sign_in_denied" });
     const [event] = await listAccessEvents();

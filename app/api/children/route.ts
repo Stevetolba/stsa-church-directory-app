@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
   // (which 403s a volunteer before it would get the chance to log).
   await recordAccessEvent({
     email: session.user.email ?? "unknown",
+    name: session.user.name ?? null,
     role: session.user.role,
     eventType: "directory_read",
     resource: "children",

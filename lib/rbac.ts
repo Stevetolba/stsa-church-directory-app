@@ -36,6 +36,7 @@ export async function requireStaffOrAdmin(resource: string): Promise<NextRespons
   }
   await recordAccessEvent({
     email: session.user.email ?? "unknown",
+    name: session.user.name ?? null,
     role: session.user.role,
     eventType: "directory_read",
     resource,
@@ -59,6 +60,7 @@ export async function requireCanEmailChildren(): Promise<NextResponse | null> {
   }
   await recordAccessEvent({
     email: session.user.email ?? "unknown",
+    name: session.user.name ?? null,
     role: session.user.role,
     eventType: "directory_read",
     resource: "children-email",

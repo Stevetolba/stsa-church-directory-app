@@ -30,6 +30,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         throw new Error("CHURCH_GOOGLE_WORKSPACE_DOMAIN is not configured");
       }
       const email = profile?.email?.toLowerCase();
+      const name = (profile as GoogleProfile | undefined)?.name ?? null;
       const emailVerified = (profile as GoogleProfile | undefined)?.email_verified;
       // We trust the email as an identity key (for admin/volunteer matching),
       // so require Google to have verified it. Not logged: without a
@@ -45,7 +46,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       // Admins may use any Google account (e.g. a personal one).
       if (isAdminEmail(email)) {
-        await recordAccessEvent({ email, role, eventType: "sign_in" });
+        await recordAccessEvent({ email, name, role, eventType: "sign_in" });
         return true;
       }
 
@@ -53,7 +54,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // defense-in-depth from ADR-0001.
       const hostedDomain = (profile as GoogleProfile | undefined)?.hd;
       if (hostedDomain === WORKSPACE_DOMAIN && email.endsWith(`@${WORKSPACE_DOMAIN}`)) {
-        await recordAccessEvent({ email, role, eventType: "sign_in" });
+        await recordAccessEvent({ email, name, role, eventType: "sign_in" });
         return true;
       }
 
@@ -65,7 +66,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       const directoryRole = await getDirectoryRole(email);
       const grantedByRole = directoryRole === "Admin" || directoryRole === "Team Lead";
       const granted = grantedByRole || (await hasDirectoryAccess(email));
-      await recordAccessEvent({ email, role, eventType: granted ? "sign_in" : "sign_in_denied" });
+      await recordAccessEvent({ email, name, role, eventType: granted ? "sign_in" : "sign_in_denied" });
       return granted;
     },
     async jwt({ token, account }) {

@@ -138,6 +138,10 @@ export const accessEvents = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
     email: text("email").notNull(),
+    // Display name from the Google/session profile at the time of the event.
+    // Null for rows recorded before this column existed — the UI falls back
+    // to email for those.
+    name: text("name"),
     // Resolved via lib/roles.ts's resolveRole — set even for a denied sign-in
     // (resolveRole only classifies the email shape, it doesn't itself decide
     // access) so a denied row still shows who they would have been.

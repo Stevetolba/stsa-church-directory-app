@@ -1,0 +1,1 @@
+ALTER TABLE "access_events" ADD COLUMN "name" text;

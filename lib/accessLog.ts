@@ -18,6 +18,7 @@ export interface AccessEvent {
   id: string;
   occurredAt: string; // ISO 8601
   email: string;
+  name: string | null;
   role: Role;
   eventType: AccessEventType;
   resource: string | null;
@@ -28,6 +29,7 @@ function fromRow(row: AccessEventRow): AccessEvent {
     id: row.id,
     occurredAt: row.occurredAt.toISOString(),
     email: row.email,
+    name: row.name,
     role: row.role as Role,
     eventType: row.eventType as AccessEventType,
     resource: row.resource,
@@ -45,6 +47,7 @@ function mockStore(): AccessEvent[] {
 
 export interface RecordAccessEventInput {
   email: string;
+  name?: string | null;
   role: Role;
   eventType: AccessEventType;
   // What was read — omitted for sign_in/sign_in_denied.
@@ -60,6 +63,7 @@ export async function recordAccessEvent(input: RecordAccessEventInput): Promise<
       const db = getDb();
       await db.insert(accessEvents).values({
         email: input.email,
+        name: input.name ?? null,
         role: input.role,
         eventType: input.eventType,
         resource: input.resource ?? null,
@@ -70,6 +74,7 @@ export async function recordAccessEvent(input: RecordAccessEventInput): Promise<
       id: `access-${crypto.randomUUID()}`,
       occurredAt: new Date().toISOString(),
       email: input.email,
+      name: input.name ?? null,
       role: input.role,
       eventType: input.eventType,
       resource: input.resource ?? null,
