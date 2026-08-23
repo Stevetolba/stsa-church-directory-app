@@ -105,7 +105,10 @@ export function resolveAttendee(attendee: AttendanceImportAttendee, lookup: Prof
   }
   if (nameMatches.length > 1 && attendee.email) {
     const email = attendee.email.trim().toLowerCase();
-    const narrowed = nameMatches.filter((p) => p.email.trim().toLowerCase() === email);
+    // A directory profile's email is typed as a required string, but real
+    // Subsplash data confirmed otherwise — some profiles genuinely come back
+    // with no email at runtime. Guard rather than trust the type.
+    const narrowed = nameMatches.filter((p) => (p.email ?? "").trim().toLowerCase() === email);
     if (narrowed.length === 1) {
       return { status: "matched", profileId: narrowed[0].id, isChild: narrowed[0].household_role === "child" };
     }
@@ -268,6 +271,23 @@ export interface ImportOccurrenceResult {
   error: string | null;
 }
 
+// Confirmed against real Subsplash data: a check-out time can genuinely
+// precede its own check-in time by a few seconds (a volunteer's double-tap
+// at the kiosk is the likely cause). check_ins' check_ins_checkout_order_check
+// constraint enforces checked_out_at >= checked_in_at, so passing an
+// anomalous pair straight through crashes the whole occurrence's import.
+// Dropping the checkout time here instead is the safe choice — the person
+// is still correctly counted as attended via checked_in_at, which is what
+// attendance tracking actually depends on; losing one nonsensical pickup
+// timestamp is cosmetic, not a data-integrity problem.
+function safeCheckedOutAt(checkedInAt: string | undefined, checkedOutAt: string | undefined): string | null {
+  if (!checkedOutAt) return null;
+  if (checkedInAt && new Date(checkedOutAt).getTime() < new Date(checkedInAt).getTime()) {
+    return null;
+  }
+  return checkedOutAt;
+}
+
 // Imports one occurrence's attendee list: resolves the series, then resolves
 // and records each attendee. An attendee who can't be matched to a directory
 // profile is still recorded — as a guest row, keyed by their exported name —
@@ -325,7 +345,7 @@ export async function importOccurrence(
       droppedOffByProfileId: dropOffAdult?.profileId ?? null,
       droppedOffByName: attendee.droppedOffByName ?? null,
       matchCode: attendee.matchCode ?? null,
-      checkedOutAt: attendee.checkedOutAt ?? null,
+      checkedOutAt: safeCheckedOutAt(attendee.checkedInAt, attendee.checkedOutAt),
       method: "subsplash" as const,
     };
 

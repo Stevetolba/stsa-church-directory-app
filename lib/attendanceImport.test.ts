@@ -46,6 +46,18 @@ const PROFILES: Profile[] = [
   }),
 ];
 
+// Real Subsplash data confirmed a directory profile can come back with
+// `email: undefined` at runtime, despite Profile.email being typed as a
+// required string — a same-name-collision resolution must not crash on it.
+const PROFILE_NO_EMAIL_AT_RUNTIME = {
+  ...profile({ id: "p-mark-malak-a", first_name: "Mark", last_name: "Malak" }),
+  email: undefined,
+} as unknown as Profile;
+PROFILES.push(
+  PROFILE_NO_EMAIL_AT_RUNTIME,
+  profile({ id: "p-mark-malak-b", first_name: "Mark", last_name: "Malak", email: "mark@example.org" })
+);
+
 const lookup = indexProfiles(PROFILES);
 
 describe("resolveAttendee", () => {
@@ -67,6 +79,17 @@ describe("resolveAttendee", () => {
   it("leaves an ambiguous name unmatched when email doesn't narrow it", () => {
     const result = resolveAttendee({ name: "John Smith" }, lookup);
     expect(result).toEqual({ status: "unmatched" });
+  });
+
+  it("doesn't crash narrowing an ambiguous name when a candidate's email is undefined at runtime", () => {
+    // Regression: a real Subsplash-derived Profile came back with
+    // `email: undefined` despite the type declaring it a required string —
+    // resolveAttendee threw on `.trim()` instead of just treating it as no
+    // match, crashing the whole occurrence's import.
+    const result = resolveAttendee({ name: "Mark Malak", email: "mark@example.org" }, lookup);
+    expect(result).toEqual({ status: "matched", profileId: "p-mark-malak-b", isChild: false });
+    const noMatch = resolveAttendee({ name: "Mark Malak", email: "nobody@example.org" }, lookup);
+    expect(noMatch).toEqual({ status: "unmatched" });
   });
 
   it("leaves a name with no directory match unmatched, even with an email", () => {
@@ -216,6 +239,40 @@ describe("importOccurrence", () => {
     });
     expect(record.checkedInAt).toBe(new Date("2026-08-02T11:19:51-04:00").toISOString());
     expect(record.checkedOutAt).toBe(new Date("2026-08-02T12:48:28-04:00").toISOString());
+  });
+
+  it("drops an anomalous check-out time that precedes check-in, instead of failing the import", async () => {
+    // Regression: confirmed against real Subsplash data that check-out can
+    // genuinely be logged a few seconds *before* check-in (a volunteer's
+    // double-tap at the kiosk is the likely cause). The DB's
+    // check_ins_checkout_order_check constraint enforces checkedOutAt >=
+    // checkedInAt, so passing this straight through crashed the whole
+    // occurrence's import (a DrizzleQueryError, not a caught, per-attendee
+    // failure) — including every other attendee in the same batch.
+    const [series] = await listSeries();
+    const occurrenceDate = "2031-04-13";
+
+    const result = await importOccurrence(
+      {
+        eventTitle: series.title,
+        occurrenceDate,
+        attendees: [
+          {
+            name: "Lily Doe",
+            subsplashProfileId: "p-lily-child",
+            checkedInAt: "2026-02-08T11:33:59-05:00",
+            checkedOutAt: "2026-02-08T11:33:35-05:00", // 24s before check-in
+          },
+        ],
+      },
+      lookup,
+      "subsplash"
+    );
+
+    expect(result.error).toBeNull();
+    const [record] = await listCheckIns(series.seriesId, occurrenceDate);
+    expect(record.checkedInAt).toBe(new Date("2026-02-08T11:33:59-05:00").toISOString());
+    expect(record.checkedOutAt).toBeNull();
   });
 
   it("is idempotent — re-importing the same matched attendee updates rather than duplicates", async () => {
