@@ -363,6 +363,37 @@ describe("importOccurrence", () => {
     expect(records[0]).toMatchObject({ isGuest: true, displayName: "A Visiting Family" });
   });
 
+  it("gives the same unmatched attendee the same guest profile id across different occurrence dates", async () => {
+    // Regression test: an earlier version seeded the guest id with
+    // occurrenceDate, so the same recurring unmatched person got a *different*
+    // synthetic profile id every week. summarizeSeriesFrequency and
+    // findAbsentees group check-ins by profile_id within a series, so that
+    // fragmented one real person's attendance into a separate "person" per
+    // occurrence — the Series report showed several rows for the same name,
+    // each stuck at 1 occurrence attended, instead of one row with their real
+    // count.
+    const [series] = await listSeries();
+    const attendee = { name: "Repeat Visitor", email: "repeat@example.org" };
+
+    await importOccurrence(
+      { eventTitle: series.title, occurrenceDate: "2031-05-04", attendees: [attendee] },
+      lookup,
+      "subsplash"
+    );
+    await importOccurrence(
+      { eventTitle: series.title, occurrenceDate: "2031-05-11", attendees: [attendee] },
+      lookup,
+      "subsplash"
+    );
+
+    const weekOneRecords = await listCheckIns(series.seriesId, "2031-05-04");
+    const weekTwoRecords = await listCheckIns(series.seriesId, "2031-05-11");
+    const weekOne = weekOneRecords.find((r) => r.displayName === "Repeat Visitor");
+    const weekTwo = weekTwoRecords.find((r) => r.displayName === "Repeat Visitor");
+    expect(weekOne?.isGuest).toBe(true);
+    expect(weekOne?.profileId).toBe(weekTwo?.profileId);
+  });
+
   it("records a failed run (with no check-ins written) when the occurrence can't be resolved", async () => {
     const result = await importOccurrence(
       {

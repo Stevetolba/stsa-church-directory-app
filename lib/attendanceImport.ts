@@ -160,15 +160,21 @@ export function resolveAttendee(attendee: AttendanceImportAttendee, lookup: Prof
 }
 
 // A stable synthetic profile id for an attendee who couldn't be matched to a
-// directory profile, scoped to one occurrence. Deliberately deterministic
-// (not crypto.randomUUID()) — the (series_id, occurrence_date, profile_id)
-// unique constraint is what makes re-importing idempotent, and that only
-// holds if the *same* unmatched person gets the *same* synthetic id on every
-// run. A random id here would mean every re-import (the daily-cron-plus-
-// lookback design re-imports overlapping dates on purpose) creates a brand
-// new duplicate guest row instead of updating the existing one.
-function stableGuestId(occurrenceDate: string, attendee: AttendanceImportAttendee): string {
-  const seed = `${occurrenceDate}:${normalizeName(attendee.name)}:${attendee.email?.trim().toLowerCase() ?? ""}`;
+// directory profile. Deliberately deterministic (not crypto.randomUUID()) —
+// re-importing the same unmatched person must produce the same id, both so
+// a single occurrence's re-import updates rather than duplicates (the
+// (series_id, occurrence_date, profile_id) unique constraint already keeps
+// different occurrences apart, so occurrence_date doesn't need to be part of
+// the seed for that), and — the actual reason it's *not* date-scoped — so a
+// recurring unmatched attendee (e.g. a child not yet in the directory) gets
+// the SAME synthetic profile id every week. Confirmed against real data: an
+// earlier version seeded this with occurrenceDate, so summarizeSeriesFrequency
+// and findAbsentees (both of which group check-ins by profile_id within one
+// series) saw the same person as a different "person" each week — the
+// Series report showed them fragmented into one 1-of-N row per occurrence
+// instead of one row with their real attendance count.
+function stableGuestId(attendee: AttendanceImportAttendee): string {
+  const seed = `${normalizeName(attendee.name)}:${attendee.email?.trim().toLowerCase() ?? ""}`;
   return `guest:subsplash:${createHash("sha256").update(seed).digest("hex").slice(0, 32)}`;
 }
 
@@ -197,8 +203,21 @@ export function resolveDropOffAdult(
 // Builds the lookup maps once per import run (not once per attendee) —
 // profiles come from the already-cached full walk, so this is pure in-memory
 // indexing, no repeated Subsplash calls.
+//
+// Confirmed against real data: a fixed `pageSize: 5000` here used to
+// silently truncate the match set once the org's profile count passed
+// 5,000 (it's since grown to ~7,900) — searchProfiles slices its result to
+// pageSize *after* sorting by last name, so everyone whose last name sorted
+// past the cutoff (e.g. most of the alphabet's second half) was invisible
+// to resolveAttendee and fell into the "unmatched"/guest bucket every
+// single week, no matter how well-formed their name in the export was.
+// Asking for the real total first, then requesting exactly that many,
+// means this can't silently fall behind again as the directory grows —
+// both calls hit the same cached full walk, so this isn't two real
+// Subsplash round-trips.
 export async function buildProfileLookup(): Promise<ProfileLookup> {
-  const { profiles } = await searchProfiles({ pageSize: 5000 });
+  const { overallTotal } = await searchProfiles({ page: 1, pageSize: 1 });
+  const { profiles } = await searchProfiles({ pageSize: Math.max(overallTotal, 1) });
   return indexProfiles(profiles);
 }
 
@@ -409,7 +428,7 @@ export async function importOccurrence(
       unmatchedNames.push(attendee.name);
       await recordCheckIn({
         ...shared,
-        profileId: stableGuestId(occurrence.occurrenceDate, attendee),
+        profileId: stableGuestId(attendee),
         isChild: attendee.isChild ?? false,
         isGuest: true,
       });
