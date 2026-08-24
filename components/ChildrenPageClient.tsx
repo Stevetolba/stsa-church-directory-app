@@ -69,27 +69,29 @@ const MAX_AGE = 25;
 
 interface ChildrenPreset {
   campus: Campus;
-  gradeFrom: number;
-  gradeTo: number;
+  gradeFrom?: number;
+  gradeTo?: number;
+  ageFrom?: number;
+  ageTo?: number;
 }
 
 // Grade values per lib/grades.ts's GRADE_LEVELS (Pre-K=1 ... 12th=14).
-// Tim's Tots ("3-5 years old and Pre-K") maps to Pre-K only — the youngest
-// grade level the system has; kids younger than Pre-K age typically have no
-// academic_grade_value recorded in Subsplash at all, so there's no lower
-// tier this filter can express yet.
+// Tim's Tots is age-based (3–5 years old), not grade-based — most of that
+// group is younger than Pre-K and simply has no academic_grade_value
+// recorded in Subsplash at all, so a grade-range preset silently missed
+// them; age is the field this ministry group is actually defined by.
 const SUGGESTED_FILTERS: SuggestedFilter<ChildrenPreset>[] = [
   { label: "Arlington High School (9th–12th)", preset: { campus: "Arlington", gradeFrom: 11, gradeTo: 14 } },
   { label: "Arlington Middle School (6th–8th)", preset: { campus: "Arlington", gradeFrom: 8, gradeTo: 10 } },
   { label: "Arlington KATW (4th–5th)", preset: { campus: "Arlington", gradeFrom: 6, gradeTo: 7 } },
   { label: "Arlington KATW (2nd–3rd)", preset: { campus: "Arlington", gradeFrom: 4, gradeTo: 5 } },
   { label: "Arlington KATW (K–1st)", preset: { campus: "Arlington", gradeFrom: 2, gradeTo: 3 } },
-  { label: "Arlington Tim's Tots (Pre-K)", preset: { campus: "Arlington", gradeFrom: 1, gradeTo: 1 } },
+  { label: "Arlington Tim's Tots (3–5 years)", preset: { campus: "Arlington", ageFrom: 3, ageTo: 5 } },
   { label: "Leesburg High School (9th–12th)", preset: { campus: "Leesburg", gradeFrom: 11, gradeTo: 14 } },
   { label: "Leesburg Middle School (6th–8th)", preset: { campus: "Leesburg", gradeFrom: 8, gradeTo: 10 } },
   { label: "Leesburg KATW (3rd–5th)", preset: { campus: "Leesburg", gradeFrom: 5, gradeTo: 7 } },
   { label: "Leesburg KATW (K–2nd)", preset: { campus: "Leesburg", gradeFrom: 2, gradeTo: 4 } },
-  { label: "Leesburg Tim's Tots (Pre-K)", preset: { campus: "Leesburg", gradeFrom: 1, gradeTo: 1 } },
+  { label: "Leesburg Tim's Tots (3–5 years)", preset: { campus: "Leesburg", ageFrom: 3, ageTo: 5 } },
 ];
 
 function summarizeStatus(status: MemberStatus[]): string {
@@ -289,15 +291,20 @@ export function ChildrenPageClient({
     });
   }
 
-  // A suggested filter fully sets Campus + Grade to its exact values
-  // (rather than combining with whatever was already selected) — it's meant
-  // as a "jump to this ministry group" shortcut. Search/Status/Family scope
-  // are left alone so a preset can still be combined with them.
+  // A suggested filter fully sets Campus + (Grade or Age) to its exact
+  // values (rather than combining with whatever was already selected) —
+  // it's meant as a "jump to this ministry group" shortcut. Whichever of
+  // Grade/Age the preset doesn't specify is explicitly cleared, so picking
+  // an age-based preset (Tim's Tots) after a grade-based one doesn't leave
+  // a stale grade filter still narrowing the results. Search/Status/Family
+  // scope are left alone so a preset can still be combined with them.
   function applyPreset(preset: ChildrenPreset) {
     updateParams({
       campus: preset.campus,
-      gradeFrom: String(preset.gradeFrom),
-      gradeTo: String(preset.gradeTo),
+      gradeFrom: preset.gradeFrom !== undefined ? String(preset.gradeFrom) : null,
+      gradeTo: preset.gradeTo !== undefined ? String(preset.gradeTo) : null,
+      ageFrom: preset.ageFrom !== undefined ? String(preset.ageFrom) : null,
+      ageTo: preset.ageTo !== undefined ? String(preset.ageTo) : null,
       page: null,
     });
   }
