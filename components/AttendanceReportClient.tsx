@@ -3,7 +3,19 @@
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR, { mutate as globalMutate } from "swr";
-import { AlertTriangle, ArrowLeft, BarChart3, Download, ExternalLink, Mail, Upload, UserX } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowUpDown,
+  BarChart3,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  ExternalLink,
+  Mail,
+  Upload,
+  UserX,
+} from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { EmailAbsenteesDialog } from "@/components/EmailAbsenteesDialog";
 import { FilterPill } from "@/components/FilterPill";
@@ -714,6 +726,72 @@ function yearRange(year: string): { from: string; to: string } {
 
 type ChildFilter = "all" | "children" | "adults";
 
+type SeriesSortKey = "name" | "attended" | "last";
+interface SeriesSort {
+  key: SeriesSortKey;
+  dir: "asc" | "desc";
+}
+
+// "Attended" and "%" always agree on order (% is just attended/occurrenceDates,
+// a constant divisor across everyone in one view), so one sortable column
+// covers both — there's no separate "%" sort key.
+function sortSeriesPeople(people: SeriesFrequencyResult["people"], sort: SeriesSort): SeriesFrequencyResult["people"] {
+  const sorted = [...people];
+  sorted.sort((a, b) => {
+    let cmp = 0;
+    if (sort.key === "name") cmp = a.displayName.localeCompare(b.displayName);
+    else if (sort.key === "attended") cmp = a.attendedDates.length - b.attendedDates.length;
+    else cmp = (a.lastAttended ?? "").localeCompare(b.lastAttended ?? "");
+    if (cmp === 0 && sort.key !== "name") cmp = a.displayName.localeCompare(b.displayName);
+    return sort.dir === "asc" ? cmp : -cmp;
+  });
+  return sorted;
+}
+
+function SortableColumnHeader({
+  label,
+  sortKey,
+  sort,
+  onChange,
+}: {
+  label: string;
+  sortKey: SeriesSortKey;
+  sort: SeriesSort;
+  onChange: (next: SeriesSort) => void;
+}) {
+  const active = sort.key === sortKey;
+  return (
+    <th className="whitespace-nowrap px-3 py-2">
+      <button
+        type="button"
+        onClick={() =>
+          onChange({
+            key: sortKey,
+            // Flip direction on the already-active column; otherwise start
+            // with the direction that makes sense for that column ("most
+            // recent"/"most attended" first, but names A→Z first).
+            dir: active ? (sort.dir === "asc" ? "desc" : "asc") : sortKey === "name" ? "asc" : "desc",
+          })
+        }
+        className={`flex items-center gap-1 text-[11.5px] font-semibold uppercase tracking-[0.04em] transition-colors ${
+          active ? "text-brand-navy" : "text-[#8A94A0] hover:text-brand-navy"
+        }`}
+      >
+        {label}
+        {active ? (
+          sort.dir === "asc" ? (
+            <ChevronUp className="h-3 w-3" />
+          ) : (
+            <ChevronDown className="h-3 w-3" />
+          )
+        ) : (
+          <ArrowUpDown className="h-3 w-3 opacity-40" />
+        )}
+      </button>
+    </th>
+  );
+}
+
 function SeriesTab({ event }: { event: AppEvent }) {
   const now = new Date();
   const [rangeMode, setRangeMode] = useState<"month" | "year">("month");
@@ -722,6 +800,7 @@ function SeriesTab({ event }: { event: AppEvent }) {
   const [childFilter, setChildFilter] = useState<ChildFilter>("all");
   const [filters, setFilters] = useState<ReportFilters>(EMPTY_REPORT_FILTERS);
   const filterQuery = reportFiltersToParams(filters).toString();
+  const [sort, setSort] = useState<SeriesSort>({ key: "attended", dir: "desc" });
 
   const { from, to } = rangeMode === "month" ? monthRange(month) : yearRange(year);
   const { data, isLoading } = useSWR<SeriesFrequencyResult>(
@@ -733,9 +812,9 @@ function SeriesTab({ event }: { event: AppEvent }) {
   const occurrenceDates = data?.occurrenceDates ?? [];
   const people = useMemo(() => {
     const list = data?.people ?? [];
-    if (childFilter === "all") return list;
-    return list.filter((p) => (childFilter === "children" ? p.isChild : !p.isChild));
-  }, [data, childFilter]);
+    const filtered = childFilter === "all" ? list : list.filter((p) => (childFilter === "children" ? p.isChild : !p.isChild));
+    return sortSeriesPeople(filtered, sort);
+  }, [data, childFilter, sort]);
 
   function handleExport() {
     const columns = seriesFrequencyColumns(occurrenceDates);
@@ -793,10 +872,10 @@ function SeriesTab({ event }: { event: AppEvent }) {
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr className="border-b border-[#EAE2D0] bg-[#FAF7F1] text-left text-[11.5px] uppercase tracking-[0.04em] text-[#8A94A0]">
-                <th className="whitespace-nowrap px-3 py-2">Name</th>
-                <th className="whitespace-nowrap px-3 py-2">Attended</th>
+                <SortableColumnHeader label="Name" sortKey="name" sort={sort} onChange={setSort} />
+                <SortableColumnHeader label="Attended" sortKey="attended" sort={sort} onChange={setSort} />
                 <th className="whitespace-nowrap px-3 py-2">%</th>
-                <th className="whitespace-nowrap px-3 py-2">Last attended</th>
+                <SortableColumnHeader label="Last attended" sortKey="last" sort={sort} onChange={setSort} />
                 {occurrenceDates.map((d) => (
                   <th key={d} className="whitespace-nowrap px-2 py-2 text-center" title={formatDate(d)}>
                     {d.slice(5)}
