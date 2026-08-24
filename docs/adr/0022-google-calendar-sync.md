@@ -1,4 +1,4 @@
-# ADR-0022: Sync public Subsplash events to Google Calendar via a service account
+# ADR-0022: Sync public Subsplash events to Google Calendar
 
 **Status:** Accepted
 **Date:** 2026-08-24
@@ -44,27 +44,42 @@ places. This is a manual, admin-triggered push — Subsplash → Google, one way
   unpublished, made private, or deleted in Subsplash doesn't linger on the
   public calendar. The tag scope means pruning can never see, and therefore
   can never delete, an event a person added to the calendar by hand.
-- **Auth: a Google service account**, not OAuth tied to a staff member's own
-  session. A server-triggered button has no interactive consent flow to use,
-  and a personal-token approach would inherit the exact session-fragility
-  ADR-0021 already documented (a token that stops working when its owning
-  browser session ends) for an entirely different reason — this integration
-  doesn't share that risk at all, since it's a real, documented,
-  service-account-friendly REST API, not an authenticated dashboard being
-  driven by a browser. `lib/googleCalendarAuth.ts` hand-signs the JWT
-  assertion with Node's built-in `crypto` (RS256) and exchanges it at
-  Google's token endpoint — no `googleapis`/`google-auth-library` dependency,
+- **Auth: OAuth 2.0 with a refresh token**, for one specific Google account
+  chosen to own the calendar edits — not tied to any staff member's browser
+  session, and not a service-account key either. The original design used a
+  service-account key (see "Alternatives rejected"), but this org's GCP
+  policy (`iam.disableServiceAccountKeyCreation`, part of Google's "Secure
+  by Default" org-level enforcement) blocks creating one at all — confirmed
+  hitting this directly when setting up the real credentials. A refresh
+  token isn't a service-account key, so it sidesteps that policy entirely,
+  and unlike ADR-0021's session-fragility problem (a browser-session token
+  that stops working when the browser/session ends), a Google OAuth refresh
+  token is decoupled from any browser session once minted — it persists
+  until explicitly revoked, six months of inactivity, or its OAuth client's
+  consent screen is left in "Testing" publishing status for more than 7
+  days (keep it in "Production" status to avoid that). Minted once, outside
+  the app, via `scripts/get-google-calendar-refresh-token.ts` — a local
+  server + browser consent flow, following RFC 8252's loopback-redirect
+  pattern for native apps (Google's supported replacement for the
+  deprecated out-of-band/copy-paste flow). `lib/googleCalendarAuth.ts`
+  exchanges the refresh token for a short-lived access token via Google's
+  token endpoint — no `googleapis`/`google-auth-library` dependency,
   matching this codebase's existing "raw fetch, no SDK" convention for
   talking to Subsplash (`lib/subsplash.ts`, `lib/subsplashToken.ts`).
-- **Setup the app can't do for itself:** a human with Google/GCP access must
-  create the service account, enable the Calendar API, and share the target
-  calendar with the service account's `client_email` ("Make changes to
-  events"), then set `GOOGLE_CALENDAR_ID` / `GOOGLE_CALENDAR_CLIENT_EMAIL` /
-  `GOOGLE_CALENDAR_PRIVATE_KEY` directly (never pasted through chat/an
-  agent). Until then, `GOOGLE_CALENDAR_USE_MOCK=true` (default) fakes every
-  Calendar API call against an in-memory store, mirroring
-  `SUBSPLASH_USE_MOCK` — so the button, route, and `calendar_syncs` logging
-  are all fully exercisable before real credentials exist.
+- **Setup the app can't do for itself:** a human with Google Cloud Console
+  access must create an OAuth client (Credentials → Create Credentials →
+  OAuth client ID → "Desktop app" — a regular OAuth client, not a service
+  account, so the blocked policy doesn't apply), enable the Calendar API,
+  share the target calendar with whichever Google account will run the
+  one-time consent script ("Make changes to events"), run
+  `npm run calendar:get-refresh-token` once as that account, then set
+  `GOOGLE_CALENDAR_ID` / `GOOGLE_CALENDAR_CLIENT_ID` /
+  `GOOGLE_CALENDAR_CLIENT_SECRET` / `GOOGLE_CALENDAR_REFRESH_TOKEN` directly
+  (never pasted through chat/an agent). Until then,
+  `GOOGLE_CALENDAR_USE_MOCK=true` (default) fakes every Calendar API call
+  against an in-memory store, mirroring `SUBSPLASH_USE_MOCK` — so the
+  button, route, and `calendar_syncs` logging are all fully exercisable
+  before real credentials exist.
 - **`calendar_syncs`** table (mirrors `attendance_imports`): one row per
   sync attempt — `ranAt`, `eventsSeen`, `eventsCreated`, `eventsUpdated`,
   `eventsDeleted`, `error` — feeding the Events page's status line.
@@ -90,11 +105,26 @@ places. This is a manual, admin-triggered push — Subsplash → Google, one way
 
 ## Alternatives rejected
 
-- **OAuth as a staff member's own Google account.** Ties the integration to
-  one person's session/credentials and needs a full interactive consent
-  flow with no natural trigger point from a server-side button. A service
-  account is the standard, non-fragile mechanism for exactly this
-  (server-to-server writes to one shared calendar).
+- **A service-account key.** The original design, and still the more
+  standard mechanism for pure server-to-server access with no consent flow
+  — but this org's GCP policy (`iam.disableServiceAccountKeyCreation`)
+  blocks creating one outright, confirmed while actually trying to set this
+  up. Rather than ask an org admin to weaken a real "Secure by Default"
+  security control for one small feature, the OAuth refresh-token approach
+  above was used instead — it needs no special GCP permissions to set up
+  and doesn't touch that policy at all.
+- **OAuth tied to a staff member's live browser session**, rather than a
+  refresh token minted once and stored server-side. Would inherit
+  ADR-0021's exact session-fragility problem (a token that stops working
+  once its owning browser session ends) for an unrelated reason — a
+  refresh token avoids this because it's decoupled from any session once
+  minted, not because of anything about *how* it was obtained.
+- **`Workload Identity Federation`** (Google's other recommended
+  service-account-key alternative). Built for workloads already running on
+  a platform with a supported federated identity provider (AWS, Azure,
+  GitHub Actions, Kubernetes, …); this app runs on Vercel, which isn't a
+  natively supported WIF provider, so wiring this up would need real extra
+  infrastructure for no benefit over the refresh-token approach here.
 - **One Google Calendar event per occurrence.** Simpler to build, but
   clutters the calendar with dozens of near-identical entries per series and
   makes each one independently editable/deletable in Google Calendar, unlike

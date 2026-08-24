@@ -1,13 +1,21 @@
 // Server-only. Mints and caches an OAuth2 access token for the Google
-// Calendar service account (ADR-0022), the same shape as
-// lib/subsplashToken.ts's getServiceToken: one credential, cached in memory,
-// re-minted within 60s of expiry.
+// Calendar integration (ADR-0022), via a refresh token rather than a
+// service-account key — this org's GCP policy
+// (iam.disableServiceAccountKeyCreation) blocks creating service-account
+// keys, so a regular OAuth client + refresh token is used instead (a
+// refresh token isn't a service-account key, so that policy doesn't apply
+// to it). Same caching shape as lib/subsplashToken.ts's getServiceToken:
+// module-level cache, re-minted within 60s of expiry.
 //
-// No googleapis/google-auth-library dependency — this hand-signs the JWT
-// assertion with Node's built-in crypto, matching this codebase's existing
-// "raw fetch, no SDK" convention for Subsplash.
+// The refresh token itself is minted once, outside the app, via
+// scripts/get-google-calendar-refresh-token.ts — run as whichever Google
+// account should own the calendar edits. It doesn't expire on its own
+// (only if revoked, unused for 6 months, or the OAuth client's consent
+// screen is left in "Testing" publishing status for more than 7 days —
+// keep it in "Production" status to avoid that).
 
-import { createSign } from "crypto";
+const EXPIRY_BUFFER_MS = 60_000;
+const TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 interface CachedToken {
   accessToken: string;
@@ -16,41 +24,10 @@ interface CachedToken {
 
 let cachedToken: CachedToken | null = null;
 
-const EXPIRY_BUFFER_MS = 60_000;
-const TOKEN_URL = "https://oauth2.googleapis.com/token";
-const SCOPE = "https://www.googleapis.com/auth/calendar.events";
-const ASSERTION_LIFETIME_SECONDS = 3600;
-
 interface TokenResponse {
   access_token: string;
   expires_in: number;
   token_type: string;
-}
-
-function base64url(input: Buffer | string): string {
-  return Buffer.from(input).toString("base64url");
-}
-
-// A service account key pasted into an env var commonly arrives with
-// literal "\n" escape sequences instead of real newlines (a well-known
-// Google service-account gotcha) — normalize either shape.
-function normalizePrivateKey(raw: string): string {
-  return raw.includes("\\n") ? raw.replace(/\\n/g, "\n") : raw;
-}
-
-function signAssertion(clientEmail: string, privateKey: string): string {
-  const now = Math.floor(Date.now() / 1000);
-  const header = { alg: "RS256", typ: "JWT" };
-  const claims = {
-    iss: clientEmail,
-    scope: SCOPE,
-    aud: TOKEN_URL,
-    iat: now,
-    exp: now + ASSERTION_LIFETIME_SECONDS,
-  };
-  const signingInput = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(claims))}`;
-  const signature = createSign("RSA-SHA256").update(signingInput).sign(normalizePrivateKey(privateKey), "base64url");
-  return `${signingInput}.${signature}`;
 }
 
 export async function getGoogleCalendarServiceToken(): Promise<string> {
@@ -59,18 +36,20 @@ export async function getGoogleCalendarServiceToken(): Promise<string> {
     return cachedToken.accessToken;
   }
 
-  const clientEmail = process.env.GOOGLE_CALENDAR_CLIENT_EMAIL;
-  const privateKey = process.env.GOOGLE_CALENDAR_PRIVATE_KEY;
-  if (!clientEmail || !privateKey) {
+  const clientId = process.env.GOOGLE_CALENDAR_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_CALENDAR_REFRESH_TOKEN;
+  if (!clientId || !clientSecret || !refreshToken) {
     throw new Error(
-      "Missing Google Calendar service account credentials (GOOGLE_CALENDAR_CLIENT_EMAIL / GOOGLE_CALENDAR_PRIVATE_KEY)"
+      "Missing Google Calendar OAuth credentials (GOOGLE_CALENDAR_CLIENT_ID / GOOGLE_CALENDAR_CLIENT_SECRET / GOOGLE_CALENDAR_REFRESH_TOKEN) — run scripts/get-google-calendar-refresh-token.ts to mint a refresh token"
     );
   }
 
-  const assertion = signAssertion(clientEmail, privateKey);
   const body = new URLSearchParams({
-    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-    assertion,
+    client_id: clientId,
+    client_secret: clientSecret,
+    refresh_token: refreshToken,
+    grant_type: "refresh_token",
   });
 
   const res = await fetch(TOKEN_URL, {
@@ -81,7 +60,7 @@ export async function getGoogleCalendarServiceToken(): Promise<string> {
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    throw new Error(`Failed to mint Google Calendar service token: ${res.status} ${detail}`);
+    throw new Error(`Failed to refresh Google Calendar access token: ${res.status} ${detail}`);
   }
 
   const data = (await res.json()) as TokenResponse;

@@ -11,7 +11,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "sync:subsplash": "tsx scripts/sync-subsplash-attendance.ts",
-    "sync:all": "scripts/sync-all-attendance.sh"
+    "sync:all": "scripts/sync-all-attendance.sh",
+    "calendar:get-refresh-token": "tsx scripts/get-google-calendar-refresh-token.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
