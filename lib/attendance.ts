@@ -8,7 +8,7 @@ import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { getDb, isDbConfigured } from "./db";
 import { checkIns, type CheckInRow } from "./db/schema";
 import { mockCheckIns } from "./mockData";
-import { attachParentContacts, searchChildren, searchProfiles } from "./subsplash";
+import { attachParentContacts, FULL_ROSTER_PAGE_SIZE, searchChildren, searchProfiles } from "./subsplash";
 import type { AttendanceSummary, CheckInMethod, CheckInRecord } from "@/types/attendance";
 import type { Campus, MemberStatus, Profile } from "@/types/profile";
 
@@ -269,10 +269,12 @@ export interface RosterFilterParams {
   status?: MemberStatus[];
   gradeFrom?: number;
   gradeTo?: number;
+  ageFrom?: number;
+  ageTo?: number;
 }
 
 // Check-in rows only carry a profileId (see CheckInRecord) — no campus,
-// status, or grade of their own — so the Occurrence/Series report tabs
+// status, grade, or age of their own — so the Occurrence/Series report tabs
 // filter on those dimensions by first resolving which Subsplash profiles
 // match (the same searchProfiles filtering the People/Children pages already
 // use), then keeping only records/people whose profileId is in that set.
@@ -280,11 +282,16 @@ export interface RosterFilterParams {
 // callers should treat null as "keep everything" rather than an empty match,
 // so a report with no filters applied doesn't pay for a full roster walk.
 export async function matchingProfileIds(filters: RosterFilterParams): Promise<Set<string> | null> {
-  const { campus, status, gradeFrom, gradeTo } = filters;
+  const { campus, status, gradeFrom, gradeTo, ageFrom, ageTo } = filters;
   const active =
-    (campus && campus.length > 0) || (status && status.length > 0) || gradeFrom !== undefined || gradeTo !== undefined;
+    (campus && campus.length > 0) ||
+    (status && status.length > 0) ||
+    gradeFrom !== undefined ||
+    gradeTo !== undefined ||
+    ageFrom !== undefined ||
+    ageTo !== undefined;
   if (!active) return null;
-  const result = await searchProfiles({ campus, status, gradeFrom, gradeTo, pageSize: 5000 });
+  const result = await searchProfiles({ campus, status, gradeFrom, gradeTo, ageFrom, ageTo, pageSize: FULL_ROSTER_PAGE_SIZE });
   return new Set(result.profiles.map((p) => p.id));
 }
 
@@ -397,6 +404,8 @@ export interface FindAbsenteesParams {
   status?: MemberStatus[];
   gradeFrom?: number;
   gradeTo?: number;
+  ageFrom?: number;
+  ageTo?: number;
 }
 
 // Roster fetch (Subsplash) minus attended (this series' check-ins) — the
@@ -409,7 +418,9 @@ export async function findAbsentees(params: FindAbsenteesParams): Promise<Profil
     status: params.status,
     gradeFrom: params.gradeFrom,
     gradeTo: params.gradeTo,
-    pageSize: 5000,
+    ageFrom: params.ageFrom,
+    ageTo: params.ageTo,
+    pageSize: FULL_ROSTER_PAGE_SIZE,
   };
   const result =
     params.childrenOnly === false ? await searchProfiles(rosterParams) : await searchChildren(rosterParams);
