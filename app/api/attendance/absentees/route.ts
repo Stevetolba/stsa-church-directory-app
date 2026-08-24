@@ -33,6 +33,10 @@ export async function GET(request: NextRequest) {
   const gradeToRaw = searchParams.get("gradeTo");
   const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
   const gradeTo = gradeToRaw ? Number(gradeToRaw) : undefined;
+  const ageFromRaw = searchParams.get("ageFrom");
+  const ageToRaw = searchParams.get("ageTo");
+  const ageFrom = ageFromRaw ? Number(ageFromRaw) : undefined;
+  const ageTo = ageToRaw ? Number(ageToRaw) : undefined;
 
   // Bounded to today (UTC — close enough for "last N occurrences"; unlike
   // the occurrence report's exact-date picker, a day of slop at a timezone
@@ -52,6 +56,8 @@ export async function GET(request: NextRequest) {
     status,
     gradeFrom,
     gradeTo,
+    ageFrom,
+    ageTo,
   });
 
   // Only resolved on request (ADR-0015 Phase 5) — the report page's

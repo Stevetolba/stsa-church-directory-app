@@ -23,9 +23,17 @@ const DEFAULT_PAGE_SIZE = 25;
 const MAX_SUBSPLASH_PAGE_SIZE = 100;
 // Safety cap on how many Subsplash pages we'll walk to build an in-memory
 // working set for search/filter (ADR-0004 amendment). At 100/page this is
-// 20,000 profiles — the real org already has 4,000+, so this has real
+// 20,000 profiles — the real org already has ~7,900, so this has real
 // headroom rather than comfortable-in-theory headroom.
 const MAX_SUBSPLASH_PAGES = 200;
+// A pageSize to pass to searchProfiles/searchChildren when a caller wants
+// literally every match, not one page of them (a roster-vs-check-ins join,
+// a full-directory export, …). Matches the walk's own ceiling above, so it
+// can never itself become a second, smaller silent-truncation cap — a fixed
+// pageSize: 5000 here once did exactly that once the org passed 5,000
+// profiles (see lib/attendanceImport.ts's buildProfileLookup for the
+// confirmed-against-real-data version of this bug).
+export const FULL_ROSTER_PAGE_SIZE = MAX_SUBSPLASH_PAGES * MAX_SUBSPLASH_PAGE_SIZE;
 // ADR-0009: how long the full profiles/households walk is cached before
 // Subsplash is re-queried. A staff directory doesn't need real-time
 // freshness; this trades a few minutes of staleness for not re-fetching

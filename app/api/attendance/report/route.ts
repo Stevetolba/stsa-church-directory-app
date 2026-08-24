@@ -30,16 +30,20 @@ export async function GET(request: NextRequest) {
   const seriesId = searchParams.get("seriesId");
   if (!seriesId) return NextResponse.json({ error: "seriesId is required" }, { status: 400 });
 
-  // Campus/Status/Grade filters (report page's FilterPill/AddFilterMenu bar)
-  // resolve to a set of eligible profile ids, since check-in rows don't
-  // carry those fields themselves — see matchingProfileIds.
+  // Campus/Status/Grade/Age filters (report page's FilterPill/AddFilterMenu
+  // bar) resolve to a set of eligible profile ids, since check-in rows
+  // don't carry those fields themselves — see matchingProfileIds.
   const campus = searchParams.getAll("campus") as Campus[];
   const status = searchParams.getAll("status") as MemberStatus[];
   const gradeFromRaw = searchParams.get("gradeFrom");
   const gradeToRaw = searchParams.get("gradeTo");
   const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
   const gradeTo = gradeToRaw ? Number(gradeToRaw) : undefined;
-  const ids = await matchingProfileIds({ campus, status, gradeFrom, gradeTo });
+  const ageFromRaw = searchParams.get("ageFrom");
+  const ageToRaw = searchParams.get("ageTo");
+  const ageFrom = ageFromRaw ? Number(ageFromRaw) : undefined;
+  const ageTo = ageToRaw ? Number(ageToRaw) : undefined;
+  const ids = await matchingProfileIds({ campus, status, gradeFrom, gradeTo, ageFrom, ageTo });
 
   const occurrenceDate = searchParams.get("occurrenceDate");
   if (occurrenceDate) {

@@ -3,11 +3,12 @@
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR, { mutate as globalMutate } from "swr";
-import { AlertTriangle, ArrowLeft, BarChart3, Download, ExternalLink, Mail, Upload, UserX } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BarChart3, ChevronDown, Download, ExternalLink, Mail, Upload, UserX } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { EmailAbsenteesDialog } from "@/components/EmailAbsenteesDialog";
 import { FilterPill } from "@/components/FilterPill";
 import { AddFilterMenu } from "@/components/AddFilterMenu";
+import { SuggestedFilters, type SuggestedFilter } from "@/components/SuggestedFilters";
 import { avatarTintForId, initialsOf } from "@/lib/avatar";
 import { formatDate } from "@/lib/utils";
 import { timeLabelInTz } from "@/lib/eventTime";
@@ -50,19 +51,27 @@ const STATUS_OPTIONS: MemberStatus[] = [
 
 const CAMPUS_OPTIONS: Campus[] = ["Arlington", "Leesburg"];
 
-type ReportFilterKey = "campus" | "status" | "grade";
-const ALL_REPORT_FILTER_KEYS: ReportFilterKey[] = ["campus", "status", "grade"];
+type ReportFilterKey = "campus" | "status" | "grade" | "age";
+const ALL_REPORT_FILTER_KEYS: ReportFilterKey[] = ["campus", "status", "grade", "age"];
 const REPORT_FILTER_LABELS: Record<ReportFilterKey, string> = {
   campus: "Campus",
   status: "Status",
   grade: "Grade",
+  age: "Age",
 };
+
+// Same bound as ChildrenPageClient's Age filter — wide enough to cover
+// Pre-K through a graduated senior without being meaningless.
+const MIN_AGE = 0;
+const MAX_AGE = 25;
 
 interface ReportFilters {
   campus: Campus[];
   status: MemberStatus[];
   gradeFrom?: number;
   gradeTo?: number;
+  ageFrom?: number;
+  ageTo?: number;
 }
 
 const EMPTY_REPORT_FILTERS: ReportFilters = { campus: [], status: [] };
@@ -73,6 +82,8 @@ function reportFiltersToParams(filters: ReportFilters): URLSearchParams {
   filters.status.forEach((s) => params.append("status", s));
   if (filters.gradeFrom !== undefined) params.set("gradeFrom", String(filters.gradeFrom));
   if (filters.gradeTo !== undefined) params.set("gradeTo", String(filters.gradeTo));
+  if (filters.ageFrom !== undefined) params.set("ageFrom", String(filters.ageFrom));
+  if (filters.ageTo !== undefined) params.set("ageTo", String(filters.ageTo));
   return params;
 }
 
@@ -97,6 +108,13 @@ function summarizeGrade(gradeFrom?: number, gradeTo?: number): string {
   return "Grade";
 }
 
+function summarizeAge(ageFrom?: number, ageTo?: number): string {
+  if (ageFrom === undefined && ageTo === undefined) return "Age";
+  if (ageFrom !== undefined && ageTo !== undefined) return `Age: ${ageFrom} – ${ageTo}`;
+  if (ageFrom !== undefined) return `Age: ${ageFrom}+`;
+  return `Age: up to ${ageTo}`;
+}
+
 // Renders the active filter pills + "+ Filter" menu for one tab. The
 // filter *values* are lifted to the caller (each tab needs them in its SWR
 // query key); this component only owns the "which pill is open / manually
@@ -115,6 +133,7 @@ function ReportFilterBar({
   if (filters.campus.length > 0) activeFilters.add("campus");
   if (filters.status.length > 0) activeFilters.add("status");
   if (filters.gradeFrom !== undefined || filters.gradeTo !== undefined) activeFilters.add("grade");
+  if (filters.ageFrom !== undefined || filters.ageTo !== undefined) activeFilters.add("age");
 
   function toggleListValue(key: "campus" | "status", value: string) {
     const current = filters[key] as string[];
@@ -136,7 +155,8 @@ function ReportFilterBar({
     if (openFilter === key) setOpenFilter(null);
     if (key === "campus") onChange({ ...filters, campus: [] });
     else if (key === "status") onChange({ ...filters, status: [] });
-    else onChange({ ...filters, gradeFrom: undefined, gradeTo: undefined });
+    else if (key === "grade") onChange({ ...filters, gradeFrom: undefined, gradeTo: undefined });
+    else onChange({ ...filters, ageFrom: undefined, ageTo: undefined });
   }
 
   return (
@@ -240,6 +260,49 @@ function ReportFilterBar({
         </FilterPill>
       )}
 
+      {activeFilters.has("age") && (
+        <FilterPill
+          label={summarizeAge(filters.ageFrom, filters.ageTo)}
+          active={filters.ageFrom !== undefined || filters.ageTo !== undefined}
+          open={openFilter === "age"}
+          onOpenChange={(open) => setOpenFilter(open ? "age" : null)}
+          onRemove={() => handleRemoveFilter("age")}
+        >
+          <div className="flex flex-col gap-3">
+            <div>
+              <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                Min
+              </label>
+              <input
+                type="number"
+                min={MIN_AGE}
+                max={MAX_AGE}
+                value={filters.ageFrom ?? ""}
+                onChange={(e) =>
+                  onChange({ ...filters, ageFrom: e.target.value ? Number(e.target.value) : undefined })
+                }
+                className="w-full rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                Max
+              </label>
+              <input
+                type="number"
+                min={MIN_AGE}
+                max={MAX_AGE}
+                value={filters.ageTo ?? ""}
+                onChange={(e) =>
+                  onChange({ ...filters, ageTo: e.target.value ? Number(e.target.value) : undefined })
+                }
+                className="w-full rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+              />
+            </div>
+          </div>
+        </FilterPill>
+      )}
+
       <AddFilterMenu
         options={ALL_REPORT_FILTER_KEYS.filter((key) => !activeFilters.has(key)).map((key) => ({
           key,
@@ -262,6 +325,73 @@ function ReportFilterBar({
         </button>
       )}
     </>
+  );
+}
+
+// --- Suggested Filters (Sunday School reports only) ---
+// Mirrors the age/grade bands in ChildrenPageClient.tsx's own
+// SUGGESTED_FILTERS, minus the Campus dimension — a Sunday School report is
+// already scoped to one campus via its event.title (e.g.
+// "Sunday School [Arlington]"), so campus doesn't need to be part of the
+// preset here. Keep these bands in sync with ChildrenPageClient.tsx if the
+// ministry's groupings change.
+interface ReportPreset {
+  gradeFrom?: number;
+  gradeTo?: number;
+  ageFrom?: number;
+  ageTo?: number;
+}
+
+const SUNDAY_SCHOOL_PRESETS_BY_CAMPUS: Record<"Arlington" | "Leesburg", SuggestedFilter<ReportPreset>[]> = {
+  Arlington: [
+    { label: "Tim's Tots (3–5 years)", preset: { ageFrom: 3, ageTo: 5 } },
+    { label: "KATW (K–1st)", preset: { gradeFrom: 2, gradeTo: 3 } },
+    { label: "KATW (2nd–3rd)", preset: { gradeFrom: 4, gradeTo: 5 } },
+    { label: "KATW (4th–5th)", preset: { gradeFrom: 6, gradeTo: 7 } },
+    { label: "Middle School (6th–8th)", preset: { gradeFrom: 8, gradeTo: 10 } },
+    { label: "High School (9th–12th)", preset: { gradeFrom: 11, gradeTo: 14 } },
+  ],
+  Leesburg: [
+    { label: "Tim's Tots (3–5 years)", preset: { ageFrom: 3, ageTo: 5 } },
+    { label: "KATW (K–2nd)", preset: { gradeFrom: 2, gradeTo: 4 } },
+    { label: "KATW (3rd–5th)", preset: { gradeFrom: 5, gradeTo: 7 } },
+    { label: "Middle School (6th–8th)", preset: { gradeFrom: 8, gradeTo: 10 } },
+    { label: "High School (9th–12th)", preset: { gradeFrom: 11, gradeTo: 14 } },
+  ],
+};
+
+// A preset fully sets Grade or Age to its exact values, clearing the other
+// dimension — same "jump to this ministry group" behavior as the Children
+// page's applyPreset, so picking an age-based preset after a grade-based
+// one doesn't leave a stale grade filter still narrowing the results.
+// Campus/Status are left alone so a preset can still be combined with them.
+function applySundaySchoolPreset(filters: ReportFilters, preset: ReportPreset): ReportFilters {
+  return {
+    ...filters,
+    gradeFrom: preset.gradeFrom,
+    gradeTo: preset.gradeTo,
+    ageFrom: preset.ageFrom,
+    ageTo: preset.ageTo,
+  };
+}
+
+// Renders the Suggested Filters panel only for a Sunday School series at a
+// campus we have bands for — silent (renders nothing) for Liturgy or any
+// other series, since those age/grade groupings don't apply there.
+function SundaySchoolSuggestedFilters({
+  event,
+  onApply,
+}: {
+  event: AppEvent;
+  onApply: (preset: ReportPreset) => void;
+}) {
+  if (!/sunday school/i.test(event.title)) return null;
+  const campus = campusGroupFor(event.title);
+  if (campus !== "Arlington" && campus !== "Leesburg") return null;
+  return (
+    <div className="mb-4">
+      <SuggestedFilters filters={SUNDAY_SCHOOL_PRESETS_BY_CAMPUS[campus]} onSelect={onApply} />
+    </div>
   );
 }
 
@@ -486,16 +616,53 @@ function subsplashCheckInReportUrl(seriesId: string): string {
   return `https://dashboard.subsplash.com/-d/#/library/repeating-events/${encodeURIComponent(seriesId)}/check-in-report`;
 }
 
+// Collapsible container shared by ExportAndUploadSteps and
+// ImportStatusBanner — same header-button + chevron pattern as
+// SuggestedFilters, so both panels read consistently with it. The header
+// (title + optional badge) stays visible when collapsed, since that's
+// usually enough on its own; only the detail body hides.
+function CollapsiblePanel({
+  title,
+  badge,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  badge?: React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="mb-4 rounded-[12px] border border-[#E5DCC8] bg-[#FBF8F1] text-[12.5px] text-[#5B7185]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 px-3.5 py-3 text-left"
+      >
+        <span className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+          {title}
+          {badge}
+        </span>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-[#8A94A0] transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && <div className="border-t border-[#F0EBDF] px-3.5 py-3">{children}</div>}
+    </div>
+  );
+}
+
 // Walks an admin through the manual half of ADR-0021: Subsplash has no API
 // for per-person check-in data, so getting a CSV out of it is an
 // authenticated dashboard click-through, not something this app can fetch on
-// its own. Kept right next to the Upload CSV button it feeds.
+// its own. Kept right next to the Upload CSV button it feeds. Collapsed by
+// default — it's reference material for an occasional task, not something
+// that needs to take up space on every visit.
 function ExportAndUploadSteps({ seriesId }: { seriesId: string }) {
   return (
-    <div className="mb-4 rounded-[12px] border border-[#E5DCC8] bg-[#FBF8F1] px-3.5 py-3 text-[12.5px] text-[#5B7185]">
-      <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
-        Import attendance from Subsplash
-      </div>
+    <CollapsiblePanel title="Import attendance from Subsplash">
       <ol className="list-decimal space-y-1 pl-4">
         <li>
           <a
@@ -518,7 +685,7 @@ function ExportAndUploadSteps({ seriesId }: { seriesId: string }) {
           you just downloaded.
         </li>
       </ol>
-    </div>
+    </CollapsiblePanel>
   );
 }
 
@@ -528,7 +695,9 @@ function ExportAndUploadSteps({ seriesId }: { seriesId: string }) {
 // occurrence totals (as a guest row), but without this banner they'd quietly
 // show up on the Absentees tab as though they'd missed the service, with no
 // visible reason why. Silent for a series with no import history yet (e.g.
-// entirely backfilled) — nothing to report.
+// entirely backfilled) — nothing to report. Starts expanded when there's an
+// unmatched-names warning or an error (worth seeing right away), collapsed
+// otherwise — the "last imported" line alone is enough day to day.
 function ImportStatusBanner({ seriesId }: { seriesId: string }) {
   const { data } = useSWR<{ run: AttendanceImportRun | null }>(
     `/api/attendance/imports?seriesId=${encodeURIComponent(seriesId)}`,
@@ -537,24 +706,29 @@ function ImportStatusBanner({ seriesId }: { seriesId: string }) {
   const run = data?.run;
   if (!run) return null;
 
+  const hasWarning = run.rowsUnmatched > 0 || !!run.error;
+
   return (
-    <div className="mb-4 flex flex-col gap-1.5 rounded-[12px] border border-[#E5DCC8] bg-[#FBF8F1] px-3.5 py-2.5 text-[12.5px] text-[#5B7185]">
-      <div>
-        Last imported from Subsplash: {formatDate(run.occurrenceDate)} occurrence, on{" "}
-        {new Date(run.ranAt).toLocaleString()}
+    <CollapsiblePanel
+      title={`Last imported from Subsplash: ${formatDate(run.occurrenceDate)}`}
+      defaultOpen={hasWarning}
+      badge={hasWarning ? <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-[#8A5A2B]" /> : undefined}
+    >
+      <div className="flex flex-col gap-1.5">
+        <div>Occurrence: {formatDate(run.occurrenceDate)}, imported on {new Date(run.ranAt).toLocaleString()}</div>
+        {run.rowsUnmatched > 0 && (
+          <div className="flex items-start gap-1.5 text-[#8A5A2B]">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              {run.rowsUnmatched} attendee{run.rowsUnmatched === 1 ? "" : "s"} couldn&apos;t be matched to a
+              directory profile — counted in totals, but will show up as absent unless fixed:{" "}
+              {run.unmatchedNames.join(", ")}
+            </span>
+          </div>
+        )}
+        {run.error && <div className="text-[#B3453C]">Last import error: {run.error}</div>}
       </div>
-      {run.rowsUnmatched > 0 && (
-        <div className="flex items-start gap-1.5 text-[#8A5A2B]">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>
-            {run.rowsUnmatched} attendee{run.rowsUnmatched === 1 ? "" : "s"} couldn&apos;t be matched to a
-            directory profile — counted in totals, but will show up as absent unless fixed:{" "}
-            {run.unmatchedNames.join(", ")}
-          </span>
-        </div>
-      )}
-      {run.error && <div className="text-[#B3453C]">Last import error: {run.error}</div>}
-    </div>
+    </CollapsiblePanel>
   );
 }
 
@@ -594,6 +768,11 @@ function OccurrenceTab({
 
   return (
     <div>
+      <SundaySchoolSuggestedFilters
+        event={event}
+        onApply={(preset) => setFilters((f) => applySundaySchoolPreset(f, preset))}
+      />
+
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <select
           value={occurrenceDate}
@@ -745,6 +924,11 @@ function SeriesTab({ event }: { event: AppEvent }) {
 
   return (
     <div>
+      <SundaySchoolSuggestedFilters
+        event={event}
+        onApply={(preset) => setFilters((f) => applySundaySchoolPreset(f, preset))}
+      />
+
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="flex items-center rounded-full border border-[#E5DCC8] bg-white p-0.5">
           <TabButton active={rangeMode === "month"} onClick={() => setRangeMode("month")}>
@@ -868,6 +1052,8 @@ function AbsenteesTab({
   filters.status.forEach((s) => params.append("status", s));
   if (filters.gradeFrom !== undefined) params.set("gradeFrom", String(filters.gradeFrom));
   if (filters.gradeTo !== undefined) params.set("gradeTo", String(filters.gradeTo));
+  if (filters.ageFrom !== undefined) params.set("ageFrom", String(filters.ageFrom));
+  if (filters.ageTo !== undefined) params.set("ageTo", String(filters.ageTo));
 
   const { data, isLoading } = useSWR<{ occurrenceDates: string[]; absentees: Profile[] }>(
     `/api/attendance/absentees?${params.toString()}`,
@@ -894,6 +1080,11 @@ function AbsenteesTab({
 
   return (
     <div>
+      <SundaySchoolSuggestedFilters
+        event={event}
+        onApply={(preset) => setFilters((f) => applySundaySchoolPreset(f, preset))}
+      />
+
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <select
           value={lastN}
