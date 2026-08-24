@@ -50,6 +50,13 @@
       "when": 1787450887847,
       "tag": "0006_panoramic_miek",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787586753081,
+      "tag": "0007_mighty_doctor_spectrum",
+      "breakpoints": true
     }
   ]
 }
