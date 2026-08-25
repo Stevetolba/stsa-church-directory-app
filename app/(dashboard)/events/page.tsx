@@ -8,5 +8,8 @@ export default async function EventsPage() {
   // events list itself, just without the report links.
   const role = session?.user?.role;
   const canViewReports = role === "admin" || role === "staff";
-  return <EventsPageClient canViewReports={canViewReports} />;
+  // Google Calendar sync (ADR-0022) writes to a shared public calendar, so
+  // it's admin-only, same as the attendance CSV upload button.
+  const isAdmin = role === "admin";
+  return <EventsPageClient canViewReports={canViewReports} isAdmin={isAdmin} />;
 }

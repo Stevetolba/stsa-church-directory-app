@@ -164,7 +164,23 @@ export const accessEvents = pgTable(
 
 export type CheckInRow = typeof checkIns.$inferSelect;
 export type NewCheckInRow = typeof checkIns.$inferInsert;
+// One row per attempted "sync public Subsplash events to Google Calendar"
+// run, triggered by the admin-only button on the Events page. Mirrors
+// attendanceImports' shape/purpose — the last-run status a status banner on
+// the Events page shows.
+export const calendarSyncs = pgTable("calendar_syncs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ranAt: timestamp("ran_at", { withTimezone: true }).notNull().defaultNow(),
+  eventsSeen: integer("events_seen").notNull(),
+  eventsCreated: integer("events_created").notNull(),
+  eventsUpdated: integer("events_updated").notNull(),
+  eventsDeleted: integer("events_deleted").notNull(),
+  error: text("error"),
+});
+
 export type AttendanceImportRow = typeof attendanceImports.$inferSelect;
 export type NewAttendanceImportRow = typeof attendanceImports.$inferInsert;
+export type CalendarSyncRow = typeof calendarSyncs.$inferSelect;
+export type NewCalendarSyncRow = typeof calendarSyncs.$inferInsert;
 export type AccessEventRow = typeof accessEvents.$inferSelect;
 export type NewAccessEventRow = typeof accessEvents.$inferInsert;
