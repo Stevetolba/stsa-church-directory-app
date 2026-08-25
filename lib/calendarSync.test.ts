@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  belongsToServiceCalendar,
   googleEventIdFor,
   isPublicOneOffRaw,
   isPublicSeriesRaw,
@@ -13,6 +14,10 @@ import {
   type PublicOneOffEvent,
   type PublicSeries,
 } from "./calendarSync";
+
+// The real Service Schedule calendar id (confirmed against the live org —
+// see the module comment in calendarSync.ts).
+const SERVICE_CALENDAR_ID = "8f5f3a9c-6384-46bb-9565-1e05341faed7";
 
 describe("isPublicOneOffRaw", () => {
   it("requires both published status and public visibility", () => {
@@ -28,6 +33,19 @@ describe("isPublicSeriesRaw", () => {
     expect(isPublicSeriesRaw({ visibility: "public", published_at: "2026-01-01T00:00:00Z" })).toBe(true);
     expect(isPublicSeriesRaw({ visibility: "public", published_at: null })).toBe(false);
     expect(isPublicSeriesRaw({ visibility: "dashboard", published_at: "2026-01-01T00:00:00Z" })).toBe(false);
+  });
+});
+
+describe("belongsToServiceCalendar", () => {
+  it("is true when the Service Schedule calendar is among the embedded calendars", () => {
+    expect(belongsToServiceCalendar([{ id: SERVICE_CALENDAR_ID }])).toBe(true);
+    expect(belongsToServiceCalendar([{ id: "some-other-calendar" }, { id: SERVICE_CALENDAR_ID }])).toBe(true);
+  });
+
+  it("is false when it isn't, or when no calendars are embedded at all", () => {
+    expect(belongsToServiceCalendar([{ id: "some-other-calendar" }])).toBe(false);
+    expect(belongsToServiceCalendar([])).toBe(false);
+    expect(belongsToServiceCalendar(undefined)).toBe(false);
   });
 });
 

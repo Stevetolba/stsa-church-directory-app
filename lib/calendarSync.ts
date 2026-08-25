@@ -2,6 +2,18 @@
 // STSA Church Public Google Calendar (ADR-0022). Triggered by an admin-only
 // button on the Events page — not scheduled/automatic.
 //
+// Scoped to just the "Service Schedule" Subsplash calendar (Liturgy,
+// Vespers, Confession, Sunday School, The Well, …) — confirmed against the
+// live org's /events/v2/calendars: this org has 4 calendars total
+// ("Upcoming Events", "Service Schedule", "Children & Youth Calendar",
+// "Community Impact Events"), and only Service Schedule is "the church
+// service calendar" the public Google Calendar is meant to mirror. An
+// event/series not in it is excluded even if otherwise public — and the
+// existing prune-stale-events logic (SYNC_SOURCE_TAG, lib/googleCalendar.ts)
+// means a previously-synced event from any other calendar is removed from
+// Google Calendar the next time this runs, with no separate cleanup step
+// needed.
+//
 // A repeating series syncs as ONE native Google Calendar recurring event,
 // not one event per occurrence: Subsplash already exposes a series' schedule
 // as raw RFC5545 lines (RepeatingEvent.repetition_rules — DTSTART/RRULE/
@@ -37,8 +49,18 @@ const USE_MOCK_SUBSPLASH_DATA = process.env.SUBSPLASH_USE_MOCK !== "false";
 const MAX_SUBSPLASH_PAGE_SIZE = 100;
 const MAX_SUBSPLASH_PAGES = 200;
 
+// The "Service Schedule" Subsplash calendar id — confirmed against the live
+// org's /events/v2/calendars (title "Service Schedule", subtitle "Liturgy,
+// Vespers, Confession, Sunday School, The Well..."). The only calendar this
+// sync pulls from; see the module comment above.
+const SERVICE_CALENDAR_ID = "8f5f3a9c-6384-46bb-9565-1e05341faed7";
+
 // --- Raw Subsplash shapes (only the fields this feature needs — confirmed
 // against the live org; see docs/adr/0022-google-calendar-sync.md) ---
+
+interface RawCalendarRef {
+  id: string;
+}
 
 interface RawCalendarEvent {
   id: string;
@@ -49,7 +71,7 @@ interface RawCalendarEvent {
   timezone?: string;
   status?: string;
   visibility?: string;
-  _embedded?: { "repeating-event"?: { id?: string } };
+  _embedded?: { "repeating-event"?: { id?: string }; calendars?: RawCalendarRef[] };
 }
 
 interface RawCalendarRepeatingEvent {
@@ -65,6 +87,7 @@ interface RawCalendarRepeatingEvent {
   // all (unlike a materialized Event) — published_at is the "is this
   // series actually live" signal instead.
   published_at?: string | null;
+  _embedded?: { calendars?: RawCalendarRef[] };
 }
 
 interface HalCollection<T> {
@@ -95,6 +118,13 @@ export interface PublicSeries {
 
 export function isPublicOneOffRaw(raw: { status?: string; visibility?: string }): boolean {
   return raw.status === "published" && raw.visibility === "public";
+}
+
+// Whether a raw event/series' embedded calendars include the Service
+// Schedule calendar (SERVICE_CALENDAR_ID) — an event can belong to more
+// than one Subsplash calendar, so this checks membership, not exclusivity.
+export function belongsToServiceCalendar(calendars: RawCalendarRef[] | undefined): boolean {
+  return (calendars ?? []).some((c) => c.id === SERVICE_CALENDAR_ID);
 }
 
 export function isPublicSeriesRaw(raw: { visibility?: string; published_at?: string | null }): boolean {
@@ -198,8 +228,10 @@ export function seriesToGoogleInput(s: PublicSeries): GoogleCalendarEventInput |
 
 // --- Mock fixtures (SUBSPLASH_USE_MOCK=true, the default) — small and
 // self-contained since no other feature needs "public event with a
-// description/visibility" fixtures; lib/mockData.ts's AppEvent-shaped
-// fixtures don't carry those fields at all. ---
+// description/visibility/calendar" fixtures; lib/mockData.ts's AppEvent-
+// shaped fixtures don't carry those fields at all. Modeled as already
+// belonging to the Service Schedule calendar (no calendar filtering
+// modeled here — these represent what should end up synced either way). ---
 
 const MOCK_PUBLIC_ONE_OFF_EVENTS: PublicOneOffEvent[] = [
   {
@@ -231,7 +263,7 @@ async function fetchAllPublicOneOffEvents(): Promise<PublicOneOffEvent[]> {
 
   const results: PublicOneOffEvent[] = [];
   let data = await subsplashFetch<HalCollection<RawCalendarEvent>>(
-    `/events/v2/events?page[size]=${MAX_SUBSPLASH_PAGE_SIZE}&include=repeating-event`,
+    `/events/v2/events?page[size]=${MAX_SUBSPLASH_PAGE_SIZE}&include=repeating-event,calendars`,
     { scopeToOrg: false }
   );
   for (let page = 1; page <= MAX_SUBSPLASH_PAGES; page++) {
@@ -242,6 +274,7 @@ async function fetchAllPublicOneOffEvents(): Promise<PublicOneOffEvent[]> {
       // including its individual occurrences here too would duplicate it.
       if (e._embedded?.["repeating-event"]?.id) continue;
       if (!isPublicOneOffRaw(e) || !e.start_at) continue;
+      if (!belongsToServiceCalendar(e._embedded?.calendars)) continue;
       results.push({
         id: e.id,
         title: e.title ?? "Untitled event",
@@ -263,13 +296,14 @@ async function fetchAllPublicSeries(): Promise<PublicSeries[]> {
 
   const results: PublicSeries[] = [];
   let data = await subsplashFetch<HalCollection<RawCalendarRepeatingEvent>>(
-    `/events/v2/repeating-events?page[size]=${MAX_SUBSPLASH_PAGE_SIZE}`,
+    `/events/v2/repeating-events?page[size]=${MAX_SUBSPLASH_PAGE_SIZE}&include=calendars`,
     { scopeToOrg: false }
   );
   for (let page = 1; page <= MAX_SUBSPLASH_PAGES; page++) {
     const raw = data._embedded?.["repeating-events"] ?? [];
     for (const s of raw) {
       if (!isPublicSeriesRaw(s)) continue;
+      if (!belongsToServiceCalendar(s._embedded?.calendars)) continue;
       const repetitionRules = s.repetition_rules ?? [];
       if (repetitionRules.length === 0) continue;
       results.push({
