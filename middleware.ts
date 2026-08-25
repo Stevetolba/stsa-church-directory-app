@@ -20,8 +20,12 @@ const { auth } = NextAuth(authConfig);
 // it isn't blocked here. "/" is intentionally NOT blocked — it renders a
 // volunteer-scoped landing page (today's children/youth birthdays + a
 // children-only search) instead of the staff/admin one, so a volunteer can
-// land there directly rather than being redirected off it.
-const VOLUNTEER_BLOCKED_PATHS = new Set(["/people", "/households", "/birthdays", "/reports"]);
+// land there directly rather than being redirected off it. "/reports" is
+// also NOT blocked (as of the Sunday School volunteer report access
+// change): a volunteer can view it, just scoped to the Sunday School cards
+// only — that page and the report/absentees API routes filter which
+// series a volunteer sees (lib/reportAccess.ts / requireReportAccess).
+const VOLUNTEER_BLOCKED_PATHS = new Set(["/people", "/households", "/birthdays"]);
 
 export default auth((req) => {
   const isLoggedIn = !!req.auth;

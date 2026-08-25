@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { BarChart3, CalendarCheck, Clock } from "lucide-react";
 import type { AppEvent } from "@/types/event";
+import type { Role } from "@/types/auth";
 import { occurrenceDateInTz, timeLabelInTz } from "@/lib/eventTime";
+import { isSundaySchoolSeriesId } from "@/lib/reportAccess";
 
 // One event in the agenda. Attendance is captured in Subsplash Check-In, not
 // here (ADR-0021), so this card is informational — it links to the event's
@@ -11,12 +13,12 @@ import { occurrenceDateInTz, timeLabelInTz } from "@/lib/eventTime";
 export function EventCard({
   event,
   highlighted = false,
-  canViewReports = false,
+  role = "volunteer",
   now = new Date(),
 }: {
   event: AppEvent;
   highlighted?: boolean;
-  canViewReports?: boolean;
+  role?: Role;
   now?: Date;
 }) {
   const startLabel = timeLabelInTz(new Date(event.start_at), event.timezone);
@@ -25,6 +27,11 @@ export function EventCard({
   // attendance is imported from Subsplash after the fact, so a future-dated
   // occurrence has nothing to show yet.
   const hasHappened = event.occurrence_date <= occurrenceDateInTz(now.toISOString(), event.timezone);
+  // Staff/admin see every event's report; a volunteer (including a Team
+  // Lead) only Sunday School's, matching requireReportAccess's server-side
+  // gate on the report/absentees/import-status API routes.
+  const canViewReports =
+    role === "admin" || role === "staff" || (role === "volunteer" && isSundaySchoolSeriesId(event.series_id));
 
   return (
     <div

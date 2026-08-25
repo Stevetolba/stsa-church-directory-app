@@ -1,6 +1,7 @@
 "use client";
 
 import type { AppEvent } from "@/types/event";
+import type { Role } from "@/types/auth";
 import { groupEventsByDate } from "@/lib/eventAgenda";
 import { EventCard } from "@/components/EventCard";
 
@@ -8,11 +9,11 @@ import { EventCard } from "@/components/EventCard";
 // check-in window are pinned separately by the page and excluded here.
 export function EventAgenda({
   events,
-  canViewReports = false,
+  role = "volunteer",
   now = new Date(),
 }: {
   events: AppEvent[];
-  canViewReports?: boolean;
+  role?: Role;
   now?: Date;
 }) {
   const groups = groupEventsByDate(events, now);
@@ -26,7 +27,7 @@ export function EventAgenda({
           </div>
           <div className="flex flex-col gap-2.5">
             {group.events.map((event) => (
-              <EventCard key={event.id} event={event} canViewReports={canViewReports} now={now} />
+              <EventCard key={event.id} event={event} role={role} now={now} />
             ))}
           </div>
         </div>

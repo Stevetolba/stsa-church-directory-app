@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireStaffOrAdmin } from "@/lib/rbac";
+import { requireReportAccess } from "@/lib/rbac";
 import {
   filterRecordsByProfileIds,
   listCheckIns,
@@ -23,12 +23,12 @@ import type { Campus, MemberStatus } from "@/types/profile";
 //     occurrence in the range (from lib/events.listOccurrences, the true
 //     denominator) plus, per person, which of those they attended.
 export async function GET(request: NextRequest) {
-  const forbidden = await requireStaffOrAdmin("attendance-report");
-  if (forbidden) return forbidden;
-
   const { searchParams } = new URL(request.url);
   const seriesId = searchParams.get("seriesId");
   if (!seriesId) return NextResponse.json({ error: "seriesId is required" }, { status: 400 });
+
+  const forbidden = await requireReportAccess(seriesId, "attendance-report");
+  if (forbidden) return forbidden;
 
   // Campus/Status/Grade/Age filters (report page's FilterPill/AddFilterMenu
   // bar) resolve to a set of eligible profile ids, since check-in rows

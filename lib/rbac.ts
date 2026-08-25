@@ -4,6 +4,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "./auth";
 import { recordAccessEvent } from "./accessLog";
+import { isSundaySchoolSeriesId } from "./reportAccess";
 
 export async function requireAdmin(): Promise<NextResponse | null> {
   const session = await auth();
@@ -32,6 +33,31 @@ export async function requireStaffOrAdmin(resource: string): Promise<NextRespons
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (session.user.role === "volunteer") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  await recordAccessEvent({
+    email: session.user.email ?? "unknown",
+    name: session.user.name ?? null,
+    role: session.user.role,
+    eventType: "directory_read",
+    resource,
+  });
+  return null;
+}
+
+// Sunday School class volunteers/team leads need to see their own class's
+// attendance, so the report/absentees/import-status reads admit a
+// volunteer when the series being requested is one of the two Sunday
+// School series (lib/reportAccess.ts) — every other series (Liturgy, etc.)
+// stays staff/admin only, same as requireStaffOrAdmin. Never grants the
+// ability to *send* absentee emails — POST /api/attendance/email still
+// uses requireStaffOrAdmin unconditionally.
+export async function requireReportAccess(seriesId: string, resource: string): Promise<NextResponse | null> {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (session.user.role === "volunteer" && !isSundaySchoolSeriesId(seriesId)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   await recordAccessEvent({

@@ -10,6 +10,7 @@ import { groupProfilesByUpcomingBirthday, type BirthdayEntry } from "@/lib/birth
 import { EventCard } from "@/components/EventCard";
 import { avatarTintForId, initialsOf } from "@/lib/avatar";
 import { Skeleton } from "@/components/Skeleton";
+import type { Role } from "@/types/auth";
 
 function firstNameOf(name: string | null | undefined): string {
   if (!name) return "there";
@@ -26,7 +27,7 @@ export default async function DashboardPage() {
   if (session?.user?.role === "volunteer") {
     return <VolunteerDashboard name={name} />;
   }
-  return <StaffDashboard name={name} canViewReports />;
+  return <StaffDashboard name={name} role={session?.user?.role ?? "staff"} />;
 }
 
 // Not async: the shell below (header, search form, action cards) needs
@@ -37,7 +38,7 @@ export default async function DashboardPage() {
 // fetches below are kicked off here (not awaited) so they run in parallel
 // while each dependent section streams in on its own via its own Suspense
 // boundary once ready.
-function StaffDashboard({ name, canViewReports }: { name: string | null; canViewReports: boolean }) {
+function StaffDashboard({ name, role }: { name: string | null; role: Role }) {
   const now = new Date();
   // Birthdays reuses the same "walk up to 5000 profiles" cap the standalone
   // /birthdays page already accepts (its SHOW_ALL_PAGE_SIZE convention) — the
@@ -58,7 +59,7 @@ function StaffDashboard({ name, canViewReports }: { name: string | null; canView
       </div>
 
       <Suspense fallback={null}>
-        <TodaysEventsSection eventsPromise={eventsPromise} canViewReports={canViewReports} now={now} />
+        <TodaysEventsSection eventsPromise={eventsPromise} role={role} now={now} />
       </Suspense>
 
       <Suspense fallback={null}>
@@ -170,11 +171,11 @@ async function VolunteerStatPill({ childrenPromise }: { childrenPromise: Promise
 
 async function TodaysEventsSection({
   eventsPromise,
-  canViewReports,
+  role,
   now,
 }: {
   eventsPromise: ReturnType<typeof listTodaysEvents>;
-  canViewReports: boolean;
+  role: Role;
   now: Date;
 }) {
   const todaysEvents = await eventsPromise;
@@ -191,7 +192,7 @@ async function TodaysEventsSection({
             key={event.id}
             event={event}
             highlighted={windowState(event, now) === "open"}
-            canViewReports={canViewReports}
+            role={role}
             now={now}
           />
         ))}
