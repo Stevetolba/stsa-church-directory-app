@@ -62,4 +62,35 @@ describe("accessLog (mock mode)", () => {
     const events = await listAccessEvents(-1);
     expect(events).toHaveLength(0);
   });
+
+  it("keeps events within the last 30 days, excludes ones older than that", async () => {
+    const old = new Date();
+    old.setDate(old.getDate() - 31);
+    const recent = new Date();
+    recent.setDate(recent.getDate() - 29);
+    globalThis.__mockAccessEvents = [
+      {
+        id: "old-event",
+        occurredAt: old.toISOString(),
+        email: "old@example.org",
+        name: null,
+        role: "staff",
+        eventType: "sign_in",
+        resource: null,
+      },
+      {
+        id: "recent-event",
+        occurredAt: recent.toISOString(),
+        email: "recent@example.org",
+        name: null,
+        role: "staff",
+        eventType: "sign_in",
+        resource: null,
+      },
+    ];
+
+    const events = await listAccessEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0].email).toBe("recent@example.org");
+  });
 });

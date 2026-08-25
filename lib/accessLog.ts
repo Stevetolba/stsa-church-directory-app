@@ -7,7 +7,7 @@
 // must not block the sign-in or directory read it's trying to record — it's
 // an audit trail, not a gate.
 
-import { desc } from "drizzle-orm";
+import { desc, gte } from "drizzle-orm";
 import { getDb, isDbConfigured } from "./db";
 import { accessEvents, type AccessEventRow } from "./db/schema";
 import type { Role } from "@/types/auth";
@@ -86,21 +86,35 @@ export async function recordAccessEvent(input: RecordAccessEventInput): Promise<
 
 // This isn't a compliance archive — just an at-a-glance "who's been in here"
 // for the admin-only Activity Log page — so it's capped to a recent window
-// rather than supporting a full historical export/pagination.
-const MAX_EVENTS = 500;
+// rather than supporting a full historical export/pagination. Rows
+// themselves are never deleted (recordAccessEvent only ever inserts), so
+// this window governs what listAccessEvents surfaces, not what's retained
+// in Postgres.
+//
+// The window is time-based (at least the last 30 days), not row-count-based
+// — a fixed row cap (the previous design) could silently show far less than
+// a month once an org's sign-in/directory-read volume grew, even though the
+// data was still sitting in the table the whole time. MAX_EVENTS is now
+// just a safety ceiling for a pathologically high-traffic window, not the
+// primary bound.
+const MIN_RETENTION_DAYS = 30;
+const MAX_EVENTS = 5000;
 
-export async function listAccessEvents(limit = 200): Promise<AccessEvent[]> {
+export async function listAccessEvents(limit = MAX_EVENTS): Promise<AccessEvent[]> {
   const cappedLimit = Math.max(0, Math.min(limit, MAX_EVENTS));
+  const since = new Date(Date.now() - MIN_RETENTION_DAYS * 24 * 60 * 60 * 1000);
   if (isDbConfigured()) {
     const db = getDb();
     const rows = await db
       .select()
       .from(accessEvents)
+      .where(gte(accessEvents.occurredAt, since))
       .orderBy(desc(accessEvents.occurredAt))
       .limit(cappedLimit);
     return rows.map(fromRow);
   }
   return mockStore()
+    .filter((r) => new Date(r.occurredAt) >= since)
     .slice()
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
     .slice(0, cappedLimit);

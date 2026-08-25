@@ -711,9 +711,9 @@ function ExportAndUploadSteps({ seriesId }: { seriesId: string }) {
 // occurrence totals (as a guest row), but without this banner they'd quietly
 // show up on the Absentees tab as though they'd missed the service, with no
 // visible reason why. Silent for a series with no import history yet (e.g.
-// entirely backfilled) — nothing to report. Starts expanded when there's an
-// unmatched-names warning or an error (worth seeing right away), collapsed
-// otherwise — the "last imported" line alone is enough day to day.
+// entirely backfilled) — nothing to report. Collapsed by default (even when
+// there's a warning) — the header's title and warning badge are enough to
+// notice something's worth a look; expanding is a click away.
 function ImportStatusBanner({ seriesId }: { seriesId: string }) {
   const { data } = useSWR<{ run: AttendanceImportRun | null }>(
     `/api/attendance/imports?seriesId=${encodeURIComponent(seriesId)}`,
@@ -727,7 +727,6 @@ function ImportStatusBanner({ seriesId }: { seriesId: string }) {
   return (
     <CollapsiblePanel
       title={`Last imported from Subsplash: ${formatDate(run.occurrenceDate)}`}
-      defaultOpen={hasWarning}
       badge={hasWarning ? <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-[#8A5A2B]" /> : undefined}
     >
       <div className="flex flex-col gap-1.5">
