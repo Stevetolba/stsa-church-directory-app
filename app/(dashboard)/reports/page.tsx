@@ -3,6 +3,7 @@ import Link from "next/link";
 import { BarChart3, ChevronRight } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { listSeries } from "@/lib/events";
+import { isSundaySchoolSeriesId } from "@/lib/reportAccess";
 import { EmptyState } from "@/components/EmptyState";
 
 // The 3 series this page reports on, pinned by their real Subsplash
@@ -22,25 +23,30 @@ const CURATED_SERIES: { label: string; seriesId: string }[] = [
   { label: "LITURGY", seriesId: "b20a0f15-8403-47eb-aee1-dec62bc66fc6" },
 ];
 
-// ADR-0015 (Phase 4): staff/admin landing page for attendance reports — the
-// 3 series the church actually tracks attendance for day to day, so a
-// monthly review starts here instead of picking through the full events
-// list (which includes many one-off/seasonal check-in-enabled events that
-// aren't part of the regular reporting rhythm). requireStaffOrAdmin() guards
-// the actual report/absentees API routes; this redirect just keeps a
-// volunteer from landing on a page that would only 403 against them.
+// ADR-0015 (Phase 4): landing page for attendance reports — the 3 series
+// the church actually tracks attendance for day to day, so a monthly
+// review starts here instead of picking through the full events list
+// (which includes many one-off/seasonal check-in-enabled events that
+// aren't part of the regular reporting rhythm). Staff/admin see all 3; a
+// volunteer (including a Team Lead) only the Sunday School cards — they
+// need to see their own class's attendance, but not Liturgy's. Matches
+// requireReportAccess's server-side gate on the actual report/absentees API
+// routes (ADR-0005: this filtering is UX, not the guard).
 export default async function ReportsPage() {
   const session = await auth();
-  if (session?.user?.role === "volunteer") {
+  if (!session?.user) {
     redirect("/");
   }
+  const role = session.user.role;
 
   const series = await listSeries();
   const byId = new Map(series.map((s) => [s.seriesId, s]));
-  const cards = CURATED_SERIES.map((c) => {
-    const match = byId.get(c.seriesId);
-    return match ? { label: c.label, representativeEventId: match.representativeEventId } : null;
-  }).filter((c): c is { label: string; representativeEventId: string } => c !== null);
+  const cards = CURATED_SERIES.filter((c) => role !== "volunteer" || isSundaySchoolSeriesId(c.seriesId))
+    .map((c) => {
+      const match = byId.get(c.seriesId);
+      return match ? { label: c.label, representativeEventId: match.representativeEventId } : null;
+    })
+    .filter((c): c is { label: string; representativeEventId: string } => c !== null);
 
   return (
     <div>

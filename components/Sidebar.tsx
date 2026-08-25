@@ -18,15 +18,16 @@ import type { Role } from "@/types/auth";
 // visible desktop rail — a stopgap responsive treatment, not a mobile
 // redesign.
 
-// ADR-0011: nav is role-scoped. Volunteers only ever see Children; staff/admin
-// get the full directory plus Children.
+// ADR-0011: nav is role-scoped. Volunteers see Children, Events, and Reports
+// (the latter scoped further to just Sunday School — lib/reportAccess.ts);
+// staff/admin get the full directory plus everything volunteers see.
 const NAV_ITEMS: Array<{ href: string; label: string; icon: typeof Users; roles: Role[] }> = [
   { href: "/people", label: "People", icon: Users, roles: ["admin", "staff"] },
   { href: "/households", label: "Households", icon: Home, roles: ["admin", "staff"] },
   { href: "/birthdays", label: "Birthdays", icon: Cake, roles: ["admin", "staff"] },
   { href: "/children", label: "Children and Youth", icon: Baby, roles: ["admin", "staff", "volunteer"] },
   { href: "/events", label: "Events", icon: CalendarCheck, roles: ["admin", "staff", "volunteer"] },
-  { href: "/reports", label: "Reports", icon: BarChart3, roles: ["admin", "staff"] },
+  { href: "/reports", label: "Reports", icon: BarChart3, roles: ["admin", "staff", "volunteer"] },
   { href: "/settings/activity", label: "Activity Log", icon: History, roles: ["admin"] },
 ];
 

@@ -423,12 +423,14 @@ export function AttendanceReportClient({
   user,
   fromAddress,
   isAdmin,
+  canEmail,
 }: {
   event: AppEvent;
   occurrences: SeriesOccurrence[];
   user: { name: string; email: string };
   fromAddress: string;
   isAdmin: boolean;
+  canEmail: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("occurrence");
 
@@ -461,7 +463,9 @@ export function AttendanceReportClient({
 
       {tab === "occurrence" && <OccurrenceTab event={event} occurrences={occurrences} isAdmin={isAdmin} />}
       {tab === "series" && <SeriesTab event={event} />}
-      {tab === "absentees" && <AbsenteesTab event={event} user={user} fromAddress={fromAddress} />}
+      {tab === "absentees" && (
+        <AbsenteesTab event={event} user={user} fromAddress={fromAddress} canEmail={canEmail} />
+      )}
     </div>
   );
 }
@@ -1103,10 +1107,12 @@ function AbsenteesTab({
   event,
   user,
   fromAddress,
+  canEmail,
 }: {
   event: AppEvent;
   user: { name: string; email: string };
   fromAddress: string;
+  canEmail: boolean;
 }) {
   const autoType = eventAutoSessionType(event.sessions);
   const [lastN, setLastN] = useState(4);
@@ -1187,15 +1193,17 @@ function AbsenteesTab({
         </label>
         <ReportFilterBar filters={filters} onChange={setFilters} />
         <ExportButton onClick={handleExport} disabled={absentees.length === 0} />
-        <button
-          type="button"
-          onClick={() => setEmailOpen(true)}
-          disabled={absentees.length === 0}
-          className="flex items-center gap-1.5 rounded-[10px] bg-brand-navy px-3.5 py-2 text-[13px] font-semibold text-brand-cream transition-colors hover:bg-brand-navy/90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Mail className="h-3.5 w-3.5" />
-          Email absentees
-        </button>
+        {canEmail && (
+          <button
+            type="button"
+            onClick={() => setEmailOpen(true)}
+            disabled={absentees.length === 0}
+            className="flex items-center gap-1.5 rounded-[10px] bg-brand-navy px-3.5 py-2 text-[13px] font-semibold text-brand-cream transition-colors hover:bg-brand-navy/90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Mail className="h-3.5 w-3.5" />
+            Email absentees
+          </button>
+        )}
       </div>
 
       {!isLoading && occurrenceDates.length > 0 && (
@@ -1232,23 +1240,25 @@ function AbsenteesTab({
         </div>
       )}
 
-      <EmailAbsenteesDialog
-        open={emailOpen}
-        onOpenChange={setEmailOpen}
-        user={user}
-        fromAddress={fromAddress}
-        seriesTitle={event.title}
-        filters={{
-          seriesId: event.series_id,
-          lastN,
-          childrenOnly,
-          campus: filters.campus,
-          status: filters.status,
-          gradeFrom: filters.gradeFrom,
-          gradeTo: filters.gradeTo,
-        }}
-        absenteeCount={absentees.length}
-      />
+      {canEmail && (
+        <EmailAbsenteesDialog
+          open={emailOpen}
+          onOpenChange={setEmailOpen}
+          user={user}
+          fromAddress={fromAddress}
+          seriesTitle={event.title}
+          filters={{
+            seriesId: event.series_id,
+            lastN,
+            childrenOnly,
+            campus: filters.campus,
+            status: filters.status,
+            gradeFrom: filters.gradeFrom,
+            gradeTo: filters.gradeTo,
+          }}
+          absenteeCount={absentees.length}
+        />
+      )}
     </div>
   );
 }

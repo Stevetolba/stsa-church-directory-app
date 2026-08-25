@@ -10,6 +10,7 @@ import { EventAgenda } from "@/components/EventAgenda";
 import { useEvents } from "@/hooks/useEvents";
 import { occurrenceDateInTz, windowState } from "@/lib/eventTime";
 import type { CalendarSyncRun } from "@/lib/calendarSync";
+import type { Role } from "@/types/auth";
 
 async function fetcher<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -94,10 +95,10 @@ function CalendarSyncControl() {
 // (like the birthdays page). Attendance itself is captured in Subsplash and
 // imported (ADR-0021), so the cards link to reports, not to check-in.
 export function EventsPageClient({
-  canViewReports,
+  role,
   isAdmin,
 }: {
-  canViewReports: boolean;
+  role: Role;
   isAdmin: boolean;
 }) {
   const [search, setSearch] = useState("");
@@ -161,7 +162,7 @@ export function EventsPageClient({
                     key={event.id}
                     event={event}
                     highlighted
-                    canViewReports={canViewReports}
+                    role={role}
                     now={now}
                   />
                 ))}
@@ -170,7 +171,7 @@ export function EventsPageClient({
           )}
 
           {upcoming.length > 0 && (
-            <EventAgenda events={upcoming} canViewReports={canViewReports} now={now} />
+            <EventAgenda events={upcoming} role={role} now={now} />
           )}
         </div>
       )}
