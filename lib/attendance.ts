@@ -337,6 +337,11 @@ export interface SeriesFrequencyPerson {
   // check-in for, ascending.
   attendedDates: string[];
   lastAttended: string | null;
+  // A live Subsplash lookup (current grade), not a check-in-time snapshot —
+  // check_ins rows don't carry grade at all. undefined until attachGrades
+  // below runs; null after it runs for someone with no grade on file (an
+  // adult, or a guest row with no real Subsplash profile to look up).
+  grade?: string | null;
 }
 
 export interface SeriesFrequencyResult {
@@ -378,6 +383,20 @@ export function summarizeSeriesFrequency(
   });
   people.sort((a, b) => b.attendedDates.length - a.attendedDates.length || a.displayName.localeCompare(b.displayName));
   return { occurrenceDates: [...occurrenceDates].sort(), people };
+}
+
+// Attaches each person's current Subsplash grade onto summarizeSeriesFrequency's
+// rows (the Series tab's "Grade" column, primarily used for Sunday School
+// reports). A live lookup, not a check-in-time snapshot, since check_ins
+// rows carry no grade at all — a person's grade shown here always reflects
+// today, not what it was on the occurrence date. profileId misses (a guest
+// row with no real Subsplash profile, or an adult with no grade on file)
+// simply get grade: null.
+export async function attachGrades(people: SeriesFrequencyPerson[]): Promise<SeriesFrequencyPerson[]> {
+  if (people.length === 0) return people;
+  const { profiles } = await searchProfiles({ pageSize: FULL_ROSTER_PAGE_SIZE });
+  const gradeById = new Map(profiles.map((p) => [p.id, p.academic_grade ?? null]));
+  return people.map((p) => ({ ...p, grade: gradeById.get(p.profileId) ?? null }));
 }
 
 // Pure set difference — the roster members with zero check-ins across the

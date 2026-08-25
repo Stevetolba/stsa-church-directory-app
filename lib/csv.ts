@@ -142,6 +142,7 @@ export function seriesFrequencyColumns(occurrenceDates: string[]): { key: string
   return [
     { key: "name", label: "Name" },
     { key: "type", label: "Type" },
+    { key: "grade", label: "Grade" },
     { key: "attended", label: "Attended" },
     { key: "total", label: "Total" },
     { key: "percent", label: "Percent" },
@@ -157,6 +158,7 @@ export function seriesFrequencyToExportRow(
   const row: Record<string, string> = {
     name: person.displayName,
     type: person.isChild ? "Child" : "Adult",
+    grade: person.grade ?? "",
     attended: String(person.attendedDates.length),
     total: String(occurrenceDates.length),
     percent: occurrenceDates.length
