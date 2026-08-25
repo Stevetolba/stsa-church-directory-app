@@ -17,13 +17,14 @@ A new `access_events` table (`lib/db/schema.ts`), same Neon/Drizzle setup as `ch
 - **Directory reads.** `requireStaffOrAdmin()` (`lib/rbac.ts`) is the one function nearly every PII-serving *read* route already calls (profiles, households, attendance report/absentees/email, children email) — never mutations, those go through `requireAdmin()` instead. It now takes a caller-supplied `resource` label and logs a `directory_read` event on the passing path, right where the session is already being checked. `/api/children` is instrumented directly (it deliberately doesn't use `requireStaffOrAdmin`, since volunteers are allowed there) rather than through the shared helper.
 - **Granularity.** Logging stops at "which directory surface was read" (list/report level), not "whose individual profile was opened" — the two detail-page server components (`people/[id]`, `households/[id]`) call `auth()` directly rather than through `rbac.ts` and were deliberately left uninstrumented. Adding per-profile view logging would mean touching those pages individually; out of scope unless a real need for that finer granularity shows up.
 - **Best-effort, never blocking.** `recordAccessEvent` swallows and `console.error`s any failure. An audit-log outage (or a misconfigured `DATABASE_URL`) must never turn into a broken sign-in or a broken directory page — it's a trail, not a gate.
-- **Viewing it.** A new admin-only Activity Log page (`/settings/activity`, mirroring `/settings/devices`'s page-redirect + `requireAdmin()`-gated API pattern) lists the most recent 200 events (capped at 500), newest first, via `GET /api/access-events`.
+- **Viewing it.** A new admin-only Activity Log page (`/settings/activity`, mirroring `/settings/devices`'s page-redirect + `requireAdmin()`-gated API pattern) lists events newest first via `GET /api/access-events`.
+- **Retention.** Rows are never deleted (`recordAccessEvent` only ever inserts) — Postgres keeps every row indefinitely. `listAccessEvents` guarantees at least the last 30 days is always queryable/shown (`MIN_RETENTION_DAYS` in `lib/accessLog.ts`), with a generous row-count safety ceiling (`MAX_EVENTS`, 5000) rather than the fixed 200/500-row cap this originally shipped with — that fixed cap could silently show far less than a month once an org's sign-in/directory-read volume grew, even though the underlying data was still there the whole time.
 
 ## Consequences
 
 - One more table alongside `check_ins`/`devices`; same migration workflow (`drizzle-kit generate`/`migrate` under Node 24).
 - `requireStaffOrAdmin()`'s signature changed (now takes a `resource: string`) — every one of its seven call sites was updated to pass a short label.
-- This is an at-a-glance trail, not a compliance archive: no pagination beyond the most-recent window, no export, no retention policy. Add one later if a real need for it shows up.
+- This is an at-a-glance trail, not a compliance archive: no pagination beyond the most-recent window, no export. It does now guarantee a minimum retention window (30 days, see Decision) — added once a real need for it showed up, per the original plan here.
 - Denied sign-in attempts are logged with the email Google reported — acceptable since it's the same email the person themselves typed into Google's sign-in screen, not scraped from anywhere.
 
 ## Alternatives rejected
