@@ -26,6 +26,7 @@ import { formatDate } from "@/lib/utils";
 import { timeLabelInTz } from "@/lib/eventTime";
 import { eventAutoSessionType } from "@/lib/sessionMapping";
 import { campusGroupFor, type SeriesOccurrence } from "@/lib/events";
+import { isSundaySchoolSeriesId } from "@/lib/reportAccess";
 import { GRADE_LEVELS } from "@/lib/grades";
 import {
   OCCURRENCE_REPORT_COLUMNS,
@@ -997,6 +998,10 @@ function SeriesTab({ event }: { event: AppEvent }) {
     const filtered = childFilter === "all" ? list : list.filter((p) => (childFilter === "children" ? p.isChild : !p.isChild));
     return sortSeriesPeople(filtered, sort);
   }, [data, childFilter, sort]);
+  // Grade is a live Subsplash lookup (lib/attendance.ts's attachGrades), not
+  // something every series needs cluttering its table — shown only for
+  // Sunday School, where knowing each attendee's grade is actually useful.
+  const showGrade = isSundaySchoolSeriesId(event.series_id);
 
   function handleExport() {
     const columns = seriesFrequencyColumns(occurrenceDates);
@@ -1060,6 +1065,7 @@ function SeriesTab({ event }: { event: AppEvent }) {
             <thead>
               <tr className="border-b border-[#EAE2D0] bg-[#FAF7F1] text-left text-[11.5px] uppercase tracking-[0.04em] text-[#8A94A0]">
                 <SortableColumnHeader label="Name" sortKey="name" sort={sort} onChange={setSort} />
+                {showGrade && <th className="whitespace-nowrap px-3 py-2">Grade</th>}
                 <SortableColumnHeader label="Attended" sortKey="attended" sort={sort} onChange={setSort} />
                 <th className="whitespace-nowrap px-3 py-2">%</th>
                 <SortableColumnHeader label="Last attended" sortKey="last" sort={sort} onChange={setSort} />
@@ -1077,6 +1083,9 @@ function SeriesTab({ event }: { event: AppEvent }) {
                 return (
                   <tr key={p.profileId} className="border-b border-[#EAE2D0] last:border-0">
                     <td className="whitespace-nowrap px-3 py-2 font-semibold text-brand-navy">{p.displayName}</td>
+                    {showGrade && (
+                      <td className="whitespace-nowrap px-3 py-2 text-[#5B7185]">{p.grade ?? "—"}</td>
+                    )}
                     <td className="whitespace-nowrap px-3 py-2 text-[#5B7185]">
                       {p.attendedDates.length}/{occurrenceDates.length}
                     </td>

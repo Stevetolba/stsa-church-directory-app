@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireReportAccess } from "@/lib/rbac";
 import {
+  attachGrades,
   filterRecordsByProfileIds,
   listCheckIns,
   listCheckInsForSeries,
@@ -9,6 +10,7 @@ import {
   summarizeSeriesFrequency,
 } from "@/lib/attendance";
 import { listOccurrences } from "@/lib/events";
+import { isSundaySchoolSeriesId } from "@/lib/reportAccess";
 import type { Campus, MemberStatus } from "@/types/profile";
 
 // ADR-0015 (Phase 4): staff/admin-only reporting reads. Two modes on one
@@ -60,5 +62,10 @@ export async function GET(request: NextRequest) {
   const occurrences = await listOccurrences(seriesId, { from, to });
   const occurrenceDates = occurrences.map((o) => o.occurrence_date);
   const records = filterRecordsByProfileIds(await listCheckInsForSeries(seriesId, from, to), ids);
-  return NextResponse.json(summarizeSeriesFrequency(records, occurrenceDates));
+  const result = summarizeSeriesFrequency(records, occurrenceDates);
+  // Grade is a Sunday-School-only column (components/AttendanceReportClient.tsx's
+  // Series tab) — skip the extra profile-roster fetch entirely for every
+  // other series, which would otherwise be discarded unused.
+  const people = isSundaySchoolSeriesId(seriesId) ? await attachGrades(result.people) : result.people;
+  return NextResponse.json({ ...result, people });
 }

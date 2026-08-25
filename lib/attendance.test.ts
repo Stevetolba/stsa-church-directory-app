@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { computeAbsentees, summarize, summarizeSeriesFrequency } from "./attendance";
+import { attachGrades, computeAbsentees, summarize, summarizeSeriesFrequency } from "./attendance";
+import type { SeriesFrequencyPerson } from "./attendance";
 import type { CheckInRecord } from "@/types/attendance";
 
 function rec(partial: Partial<CheckInRecord>): CheckInRecord {
@@ -95,5 +96,36 @@ describe("computeAbsentees", () => {
   it("returns nobody when everyone attended", () => {
     const roster = [{ id: "p1" }, { id: "p2" }];
     expect(computeAbsentees(roster, new Set(["p1", "p2"]))).toEqual([]);
+  });
+});
+
+function seriesPerson(partial: Partial<SeriesFrequencyPerson> & { profileId: string }): SeriesFrequencyPerson {
+  return {
+    displayName: "Someone",
+    isChild: true,
+    attendedDates: [],
+    lastAttended: null,
+    ...partial,
+  };
+}
+
+describe("attachGrades", () => {
+  it("attaches a matched profile's current grade", async () => {
+    // profile-lily-whitfield is a real lib/mockData.ts fixture with
+    // academic_grade: "5th Grade" (SUBSPLASH_USE_MOCK defaults true in the
+    // test env, so searchProfiles reads from those fixtures).
+    const people = [seriesPerson({ profileId: "profile-lily-whitfield", displayName: "Lily Whitfield" })];
+    const [result] = await attachGrades(people);
+    expect(result.grade).toBe("5th Grade");
+  });
+
+  it("gives null grade for a profile id with no match (e.g. a guest row)", async () => {
+    const people = [seriesPerson({ profileId: "guest:subsplash:doesnotexist", displayName: "A Visitor" })];
+    const [result] = await attachGrades(people);
+    expect(result.grade).toBeNull();
+  });
+
+  it("returns an empty array unchanged, without fetching profiles", async () => {
+    expect(await attachGrades([])).toEqual([]);
   });
 });
