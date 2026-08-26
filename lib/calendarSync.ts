@@ -31,6 +31,7 @@ import { subsplashFetch, subsplashFetchHref } from "./subsplash";
 import { zonedWallTimeToUtc } from "./eventTime";
 import {
   deleteCalendarEvent,
+  ensureGoogleCalendarAuth,
   listSyncedCalendarEventIds,
   upsertCalendarEvent,
   type GoogleCalendarEventInput,
@@ -454,6 +455,10 @@ function summarizeFailures(failures: string[]): string | null {
 // would have succeeded.
 export async function syncPublicEventsToCalendar(): Promise<CalendarSyncRun> {
   try {
+    // Fail fast on broken/expired credentials — see the comment on
+    // ensureGoogleCalendarAuth for why this can't just be left to the
+    // per-event try/catch below.
+    await ensureGoogleCalendarAuth();
     const [oneOff, series] = await Promise.all([fetchAllPublicOneOffEvents(), fetchAllPublicSeries()]);
     const inputs: GoogleCalendarEventInput[] = [
       ...oneOff.map(oneOffToGoogleInput),

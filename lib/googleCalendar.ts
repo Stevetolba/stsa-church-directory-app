@@ -32,6 +32,17 @@ export interface GoogleCalendarEventInput {
   recurrence?: string[];
 }
 
+// Verifies the configured OAuth credentials can actually mint an access
+// token, before any event is attempted — otherwise a broken/expired refresh
+// token fails identically on every single upsert in the sync loop below,
+// producing a wall of duplicate "Failed to refresh Google Calendar access
+// token" errors (confirmed in production: the same line repeated 100+
+// times) instead of one clear one. No-op in mock mode.
+export async function ensureGoogleCalendarAuth(): Promise<void> {
+  if (USE_MOCK) return;
+  await getGoogleCalendarServiceToken();
+}
+
 function calendarId(): string {
   const id = process.env.GOOGLE_CALENDAR_ID;
   if (!id) throw new Error("Missing GOOGLE_CALENDAR_ID");
