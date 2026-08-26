@@ -909,7 +909,7 @@ function yearRange(year: string): { from: string; to: string } {
 
 type ChildFilter = "all" | "children" | "adults";
 
-type SeriesSortKey = "name" | "attended" | "last";
+type SeriesSortKey = "name" | "grade" | "attended" | "last";
 interface SeriesSort {
   key: SeriesSortKey;
   dir: "asc" | "desc";
@@ -921,6 +921,20 @@ interface SeriesSort {
 function sortSeriesPeople(people: SeriesFrequencyResult["people"], sort: SeriesSort): SeriesFrequencyResult["people"] {
   const sorted = [...people];
   sorted.sort((a, b) => {
+    // Sorted by gradeValue (the numeric ordinal — grade itself, "Pre-K"/
+    // "3rd"/…, doesn't sort meaningfully as a string), with nobody-has-a-
+    // grade-on-file rows always last regardless of direction (an adult, or
+    // a guest row with no real Subsplash profile) — flipping asc/desc
+    // shouldn't relocate "unknown" to the top.
+    if (sort.key === "grade") {
+      const av = a.gradeValue ?? null;
+      const bv = b.gradeValue ?? null;
+      if (av === null && bv === null) return a.displayName.localeCompare(b.displayName);
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      const cmp = av - bv;
+      return sort.dir === "asc" ? cmp : -cmp;
+    }
     let cmp = 0;
     if (sort.key === "name") cmp = a.displayName.localeCompare(b.displayName);
     else if (sort.key === "attended") cmp = a.attendedDates.length - b.attendedDates.length;
@@ -952,8 +966,15 @@ function SortableColumnHeader({
             key: sortKey,
             // Flip direction on the already-active column; otherwise start
             // with the direction that makes sense for that column ("most
-            // recent"/"most attended" first, but names A→Z first).
-            dir: active ? (sort.dir === "asc" ? "desc" : "asc") : sortKey === "name" ? "asc" : "desc",
+            // recent"/"most attended" first, but names A→Z and youngest
+            // grade first).
+            dir: active
+              ? sort.dir === "asc"
+                ? "desc"
+                : "asc"
+              : sortKey === "name" || sortKey === "grade"
+                ? "asc"
+                : "desc",
           })
         }
         className={`flex items-center gap-1 text-[11.5px] font-semibold uppercase tracking-[0.04em] transition-colors ${
@@ -1065,7 +1086,9 @@ function SeriesTab({ event }: { event: AppEvent }) {
             <thead>
               <tr className="border-b border-[#EAE2D0] bg-[#FAF7F1] text-left text-[11.5px] uppercase tracking-[0.04em] text-[#8A94A0]">
                 <SortableColumnHeader label="Name" sortKey="name" sort={sort} onChange={setSort} />
-                {showGrade && <th className="whitespace-nowrap px-3 py-2">Grade</th>}
+                {showGrade && (
+                  <SortableColumnHeader label="Grade" sortKey="grade" sort={sort} onChange={setSort} />
+                )}
                 <SortableColumnHeader label="Attended" sortKey="attended" sort={sort} onChange={setSort} />
                 <th className="whitespace-nowrap px-3 py-2">%</th>
                 <SortableColumnHeader label="Last attended" sortKey="last" sort={sort} onChange={setSort} />

@@ -110,19 +110,22 @@ function seriesPerson(partial: Partial<SeriesFrequencyPerson> & { profileId: str
 }
 
 describe("attachGrades", () => {
-  it("attaches a matched profile's current grade", async () => {
+  it("attaches a matched profile's current grade and its sortable ordinal", async () => {
     // profile-lily-whitfield is a real lib/mockData.ts fixture with
-    // academic_grade: "5th Grade" (SUBSPLASH_USE_MOCK defaults true in the
-    // test env, so searchProfiles reads from those fixtures).
+    // academic_grade: "5th Grade" / academic_grade_value: 7 (SUBSPLASH_USE_MOCK
+    // defaults true in the test env, so searchProfiles reads from those
+    // fixtures).
     const people = [seriesPerson({ profileId: "profile-lily-whitfield", displayName: "Lily Whitfield" })];
     const [result] = await attachGrades(people);
     expect(result.grade).toBe("5th Grade");
+    expect(result.gradeValue).toBe(7);
   });
 
-  it("gives null grade for a profile id with no match (e.g. a guest row)", async () => {
+  it("gives null grade and gradeValue for a profile id with no match (e.g. a guest row)", async () => {
     const people = [seriesPerson({ profileId: "guest:subsplash:doesnotexist", displayName: "A Visitor" })];
     const [result] = await attachGrades(people);
     expect(result.grade).toBeNull();
+    expect(result.gradeValue).toBeNull();
   });
 
   it("returns an empty array unchanged, without fetching profiles", async () => {
