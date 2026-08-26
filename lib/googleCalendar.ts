@@ -72,6 +72,19 @@ async function googleFetch<T>(path: string, init: RequestInit = {}): Promise<{ s
   return { status: res.status, data };
 }
 
+// Google's error responses shape as {"error": {"code", "message", "errors":
+// [...]}} — pulling the message out is the difference between a bare "400"
+// (which was all upsertCalendarEvent's own thrown errors carried before
+// this) and knowing whether it's e.g. an invalid RRULE, a bad time value,
+// or something else entirely.
+function errorDetail(data: unknown): string {
+  if (data && typeof data === "object" && "error" in data) {
+    const err = (data as { error?: { message?: string } }).error;
+    if (err?.message) return err.message;
+  }
+  return JSON.stringify(data);
+}
+
 // Creates the event with its (caller-supplied, deterministic) id if it
 // doesn't exist yet, else updates it in place — idempotent, with no
 // separate id-mapping table needed. Same deterministic-id-for-idempotency
@@ -85,7 +98,7 @@ export async function upsertCalendarEvent(input: GoogleCalendarEventInput): Prom
 
   const body = JSON.stringify(eventBody(input));
   const id = encodeURIComponent(input.googleEventId);
-  const { status } = await googleFetch(`/calendars/${encodeURIComponent(calendarId())}/events/${id}`, {
+  const { status, data } = await googleFetch(`/calendars/${encodeURIComponent(calendarId())}/events/${id}`, {
     method: "PUT",
     body,
   });
@@ -95,12 +108,16 @@ export async function upsertCalendarEvent(input: GoogleCalendarEventInput): Prom
       body,
     });
     if (insertRes.status >= 300) {
-      throw new Error(`Failed to create calendar event ${input.googleEventId}: ${insertRes.status}`);
+      throw new Error(
+        `Failed to create calendar event ${input.googleEventId} (${input.summary}): ${insertRes.status} ${errorDetail(insertRes.data)}`
+      );
     }
     return "created";
   }
   if (status >= 300) {
-    throw new Error(`Failed to update calendar event ${input.googleEventId}: ${status}`);
+    throw new Error(
+      `Failed to update calendar event ${input.googleEventId} (${input.summary}): ${status} ${errorDetail(data)}`
+    );
   }
   return "updated";
 }
@@ -135,12 +152,12 @@ export async function deleteCalendarEvent(googleEventId: string): Promise<void> 
     return;
   }
   const id = encodeURIComponent(googleEventId);
-  const { status } = await googleFetch(`/calendars/${encodeURIComponent(calendarId())}/events/${id}`, {
+  const { status, data } = await googleFetch(`/calendars/${encodeURIComponent(calendarId())}/events/${id}`, {
     method: "DELETE",
   });
   // 404/410 = already gone — deleting an already-deleted event is a no-op,
   // not a failure.
   if (status >= 300 && status !== 404 && status !== 410) {
-    throw new Error(`Failed to delete calendar event ${googleEventId}: ${status}`);
+    throw new Error(`Failed to delete calendar event ${googleEventId}: ${status} ${errorDetail(data)}`);
   }
 }

@@ -5,6 +5,7 @@ import {
   isPublicOneOffRaw,
   isPublicSeriesRaw,
   lastCalendarSync,
+  normalizeRruleUntil,
   oneOffToGoogleInput,
   parseDtStart,
   recurrenceLinesWithoutDtStart,
@@ -83,6 +84,30 @@ describe("parseDtStart", () => {
   });
 });
 
+describe("normalizeRruleUntil", () => {
+  it("converts a floating local UNTIL to explicit UTC (confirmed real-org failure case)", () => {
+    // Real Subsplash export line that Google Calendar rejected outright
+    // with "Invalid recurrence rule" — RFC5545 requires UNTIL to be UTC
+    // when DTSTART carries a TZID, and this omits the "Z".
+    const line = "RRULE:FREQ=WEEKLY;BYDAY=FR;UNTIL=20250523T235959";
+    // May 23 2025 is during EDT (UTC-4): 23:59:59 local -> 03:59:59 UTC the
+    // next day.
+    expect(normalizeRruleUntil(line, "America/New_York")).toBe(
+      "RRULE:FREQ=WEEKLY;BYDAY=FR;UNTIL=20250524T035959Z"
+    );
+  });
+
+  it("leaves an already-UTC UNTIL unchanged", () => {
+    const line = "RRULE:FREQ=WEEKLY;UNTIL=20250104T045959Z;BYDAY=FR";
+    expect(normalizeRruleUntil(line, "America/New_York")).toBe(line);
+  });
+
+  it("leaves an RRULE with no UNTIL at all unchanged", () => {
+    const line = "RRULE:FREQ=WEEKLY;BYDAY=SU";
+    expect(normalizeRruleUntil(line, "America/New_York")).toBe(line);
+  });
+});
+
 describe("recurrenceLinesWithoutDtStart", () => {
   it("drops the DTSTART line and keeps everything else", () => {
     const lines = [
@@ -90,9 +115,21 @@ describe("recurrenceLinesWithoutDtStart", () => {
       "RRULE:FREQ=WEEKLY;BYDAY=SU",
       "EXDATE;TZID=America/New_York:20260412T093000",
     ];
-    expect(recurrenceLinesWithoutDtStart(lines)).toEqual([
+    expect(recurrenceLinesWithoutDtStart(lines, "America/New_York")).toEqual([
       "RRULE:FREQ=WEEKLY;BYDAY=SU",
       "EXDATE;TZID=America/New_York:20260412T093000",
+    ]);
+  });
+
+  it("normalizes a floating UNTIL on the RRULE line while passing EXDATE through untouched", () => {
+    const lines = [
+      "DTSTART;TZID=America/New_York:20250425T060000",
+      "RRULE:FREQ=WEEKLY;BYDAY=FR;UNTIL=20250523T235959",
+      "EXDATE;TZID=America/New_York:20241129T060000",
+    ];
+    expect(recurrenceLinesWithoutDtStart(lines, "America/New_York")).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=FR;UNTIL=20250524T035959Z",
+      "EXDATE;TZID=America/New_York:20241129T060000",
     ]);
   });
 });
