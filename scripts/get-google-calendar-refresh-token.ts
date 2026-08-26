@@ -8,9 +8,10 @@
 // Run this ONCE, signed in as whichever Google account should own the
 // calendar edits (it needs "Make changes to events" on the target
 // calendar, via Calendar Settings → Share with specific people). It opens
-// a local server on 127.0.0.1, prints a consent URL to visit in a browser,
-// and once you approve, prints the resulting refresh_token — paste that
-// into GOOGLE_CALENDAR_REFRESH_TOKEN. Never sent anywhere but your own
+// a local server on 127.0.0.1, tries to launch the consent URL in your
+// default browser automatically (falling back to just printing it if that
+// fails), and once you approve, prints the resulting refresh_token — paste
+// that into GOOGLE_CALENDAR_REFRESH_TOKEN. Never sent anywhere but your own
 // terminal and Google's own token endpoint.
 //
 // Usage:
@@ -25,6 +26,17 @@
 // port, which is what lets this script listen on an arbitrary local port.
 
 import { createServer } from "node:http";
+import { execFile } from "node:child_process";
+
+// Best-effort only — some environments (headless/CI, an unrecognized
+// platform, no default browser configured) can't open one at all, and the
+// printed URL right above this call is always the real fallback.
+function tryOpenBrowser(url: string): void {
+  const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+  execFile(opener, [url], () => {
+    // Ignore failures — the URL is already printed above for manual use.
+  });
+}
 
 const SCOPE = "https://www.googleapis.com/auth/calendar.events";
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -92,6 +104,7 @@ function waitForAuthorizationCode(clientId: string): Promise<{ code: string; red
       console.log("\nOpen this URL, sign in as the Google account that should own the calendar edits, and approve access:\n");
       console.log(authUrl.toString());
       console.log(`\nWaiting for you to finish sign-in (listening on ${redirectUri})...\n`);
+      tryOpenBrowser(authUrl.toString());
     });
   });
 }
