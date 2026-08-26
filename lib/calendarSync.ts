@@ -173,10 +173,57 @@ export function parseDtStart(repetitionRules: string[]): DtStartParts | null {
   return null;
 }
 
+const RRULE_UNTIL = /(UNTIL=)(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)/;
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+// RFC5545 §3.3.10: when DTSTART carries a timezone (as every real series'
+// does here), RRULE's UNTIL value MUST be specified as explicit UTC (a
+// trailing "Z"). Confirmed against the live org: Subsplash's own
+// repetition_rules export almost always omits it (a "floating local"
+// UNTIL — e.g. "UNTIL=20250523T235959", no Z) — Google Calendar's RRULE
+// validator strictly enforces the RFC and rejects the whole event with
+// "Invalid recurrence rule" for every series whose export omits it, while
+// the `rrule` npm library this app already uses for its own occurrence
+// expansion (lib/recurrence.ts) tolerates the missing Z without complaint.
+// Converts the local wall-clock UNTIL value to a true UTC instant via the
+// same zonedWallTimeToUtc DTSTART already uses, rather than naively
+// appending "Z" to the local digits — which would silently shift the
+// cutoff by the timezone's UTC offset instead of just labeling it
+// correctly. Already-UTC UNTIL values (or an RRULE with no UNTIL at all)
+// pass through unchanged.
+export function normalizeRruleUntil(rruleLine: string, timeZone: string): string {
+  const m = RRULE_UNTIL.exec(rruleLine);
+  if (!m || m[8] === "Z") return rruleLine;
+  const [full, prefix, year, month, day, hour, minute, second] = m;
+  const utc = zonedWallTimeToUtc(
+    Number(year),
+    Number(month),
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+    timeZone
+  );
+  const replacement =
+    `${prefix}${utc.getUTCFullYear()}${pad2(utc.getUTCMonth() + 1)}${pad2(utc.getUTCDate())}` +
+    `T${pad2(utc.getUTCHours())}${pad2(utc.getUTCMinutes())}${pad2(utc.getUTCSeconds())}Z`;
+  return rruleLine.slice(0, m.index) + replacement + rruleLine.slice(m.index + full.length);
+}
+
 // Google's `recurrence` field wants RRULE/EXDATE/RDATE lines only — DTSTART
 // is expressed via the event's own `start` instead (see parseDtStart above).
-export function recurrenceLinesWithoutDtStart(repetitionRules: string[]): string[] {
-  return repetitionRules.filter((line) => !line.startsWith("DTSTART"));
+// The RRULE line's UNTIL (if any) is normalized to UTC — see
+// normalizeRruleUntil. EXDATE lines are left as-is: RFC5545 only mandates
+// UTC for UNTIL specifically, and our EXDATE lines already carry their own
+// TZID parameter matching DTSTART's, which is what the spec actually
+// requires there.
+export function recurrenceLinesWithoutDtStart(repetitionRules: string[], timeZone: string): string[] {
+  return repetitionRules
+    .filter((line) => !line.startsWith("DTSTART"))
+    .map((line) => (line.startsWith("RRULE") ? normalizeRruleUntil(line, timeZone) : line));
 }
 
 // Previously-synced Google event ids that aren't in the current public set
@@ -222,7 +269,7 @@ export function seriesToGoogleInput(s: PublicSeries): GoogleCalendarEventInput |
     description: s.description,
     start: { dateTime: startUtc.toISOString(), timeZone: s.timezone },
     end: { dateTime: endUtc.toISOString(), timeZone: s.timezone },
-    recurrence: recurrenceLinesWithoutDtStart(s.repetitionRules),
+    recurrence: recurrenceLinesWithoutDtStart(s.repetitionRules, s.timezone),
   };
 }
 
@@ -379,12 +426,32 @@ export async function lastCalendarSync(): Promise<CalendarSyncRun | null> {
   return runs.slice().sort((a, b) => b.ranAt.localeCompare(a.ranAt))[0];
 }
 
+// Joins per-event failure messages into calendar_syncs.error (one text
+// column) without letting a pathological run (many bad events) blow it up
+// — same "show the first several, then a count" idea as truncating a long
+// unmatched-names list.
+function summarizeFailures(failures: string[]): string | null {
+  if (failures.length === 0) return null;
+  const MAX_SHOWN = 5;
+  const shown = failures.slice(0, MAX_SHOWN).join("; ");
+  const remaining = failures.length - MAX_SHOWN;
+  return remaining > 0 ? `${shown}; and ${remaining} more` : shown;
+}
+
 // The sync itself: fetch every public one-off event and public series from
 // Subsplash, upsert each onto the calendar (idempotent — see
 // googleEventIdFor), then prune anything previously synced that's no longer
 // in the current public set. Never throws — a failure is recorded as a
 // run with `error` set, same as lib/attendanceImport.ts's importOccurrence,
 // so the button can always show *something* happened rather than a raw 500.
+//
+// One bad event doesn't sink the whole run — each upsert/delete is
+// try/caught individually and its failure collected, same "one bad
+// occurrence doesn't stop the rest" philosophy as
+// scripts/sync-subsplash-attendance.ts's postAndReportAll. Confirmed this
+// matters in practice: a single malformed event previously aborted the
+// entire sync, reporting 0 created/updated even though hundreds of others
+// would have succeeded.
 export async function syncPublicEventsToCalendar(): Promise<CalendarSyncRun> {
   try {
     const [oneOff, series] = await Promise.all([fetchAllPublicOneOffEvents(), fetchAllPublicSeries()]);
@@ -392,29 +459,47 @@ export async function syncPublicEventsToCalendar(): Promise<CalendarSyncRun> {
       ...oneOff.map(oneOffToGoogleInput),
       ...series.map(seriesToGoogleInput).filter((x): x is GoogleCalendarEventInput => x !== null),
     ];
+    // The full desired set, regardless of whether each upsert below actually
+    // succeeds — pruning must never delete an event just because it hit a
+    // transient error this run; only because it's genuinely no longer part
+    // of what should exist.
+    const desiredIds = new Set(inputs.map((i) => i.googleEventId));
 
+    const failures: string[] = [];
     let created = 0;
     let updated = 0;
-    const currentIds = new Set<string>();
     for (const input of inputs) {
-      const result = await upsertCalendarEvent(input);
-      if (result === "created") created++;
-      else updated++;
-      currentIds.add(input.googleEventId);
+      try {
+        const result = await upsertCalendarEvent(input);
+        if (result === "created") created++;
+        else updated++;
+      } catch (err) {
+        failures.push(err instanceof Error ? err.message : String(err));
+      }
     }
 
-    const previouslySynced = await listSyncedCalendarEventIds();
-    const stale = staleEventIds(currentIds, previouslySynced);
-    for (const id of stale) {
-      await deleteCalendarEvent(id);
+    let deletedCount = 0;
+    try {
+      const previouslySynced = await listSyncedCalendarEventIds();
+      const stale = staleEventIds(desiredIds, previouslySynced);
+      for (const id of stale) {
+        try {
+          await deleteCalendarEvent(id);
+          deletedCount++;
+        } catch (err) {
+          failures.push(err instanceof Error ? err.message : String(err));
+        }
+      }
+    } catch (err) {
+      failures.push(err instanceof Error ? err.message : String(err));
     }
 
     return await recordSyncRun({
       eventsSeen: inputs.length,
       eventsCreated: created,
       eventsUpdated: updated,
-      eventsDeleted: stale.length,
-      error: null,
+      eventsDeleted: deletedCount,
+      error: summarizeFailures(failures),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
