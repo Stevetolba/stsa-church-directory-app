@@ -342,6 +342,11 @@ export interface SeriesFrequencyPerson {
   // below runs; null after it runs for someone with no grade on file (an
   // adult, or a guest row with no real Subsplash profile to look up).
   grade?: string | null;
+  // academic_grade's numeric ordinal (lib/grades.ts's GRADE_LEVELS scale:
+  // Pre-K=1 ... 12th=14) — grade itself ("Pre-K", "3rd", …) doesn't sort
+  // meaningfully as a string, so the Series report's "sort by grade" uses
+  // this instead. Same null/undefined semantics as grade.
+  gradeValue?: number | null;
 }
 
 export interface SeriesFrequencyResult {
@@ -395,8 +400,15 @@ export function summarizeSeriesFrequency(
 export async function attachGrades(people: SeriesFrequencyPerson[]): Promise<SeriesFrequencyPerson[]> {
   if (people.length === 0) return people;
   const { profiles } = await searchProfiles({ pageSize: FULL_ROSTER_PAGE_SIZE });
-  const gradeById = new Map(profiles.map((p) => [p.id, p.academic_grade ?? null]));
-  return people.map((p) => ({ ...p, grade: gradeById.get(p.profileId) ?? null }));
+  const byId = new Map(profiles.map((p) => [p.id, p]));
+  return people.map((p) => {
+    const profile = byId.get(p.profileId);
+    return {
+      ...p,
+      grade: profile?.academic_grade ?? null,
+      gradeValue: profile?.academic_grade_value ?? null,
+    };
+  });
 }
 
 // Pure set difference — the roster members with zero check-ins across the
