@@ -96,6 +96,17 @@ places. This is a manual, admin-triggered push — Subsplash → Google, one way
 - **`calendar_syncs`** table (mirrors `attendance_imports`): one row per
   sync attempt — `ranAt`, `eventsSeen`, `eventsCreated`, `eventsUpdated`,
   `eventsDeleted`, `error` — feeding the Events page's status line.
+- **Also runs automatically once a day**, via a Vercel Cron Job
+  (`vercel.json`'s `crons`, `GET /api/cron/calendar-sync`, schedule
+  `0 8 * * *` — roughly 3-4am US Eastern depending on DST, chosen as a quiet
+  hour). A cron invocation has no admin browser session, so this is a
+  separate route from the admin button's `POST /api/events/sync-calendar` —
+  authorized instead via `CRON_SECRET` (`lib/cronAuth.ts`), the shared
+  secret Vercel automatically attaches as `Authorization: Bearer
+  <CRON_SECRET>` on requests it makes to a configured cron path. Same
+  timing-safe bearer-token-compare shape as `lib/attendanceImportAuth.ts`.
+  Vercel Hobby plan caps cron jobs at once per day; more frequent scheduling
+  would require Pro.
 
 ## Consequences
 
@@ -107,8 +118,9 @@ places. This is a manual, admin-triggered push — Subsplash → Google, one way
 - No location on synced events (v1): Subsplash's `Event.location` is only an
   id reference requiring a separate Locations fetch this feature doesn't do
   yet. Title, time, and description are enough value to start with.
-- Sync freshness is only as good as the last manual click — there's no
-  schedule. Acceptable per the explicit ask: a button, not automation.
+- Sync freshness is at most a day stale (the cron cadence) between manual
+  button clicks — acceptable for a public calendar mirror; nothing here
+  needs to reflect a Subsplash edit within minutes.
 - Reading `visibility`/`description_text`/`repetition_rules` for *all*
   events (not just `check_in_enabled` ones) required a fetch path of its own
   in `lib/calendarSync.ts`, independent of `lib/events.ts`'s `listEvents`
