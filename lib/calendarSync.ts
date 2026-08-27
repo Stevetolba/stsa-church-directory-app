@@ -2,17 +2,17 @@
 // STSA Church Public Google Calendar (ADR-0022). Triggered by an admin-only
 // button on the Events page — not scheduled/automatic.
 //
-// Scoped to just the "Service Schedule" Subsplash calendar (Liturgy,
-// Vespers, Confession, Sunday School, The Well, …) — confirmed against the
-// live org's /events/v2/calendars: this org has 4 calendars total
-// ("Upcoming Events", "Service Schedule", "Children & Youth Calendar",
-// "Community Impact Events"), and only Service Schedule is "the church
-// service calendar" the public Google Calendar is meant to mirror. An
-// event/series not in it is excluded even if otherwise public — and the
-// existing prune-stale-events logic (SYNC_SOURCE_TAG, lib/googleCalendar.ts)
-// means a previously-synced event from any other calendar is removed from
-// Google Calendar the next time this runs, with no separate cleanup step
-// needed.
+// Scoped to three Subsplash calendars — confirmed against the live org's
+// /events/v2/calendars (this org has 4 calendars total): "Service Schedule"
+// (Liturgy, Vespers, Confession, Sunday School, The Well, …), "Upcoming
+// Events" (general parish events), and "Community Impact Events". The
+// fourth, "Children & Youth Calendar", is deliberately left out — not
+// requested. An event/series belonging to none of these is excluded even
+// if otherwise public — and the existing prune-stale-events logic
+// (SYNC_SOURCE_TAG, lib/googleCalendar.ts) means a previously-synced event
+// that no longer belongs to any of them (e.g. moved to Children & Youth) is
+// removed from Google Calendar the next time this runs, with no separate
+// cleanup step needed.
 //
 // A repeating series syncs as ONE native Google Calendar recurring event,
 // not one event per occurrence: Subsplash already exposes a series' schedule
@@ -50,11 +50,13 @@ const USE_MOCK_SUBSPLASH_DATA = process.env.SUBSPLASH_USE_MOCK !== "false";
 const MAX_SUBSPLASH_PAGE_SIZE = 100;
 const MAX_SUBSPLASH_PAGES = 200;
 
-// The "Service Schedule" Subsplash calendar id — confirmed against the live
-// org's /events/v2/calendars (title "Service Schedule", subtitle "Liturgy,
-// Vespers, Confession, Sunday School, The Well..."). The only calendar this
-// sync pulls from; see the module comment above.
-const SERVICE_CALENDAR_ID = "8f5f3a9c-6384-46bb-9565-1e05341faed7";
+// The Subsplash calendar ids this sync pulls from — confirmed against the
+// live org's /events/v2/calendars; see the module comment above.
+const SYNCED_CALENDAR_IDS = new Set([
+  "8f5f3a9c-6384-46bb-9565-1e05341faed7", // Service Schedule
+  "4dfeda2e-d3e6-4c8b-9d20-e5730f4bec2a", // Upcoming Events
+  "3ea2874c-94ca-402e-94c0-cb5e6f249bcb", // Community Impact Events
+]);
 
 // --- Raw Subsplash shapes (only the fields this feature needs — confirmed
 // against the live org; see docs/adr/0022-google-calendar-sync.md) ---
@@ -121,11 +123,11 @@ export function isPublicOneOffRaw(raw: { status?: string; visibility?: string })
   return raw.status === "published" && raw.visibility === "public";
 }
 
-// Whether a raw event/series' embedded calendars include the Service
-// Schedule calendar (SERVICE_CALENDAR_ID) — an event can belong to more
-// than one Subsplash calendar, so this checks membership, not exclusivity.
-export function belongsToServiceCalendar(calendars: RawCalendarRef[] | undefined): boolean {
-  return (calendars ?? []).some((c) => c.id === SERVICE_CALENDAR_ID);
+// Whether a raw event/series' embedded calendars include at least one of
+// SYNCED_CALENDAR_IDS — an event can belong to more than one Subsplash
+// calendar, so this checks membership, not exclusivity.
+export function belongsToSyncedCalendar(calendars: RawCalendarRef[] | undefined): boolean {
+  return (calendars ?? []).some((c) => SYNCED_CALENDAR_IDS.has(c.id));
 }
 
 export function isPublicSeriesRaw(raw: { visibility?: string; published_at?: string | null }): boolean {
@@ -322,7 +324,7 @@ async function fetchAllPublicOneOffEvents(): Promise<PublicOneOffEvent[]> {
       // including its individual occurrences here too would duplicate it.
       if (e._embedded?.["repeating-event"]?.id) continue;
       if (!isPublicOneOffRaw(e) || !e.start_at) continue;
-      if (!belongsToServiceCalendar(e._embedded?.calendars)) continue;
+      if (!belongsToSyncedCalendar(e._embedded?.calendars)) continue;
       results.push({
         id: e.id,
         title: e.title ?? "Untitled event",
@@ -351,7 +353,7 @@ async function fetchAllPublicSeries(): Promise<PublicSeries[]> {
     const raw = data._embedded?.["repeating-events"] ?? [];
     for (const s of raw) {
       if (!isPublicSeriesRaw(s)) continue;
-      if (!belongsToServiceCalendar(s._embedded?.calendars)) continue;
+      if (!belongsToSyncedCalendar(s._embedded?.calendars)) continue;
       const repetitionRules = s.repetition_rules ?? [];
       if (repetitionRules.length === 0) continue;
       results.push({
