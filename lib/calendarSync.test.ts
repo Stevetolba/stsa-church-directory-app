@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  belongsToServiceCalendar,
+  belongsToSyncedCalendar,
   googleEventIdFor,
   isPublicOneOffRaw,
   isPublicSeriesRaw,
@@ -16,9 +16,12 @@ import {
   type PublicSeries,
 } from "./calendarSync";
 
-// The real Service Schedule calendar id (confirmed against the live org —
-// see the module comment in calendarSync.ts).
+// The real synced calendar ids (confirmed against the live org — see the
+// module comment in calendarSync.ts).
 const SERVICE_CALENDAR_ID = "8f5f3a9c-6384-46bb-9565-1e05341faed7";
+const UPCOMING_EVENTS_CALENDAR_ID = "4dfeda2e-d3e6-4c8b-9d20-e5730f4bec2a";
+const COMMUNITY_IMPACT_CALENDAR_ID = "3ea2874c-94ca-402e-94c0-cb5e6f249bcb";
+const CHILDREN_YOUTH_CALENDAR_ID = "dc83104b-0d48-4d0b-bc11-2bdc8354f3dd"; // NOT synced
 
 describe("isPublicOneOffRaw", () => {
   it("requires both published status and public visibility", () => {
@@ -37,16 +40,19 @@ describe("isPublicSeriesRaw", () => {
   });
 });
 
-describe("belongsToServiceCalendar", () => {
-  it("is true when the Service Schedule calendar is among the embedded calendars", () => {
-    expect(belongsToServiceCalendar([{ id: SERVICE_CALENDAR_ID }])).toBe(true);
-    expect(belongsToServiceCalendar([{ id: "some-other-calendar" }, { id: SERVICE_CALENDAR_ID }])).toBe(true);
+describe("belongsToSyncedCalendar", () => {
+  it("is true when any of Service Schedule, Upcoming Events, or Community Impact is among the embedded calendars", () => {
+    expect(belongsToSyncedCalendar([{ id: SERVICE_CALENDAR_ID }])).toBe(true);
+    expect(belongsToSyncedCalendar([{ id: UPCOMING_EVENTS_CALENDAR_ID }])).toBe(true);
+    expect(belongsToSyncedCalendar([{ id: COMMUNITY_IMPACT_CALENDAR_ID }])).toBe(true);
+    expect(belongsToSyncedCalendar([{ id: "some-other-calendar" }, { id: SERVICE_CALENDAR_ID }])).toBe(true);
   });
 
-  it("is false when it isn't, or when no calendars are embedded at all", () => {
-    expect(belongsToServiceCalendar([{ id: "some-other-calendar" }])).toBe(false);
-    expect(belongsToServiceCalendar([])).toBe(false);
-    expect(belongsToServiceCalendar(undefined)).toBe(false);
+  it("is false for Children & Youth (deliberately excluded), an unrelated calendar, or no calendars at all", () => {
+    expect(belongsToSyncedCalendar([{ id: CHILDREN_YOUTH_CALENDAR_ID }])).toBe(false);
+    expect(belongsToSyncedCalendar([{ id: "some-other-calendar" }])).toBe(false);
+    expect(belongsToSyncedCalendar([])).toBe(false);
+    expect(belongsToSyncedCalendar(undefined)).toBe(false);
   });
 });
 

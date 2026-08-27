@@ -16,19 +16,19 @@ places. This is a manual, admin-triggered push — Subsplash → Google, one way
 
 - **Trigger:** a "Sync to Google Calendar" button on the Events page,
   admin-only (`requireAdmin`), calling `POST /api/events/sync-calendar`.
-- **Scoped to the "Service Schedule" Subsplash calendar only.** Confirmed
-  against the live org's `/events/v2/calendars`: this org has 4 calendars
-  ("Upcoming Events", "Service Schedule", "Children & Youth Calendar",
-  "Community Impact Events"), and only Service Schedule (subtitle "Liturgy,
-  Vespers, Confession, Sunday School, The Well...") is the church service
-  calendar the public Google Calendar is meant to mirror — the other 3 cover
-  general announcements, youth-specific events, and outreach, none of which
-  belong on a "when are services" public calendar. `belongsToServiceCalendar`
+- **Scoped to three of the four Subsplash calendars.** Confirmed against the
+  live org's `/events/v2/calendars`: this org has 4 calendars ("Upcoming
+  Events", "Service Schedule", "Children & Youth Calendar", "Community
+  Impact Events"). Synced: Service Schedule (subtitle "Liturgy, Vespers,
+  Confession, Sunday School, The Well..."), Upcoming Events (general parish
+  events), and Community Impact Events (outreach). "Children & Youth
+  Calendar" is deliberately excluded — not requested. `belongsToSyncedCalendar`
   in `lib/calendarSync.ts` checks each event/series' embedded `calendars`
-  (fetched via `include=calendars`) against the pinned calendar id. Combined
-  with the existing prune-stale-events behavior, narrowing this filter
-  automatically removes anything already synced from a different calendar on
-  the next run — no separate cleanup step was needed.
+  (fetched via `include=calendars`) against the pinned set of calendar ids.
+  Combined with the existing prune-stale-events behavior, narrowing this
+  filter automatically removes anything already synced from a calendar
+  that's since fallen outside the set on the next run — no separate cleanup
+  step was needed.
 - **"Public"** means `status === "published" && visibility === "public"` for
   a one-off Subsplash event, or `visibility === "public" && published_at`
   for a repeating series (confirmed against the live org: a `RepeatingEvent`
