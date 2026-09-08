@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import type { Campus, MemberStatus } from "@/types/profile";
-import type { ProfileSearchResult, SearchProfilesParams } from "@/lib/subsplash";
+import type { ChildrenFilter, ProfileSearchResult, SearchProfilesParams } from "@/lib/subsplash";
 
 export interface UsePeopleParams {
   search?: string;
@@ -16,6 +16,7 @@ export interface UsePeopleParams {
   // can't sanely paginate a chronological list) can ask for a bigger page —
   // capped server-side the same way CSV export already is.
   pageSize?: number;
+  withChildren?: ChildrenFilter;
 }
 
 async function fetcher(url: string): Promise<ProfileSearchResult> {
@@ -35,6 +36,7 @@ export function usePeople({
   sortBy,
   page = 1,
   pageSize,
+  withChildren,
 }: UsePeopleParams) {
   const params = new URLSearchParams();
   if (search) params.set("search", search);
@@ -44,6 +46,13 @@ export function usePeople({
   if (gradeTo !== undefined) params.set("gradeTo", String(gradeTo));
   if (sortBy) params.set("sortBy", sortBy);
   if (pageSize !== undefined) params.set("pageSize", String(pageSize));
+  if (withChildren) {
+    params.set("childrenMode", withChildren.mode);
+    if (withChildren.gradeFrom !== undefined) params.set("childGradeFrom", String(withChildren.gradeFrom));
+    if (withChildren.gradeTo !== undefined) params.set("childGradeTo", String(withChildren.gradeTo));
+    if (withChildren.ageFrom !== undefined) params.set("childAgeFrom", String(withChildren.ageFrom));
+    if (withChildren.ageTo !== undefined) params.set("childAgeTo", String(withChildren.ageTo));
+  }
   params.set("page", String(page));
 
   const { data, error, isLoading } = useSWR<ProfileSearchResult>(

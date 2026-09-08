@@ -15,7 +15,7 @@ import { EmailPeopleDialog } from "@/components/EmailPeopleDialog";
 import { usePeople } from "@/hooks/usePeople";
 import { GRADE_LEVELS } from "@/lib/grades";
 import { downloadCsv, PROFILE_EXPORT_COLUMNS, profileToExportRow, toCsv } from "@/lib/csv";
-import type { ProfileSearchResult, SearchProfilesParams } from "@/lib/subsplash";
+import type { ChildrenFilter, ChildrenFilterMode, ProfileSearchResult, SearchProfilesParams } from "@/lib/subsplash";
 import type { Campus, MemberStatus } from "@/types/profile";
 
 // "People", not "Members" — the section covers every status (Visitor,
@@ -43,9 +43,25 @@ const CAMPUS_OPTIONS: Campus[] = ["Arlington", "Leesburg"];
 // in-memory scan (lib/subsplash.ts's searchProfiles pageSize cap).
 const SHOW_ALL_PAGE_SIZE = 5000;
 
-type FilterKey = "status" | "campus" | "grade";
-const ALL_FILTER_KEYS: FilterKey[] = ["status", "campus", "grade"];
-const FILTER_LABELS: Record<FilterKey, string> = { status: "Status", campus: "Campus", grade: "Grade" };
+// Same domain the Children page's own Age filter uses — wide enough to
+// cover Pre-K through a graduated senior.
+const MIN_CHILD_AGE = 0;
+const MAX_CHILD_AGE = 25;
+
+type FilterKey = "status" | "campus" | "grade" | "children";
+const ALL_FILTER_KEYS: FilterKey[] = ["status", "campus", "grade", "children"];
+const FILTER_LABELS: Record<FilterKey, string> = {
+  status: "Status",
+  campus: "Campus",
+  grade: "Grade",
+  children: "Adults with Children",
+};
+
+const CHILDREN_MODE_OPTIONS: Array<{ value: ChildrenFilterMode; label: string }> = [
+  { value: "grade", label: "Grade" },
+  { value: "age", label: "Age" },
+  { value: "all", label: "All" },
+];
 
 interface PeoplePreset {
   campus: Campus;
@@ -80,6 +96,30 @@ function summarizeGrade(gradeFrom?: number, gradeTo?: number): string {
   return "Grade";
 }
 
+function summarizeChildren(
+  mode: ChildrenFilterMode | null,
+  gradeFrom?: number,
+  gradeTo?: number,
+  ageFrom?: number,
+  ageTo?: number
+): string {
+  if (!mode) return "Adults with Children";
+  if (mode === "all") return "Adults with Children";
+  if (mode === "grade") {
+    const from = GRADE_LEVELS.find((g) => g.value === gradeFrom)?.label;
+    const to = GRADE_LEVELS.find((g) => g.value === gradeTo)?.label;
+    if (from && to) return `Adults with children in ${from} – ${to}`;
+    if (from) return `Adults with children in ${from}+`;
+    if (to) return `Adults with children up to ${to}`;
+    return "Adults with children in any grade";
+  }
+  // mode === "age"
+  if (ageFrom !== undefined && ageTo !== undefined) return `Adults with children ages ${ageFrom} – ${ageTo}`;
+  if (ageFrom !== undefined) return `Adults with children ages ${ageFrom}+`;
+  if (ageTo !== undefined) return `Adults with children up to age ${ageTo}`;
+  return "Adults with children of any age";
+}
+
 export function PeoplePageClient({
   user,
   fromAddress,
@@ -98,6 +138,21 @@ export function PeoplePageClient({
   const gradeToRaw = searchParams.get("gradeTo");
   const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
   const gradeTo = gradeToRaw ? Number(gradeToRaw) : undefined;
+  const childrenModeRaw = searchParams.get("childrenMode");
+  const childrenMode = CHILDREN_MODE_OPTIONS.some((o) => o.value === childrenModeRaw)
+    ? (childrenModeRaw as ChildrenFilterMode)
+    : null;
+  const childGradeFromRaw = searchParams.get("childGradeFrom");
+  const childGradeToRaw = searchParams.get("childGradeTo");
+  const childGradeFrom = childGradeFromRaw ? Number(childGradeFromRaw) : undefined;
+  const childGradeTo = childGradeToRaw ? Number(childGradeToRaw) : undefined;
+  const childAgeFromRaw = searchParams.get("childAgeFrom");
+  const childAgeToRaw = searchParams.get("childAgeTo");
+  const childAgeFrom = childAgeFromRaw ? Number(childAgeFromRaw) : undefined;
+  const childAgeTo = childAgeToRaw ? Number(childAgeToRaw) : undefined;
+  const withChildren: ChildrenFilter | undefined = childrenMode
+    ? { mode: childrenMode, gradeFrom: childGradeFrom, gradeTo: childGradeTo, ageFrom: childAgeFrom, ageTo: childAgeTo }
+    : undefined;
   const sortBy =
     (searchParams.get("sortBy") as NonNullable<SearchProfilesParams["sortBy"]> | null) ?? "last_name";
   const page = Number(searchParams.get("page") ?? "1");
@@ -112,6 +167,7 @@ export function PeoplePageClient({
     sortBy,
     page: showAll ? 1 : page,
     pageSize: showAll ? SHOW_ALL_PAGE_SIZE : undefined,
+    withChildren,
   });
 
   // Dimensions with a real value are always "active" (so reloading a filtered
@@ -124,9 +180,15 @@ export function PeoplePageClient({
   if (status.length > 0) activeFilters.add("status");
   if (campus.length > 0) activeFilters.add("campus");
   if (gradeFrom !== undefined || gradeTo !== undefined) activeFilters.add("grade");
+  if (childrenMode !== null) activeFilters.add("children");
 
   const hasActiveFilter =
-    !!search || status.length > 0 || campus.length > 0 || gradeFrom !== undefined || gradeTo !== undefined;
+    !!search ||
+    status.length > 0 ||
+    campus.length > 0 ||
+    gradeFrom !== undefined ||
+    gradeTo !== undefined ||
+    childrenMode !== null;
   const [isExporting, setIsExporting] = useState(false);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
 
@@ -141,6 +203,13 @@ export function PeoplePageClient({
       campus.forEach((c) => params.append("campus", c));
       if (gradeFrom !== undefined) params.set("gradeFrom", String(gradeFrom));
       if (gradeTo !== undefined) params.set("gradeTo", String(gradeTo));
+      if (childrenMode) {
+        params.set("childrenMode", childrenMode);
+        if (childGradeFrom !== undefined) params.set("childGradeFrom", String(childGradeFrom));
+        if (childGradeTo !== undefined) params.set("childGradeTo", String(childGradeTo));
+        if (childAgeFrom !== undefined) params.set("childAgeFrom", String(childAgeFrom));
+        if (childAgeTo !== undefined) params.set("childAgeTo", String(childAgeTo));
+      }
       params.set("sortBy", sortBy);
       params.set("pageSize", "5000");
       const res = await fetch(`/api/profiles?${params.toString()}`);
@@ -194,13 +263,33 @@ export function PeoplePageClient({
     if (openFilter === key) setOpenFilter(null);
     if (key === "status") updateParams({ status: null, page: null });
     else if (key === "campus") updateParams({ campus: null, page: null });
-    else updateParams({ gradeFrom: null, gradeTo: null, page: null });
+    else if (key === "grade") updateParams({ gradeFrom: null, gradeTo: null, page: null });
+    else
+      updateParams({
+        childrenMode: null,
+        childGradeFrom: null,
+        childGradeTo: null,
+        childAgeFrom: null,
+        childAgeTo: null,
+        page: null,
+      });
   }
 
   function handleClearAll() {
     setManuallyAdded(new Set());
     setOpenFilter(null);
-    updateParams({ status: null, campus: null, gradeFrom: null, gradeTo: null, page: null });
+    updateParams({
+      status: null,
+      campus: null,
+      gradeFrom: null,
+      gradeTo: null,
+      childrenMode: null,
+      childGradeFrom: null,
+      childGradeTo: null,
+      childAgeFrom: null,
+      childAgeTo: null,
+      page: null,
+    });
   }
 
   // A suggested filter fully sets Status + Campus to its exact values
@@ -366,6 +455,106 @@ export function PeoplePageClient({
             </FilterPill>
           )}
 
+          {activeFilters.has("children") && (
+            <FilterPill
+              label={summarizeChildren(childrenMode, childGradeFrom, childGradeTo, childAgeFrom, childAgeTo)}
+              active={childrenMode !== null}
+              open={openFilter === "children"}
+              onOpenChange={(open) => setOpenFilter(open ? "children" : null)}
+              onRemove={() => handleRemoveFilter("children")}
+            >
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1.5">
+                  {CHILDREN_MODE_OPTIONS.map((option) => (
+                    <label
+                      key={option.value}
+                      className="flex cursor-pointer items-center gap-2 text-[13.5px] text-brand-navy"
+                    >
+                      <input
+                        type="radio"
+                        name="childrenMode"
+                        checked={childrenMode === option.value}
+                        onChange={() => updateParams({ childrenMode: option.value, page: null })}
+                        className="h-4 w-4 border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+
+                {childrenMode === "grade" && (
+                  <div className="flex flex-col gap-3 border-t border-[#E5DCC8] pt-3">
+                    <div>
+                      <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                        Min
+                      </label>
+                      <select
+                        value={childGradeFromRaw ?? ""}
+                        onChange={(e) => updateParams({ childGradeFrom: e.target.value || null, page: null })}
+                        className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                      >
+                        <option value="">None</option>
+                        {GRADE_LEVELS.map((grade) => (
+                          <option key={grade.value} value={grade.value}>
+                            {grade.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                        Max
+                      </label>
+                      <select
+                        value={childGradeToRaw ?? ""}
+                        onChange={(e) => updateParams({ childGradeTo: e.target.value || null, page: null })}
+                        className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                      >
+                        <option value="">None</option>
+                        {GRADE_LEVELS.map((grade) => (
+                          <option key={grade.value} value={grade.value}>
+                            {grade.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {childrenMode === "age" && (
+                  <div className="flex flex-col gap-3 border-t border-[#E5DCC8] pt-3">
+                    <div>
+                      <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                        Min
+                      </label>
+                      <input
+                        type="number"
+                        min={MIN_CHILD_AGE}
+                        max={MAX_CHILD_AGE}
+                        value={childAgeFromRaw ?? ""}
+                        onChange={(e) => updateParams({ childAgeFrom: e.target.value || null, page: null })}
+                        className="w-full rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                        Max
+                      </label>
+                      <input
+                        type="number"
+                        min={MIN_CHILD_AGE}
+                        max={MAX_CHILD_AGE}
+                        value={childAgeToRaw ?? ""}
+                        onChange={(e) => updateParams({ childAgeTo: e.target.value || null, page: null })}
+                        className="w-full rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </FilterPill>
+          )}
+
           <AddFilterMenu
             options={ALL_FILTER_KEYS.filter((key) => !activeFilters.has(key)).map((key) => ({
               key,
@@ -468,7 +657,7 @@ export function PeoplePageClient({
         onOpenChange={setEmailDialogOpen}
         user={user}
         fromAddress={fromAddress}
-        filters={{ search, status, campus, gradeFrom, gradeTo }}
+        filters={{ search, status, campus, gradeFrom, gradeTo, withChildren }}
         matchCount={total}
       />
     </div>
