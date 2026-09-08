@@ -21,13 +21,12 @@ function isWorkspaceEmail(email: string): boolean {
   return !!WORKSPACE_DOMAIN && email.toLowerCase().endsWith(`@${WORKSPACE_DOMAIN}`);
 }
 
-// ADR-0010: three tiers. Admins (ADMIN_EMAILS) can write; workspace-domain
-// staff and personal-email volunteers are both read-only, distinguished so
-// the UI can label them and so volunteers could be restricted further later.
-// This only assigns a role to an already-authorized user — the signIn gate
-// (lib/auth.ts) decides who is allowed in at all.
+// Every church Workspace account (@stsa.church) is admin, same as anyone
+// explicitly listed in ADMIN_EMAILS — there's no separate read-only staff
+// tier anymore. Personal-email volunteers (ADR-0010) remain the only
+// non-admin tier. This only assigns a role to an already-authorized user —
+// the signIn gate (lib/auth.ts) decides who is allowed in at all.
 export function resolveRole(email: string): Role {
-  if (isAdminEmail(email)) return "admin";
-  if (isWorkspaceEmail(email)) return "staff";
+  if (isAdminEmail(email) || isWorkspaceEmail(email)) return "admin";
   return "volunteer";
 }
