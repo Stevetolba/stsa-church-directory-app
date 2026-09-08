@@ -313,17 +313,17 @@ export interface ListEventsParams {
 }
 
 // All events matching the filters, sorted by start_at ascending. Filtering is
-// in memory (ADR-0004) since ListEventsV2 exposes no query params. This whole
-// module backs only the check-in surfaces (app/api/events), so events without
-// check-in toggled on in Subsplash are excluded — there's nothing to do with
-// them here.
+// in memory (ADR-0004) since ListEventsV2 exposes no query params. Backs the
+// Events page's full agenda (app/api/events) — every event shows here
+// regardless of whether check-in is toggled on for it in Subsplash;
+// listSeries() below is the one caller that still needs check-in-enabled
+// series specifically (for attendance reports) and filters for that itself.
 export async function listEvents(params: ListEventsParams = {}): Promise<AppEvent[]> {
   const { from, to, search, includeDrafts = false } = params;
   const needle = search?.trim().toLowerCase();
   const all = await allEvents();
   return all
     .filter((e) => {
-      if (!e.check_in_enabled) return false;
       if (!includeDrafts && e.status === "draft") return false;
       if (from && e.occurrence_date < from) return false;
       if (to && e.occurrence_date > to) return false;
@@ -445,7 +445,7 @@ export interface SeriesSummary {
 // Subsplash's own "source" field to be "repeating" on every materialized
 // occurrence. ADR-0015 Phase 4.
 export async function listSeries(): Promise<SeriesSummary[]> {
-  const events = (await listEvents()).filter((e) => e.series_id !== e.id);
+  const events = (await listEvents()).filter((e) => e.series_id !== e.id && e.check_in_enabled);
   const today = occurrenceDateInTz(new Date().toISOString(), "UTC");
   const bySeriesId = new Map<string, AppEvent[]>();
   for (const e of events) {
