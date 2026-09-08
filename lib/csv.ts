@@ -71,6 +71,7 @@ export function profileToExportRow(profile: Profile): Record<string, string> {
 // this just bundles it into the same row for a printable/shareable export.
 export const CHILD_EXPORT_COLUMNS: { key: string; label: string }[] = [
   ...PROFILE_EXPORT_COLUMNS,
+  { key: "date_of_birth", label: "Date of Birth" },
   { key: "parent1_name", label: "Parent 1 Name" },
   { key: "parent1_phone", label: "Parent 1 Phone" },
   { key: "parent1_email", label: "Parent 1 Email" },
@@ -82,6 +83,7 @@ export const CHILD_EXPORT_COLUMNS: { key: string; label: string }[] = [
 export function childProfileToExportRow(child: ChildWithParents): Record<string, string> {
   return {
     ...profileToExportRow(child),
+    date_of_birth: child.date_of_birth ?? "",
     parent1_name: child.parent1 ? `${child.parent1.first_name} ${child.parent1.last_name}` : "",
     parent1_phone: child.parent1?.phone_number ?? "",
     parent1_email: child.parent1?.email ?? "",
