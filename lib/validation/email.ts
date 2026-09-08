@@ -50,6 +50,20 @@ export const emailParentsSchema = z
 
 export type EmailParentsValues = z.infer<typeof emailParentsSchema>;
 
+// Mirrors SearchProfilesParams's withChildren ("Adults with children in
+// [Grade/Age/All]") — the same shape /api/profiles's GET route builds from
+// its own childrenMode/childGradeFrom/childGradeTo/childAgeFrom/childAgeTo
+// query params.
+const withChildrenSchema = z
+  .object({
+    mode: z.enum(["grade", "age", "all"]),
+    gradeFrom: z.number().int().optional(),
+    gradeTo: z.number().int().optional(),
+    ageFrom: z.number().int().optional(),
+    ageTo: z.number().int().optional(),
+  })
+  .optional();
+
 // Mirrors the People page's filter query params (searchProfiles's
 // SearchProfilesParams) — same server-recomputes-recipients principle as
 // emailParentsSchema, but recipients are the profiles' own emails, not a
@@ -62,6 +76,7 @@ export const emailPeopleSchema = z
     campus: z.array(z.enum(["Arlington", "Leesburg"])).optional(),
     gradeFrom: z.number().int().optional(),
     gradeTo: z.number().int().optional(),
+    withChildren: withChildrenSchema,
   })
   .refine(attachmentsWithinLimit, ATTACHMENTS_REFINE_OPTIONS);
 

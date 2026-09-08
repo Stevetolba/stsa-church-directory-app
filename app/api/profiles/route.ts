@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireStaffOrAdmin } from "@/lib/rbac";
-import { searchProfiles, type SearchProfilesParams } from "@/lib/subsplash";
+import { searchProfiles, type ChildrenFilterMode, type SearchProfilesParams } from "@/lib/subsplash";
 import type { Campus, MemberStatus } from "@/types/profile";
 
 const VALID_SORT_BY: NonNullable<SearchProfilesParams["sortBy"]>[] = [
@@ -9,6 +9,8 @@ const VALID_SORT_BY: NonNullable<SearchProfilesParams["sortBy"]>[] = [
   "updated_at",
   "created_at",
 ];
+
+const VALID_CHILDREN_MODE: ChildrenFilterMode[] = ["grade", "age", "all"];
 
 // Middleware excludes /api/* from its redirect (a 307 isn't a sane fetch()
 // response), so this route enforces its own check. This is a read endpoint
@@ -38,6 +40,24 @@ export async function GET(request: NextRequest) {
   const pageSize = pageSizeRaw ? Math.min(Number(pageSizeRaw), 5000) : undefined;
   const expandHouseholds = searchParams.get("expandHouseholds") === "true";
 
+  const childrenModeRaw = searchParams.get("childrenMode");
+  const childrenMode = VALID_CHILDREN_MODE.includes(childrenModeRaw as ChildrenFilterMode)
+    ? (childrenModeRaw as ChildrenFilterMode)
+    : undefined;
+  const childGradeFromRaw = searchParams.get("childGradeFrom");
+  const childGradeToRaw = searchParams.get("childGradeTo");
+  const childAgeFromRaw = searchParams.get("childAgeFrom");
+  const childAgeToRaw = searchParams.get("childAgeTo");
+  const withChildren = childrenMode
+    ? {
+        mode: childrenMode,
+        gradeFrom: childGradeFromRaw ? Number(childGradeFromRaw) : undefined,
+        gradeTo: childGradeToRaw ? Number(childGradeToRaw) : undefined,
+        ageFrom: childAgeFromRaw ? Number(childAgeFromRaw) : undefined,
+        ageTo: childAgeToRaw ? Number(childAgeToRaw) : undefined,
+      }
+    : undefined;
+
   const result = await searchProfiles({
     search,
     status,
@@ -48,6 +68,7 @@ export async function GET(request: NextRequest) {
     page,
     pageSize,
     expandHouseholds,
+    withChildren,
   });
   return NextResponse.json(result);
 }

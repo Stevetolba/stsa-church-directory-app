@@ -9,7 +9,7 @@ import { ArrowLeft, Mail, Paperclip, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { MAX_ATTACHMENTS_COUNT, MAX_ATTACHMENTS_TOTAL_BYTES } from "@/lib/validation/email";
-import type { ProfileSearchResult } from "@/lib/subsplash";
+import type { ChildrenFilter, ProfileSearchResult } from "@/lib/subsplash";
 import type { Campus, MemberStatus } from "@/types/profile";
 
 const composeSchema = z.object({
@@ -46,6 +46,7 @@ export interface EmailPeopleFilters {
   campus: Campus[];
   gradeFrom?: number;
   gradeTo?: number;
+  withChildren?: ChildrenFilter;
 }
 
 function buildParams(filters: EmailPeopleFilters): URLSearchParams {
@@ -55,6 +56,16 @@ function buildParams(filters: EmailPeopleFilters): URLSearchParams {
   filters.campus.forEach((c) => params.append("campus", c));
   if (filters.gradeFrom !== undefined) params.set("gradeFrom", String(filters.gradeFrom));
   if (filters.gradeTo !== undefined) params.set("gradeTo", String(filters.gradeTo));
+  if (filters.withChildren) {
+    params.set("childrenMode", filters.withChildren.mode);
+    if (filters.withChildren.gradeFrom !== undefined)
+      params.set("childGradeFrom", String(filters.withChildren.gradeFrom));
+    if (filters.withChildren.gradeTo !== undefined)
+      params.set("childGradeTo", String(filters.withChildren.gradeTo));
+    if (filters.withChildren.ageFrom !== undefined)
+      params.set("childAgeFrom", String(filters.withChildren.ageFrom));
+    if (filters.withChildren.ageTo !== undefined) params.set("childAgeTo", String(filters.withChildren.ageTo));
+  }
   return params;
 }
 
@@ -192,6 +203,7 @@ export function EmailPeopleDialog({
           campus: filters.campus,
           gradeFrom: filters.gradeFrom,
           gradeTo: filters.gradeTo,
+          withChildren: filters.withChildren,
         }),
       });
       if (!res.ok) {

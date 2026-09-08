@@ -634,6 +634,51 @@ export interface SearchProfilesParams {
   // share this function, keep their existing per-profile-only matching.
   // Expanded members still have to pass the other (non-text) filters below.
   expandHouseholds?: boolean;
+  // Restricts results to adults who have at least one child in their
+  // household matching this criteria — mirrors Subsplash's own People-page
+  // "Adults with children in [Grade/Age/All]" filter. Independent of
+  // gradeFrom/gradeTo/ageFrom/ageTo above, which filter by the *profile's
+  // own* grade/age rather than a household child's.
+  withChildren?: ChildrenFilter;
+}
+
+export type ChildrenFilterMode = "grade" | "age" | "all";
+
+export interface ChildrenFilter {
+  mode: ChildrenFilterMode;
+  gradeFrom?: number;
+  gradeTo?: number;
+  ageFrom?: number;
+  ageTo?: number;
+}
+
+function matchesChildrenFilter(child: Profile, filter: ChildrenFilter): boolean {
+  if (filter.mode === "all") return true;
+  if (filter.mode === "grade") {
+    if (child.academic_grade_value === undefined) return false;
+    const lower = filter.gradeFrom ?? MIN_GRADE_VALUE;
+    const upper = filter.gradeTo ?? MAX_GRADE_VALUE;
+    return child.academic_grade_value >= lower && child.academic_grade_value <= upper;
+  }
+  const age = child.date_of_birth ? calculateAge(child.date_of_birth) : null;
+  if (age === null) return false;
+  return (
+    (filter.ageFrom === undefined || age >= filter.ageFrom) &&
+    (filter.ageTo === undefined || age <= filter.ageTo)
+  );
+}
+
+// Household ids that have at least one child (isChild below — hoisted, so
+// it's callable here despite being declared later in the file) matching the
+// given criteria — the pool an "Adults with children in..." filter draws
+// its qualifying adults from.
+function householdsWithQualifyingChild(all: Profile[], filter: ChildrenFilter): Set<string> {
+  const ids = new Set<string>();
+  for (const p of all) {
+    if (!isChild(p) || !p.household_id) continue;
+    if (matchesChildrenFilter(p, filter)) ids.add(p.household_id);
+  }
+  return ids;
 }
 
 export interface ProfileSearchResult {
@@ -661,6 +706,7 @@ export function filterAndPaginateProfiles(
     page = 1,
     pageSize = DEFAULT_PAGE_SIZE,
     expandHouseholds,
+    withChildren,
   }: SearchProfilesParams
 ): ProfileSearchResult {
   const needle = search?.trim().toLowerCase();
@@ -672,6 +718,7 @@ export function filterAndPaginateProfiles(
   const lowerGrade = gradeFrom ?? MIN_GRADE_VALUE;
   const upperGrade = gradeTo ?? MAX_GRADE_VALUE;
   const ageFilterActive = ageFrom !== undefined || ageTo !== undefined;
+  const qualifyingHouseholdIds = withChildren ? householdsWithQualifyingChild(all, withChildren) : null;
 
   // Split out from the text-match requirement so expandHouseholds can reuse
   // it: an expanded household member still has to pass status/campus/grade/
@@ -691,7 +738,15 @@ export function filterAndPaginateProfiles(
         if (age === null) return false;
         return (ageFrom === undefined || age >= ageFrom) && (ageTo === undefined || age <= ageTo);
       })();
-    return matchesStatus && matchesCampus && matchesGrade && matchesAge;
+    // "Adults with children in..." only ever matches adults — the children
+    // themselves live in the same qualifying household but aren't the
+    // people this filter is asking for.
+    const matchesChildren =
+      !qualifyingHouseholdIds ||
+      (householdMemberType(p.household_role) === "Adult" &&
+        !!p.household_id &&
+        qualifyingHouseholdIds.has(p.household_id));
+    return matchesStatus && matchesCampus && matchesGrade && matchesAge && matchesChildren;
   }
 
   function matchesSearchText(p: Profile): boolean {
