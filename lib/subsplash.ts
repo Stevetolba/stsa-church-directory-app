@@ -814,9 +814,19 @@ export function filterAndPaginateProfiles(
   };
 }
 
+// "with" = household has at least one member whose household_role is
+// "child" (householdMemberType, same Adult/Child split the People page's
+// "Adults with Children" filter and the Children directory already use);
+// "without" is the "family with no children" case this filter exists for.
+export type HouseholdChildrenMode = "with" | "without";
+
 export interface ListHouseholdsParams {
   search?: string;
-  campus?: Campus;
+  campus?: Campus[];
+  status?: MemberStatus[];
+  gradeFrom?: number;
+  gradeTo?: number;
+  childrenMode?: HouseholdChildrenMode;
   page?: number;
   pageSize?: number;
 }
@@ -829,18 +839,45 @@ export interface HouseholdSearchResult {
   pageSize: number;
 }
 
-function filterAndPaginateHouseholds(
+// Exported for direct unit testing (lib/subsplash.filterAndPaginateHouseholds.test.ts),
+// same rationale as filterAndPaginateProfiles above.
+export function filterAndPaginateHouseholds(
   all: Household[],
-  { search, campus, page = 1, pageSize = DEFAULT_PAGE_SIZE }: ListHouseholdsParams
+  {
+    search,
+    campus,
+    status,
+    gradeFrom,
+    gradeTo,
+    childrenMode,
+    page = 1,
+    pageSize = DEFAULT_PAGE_SIZE,
+  }: ListHouseholdsParams
 ): HouseholdSearchResult {
   const needle = search?.trim().toLowerCase();
+  const gradeFilterActive = gradeFrom !== undefined || gradeTo !== undefined;
+  const lowerGrade = gradeFrom ?? MIN_GRADE_VALUE;
+  const upperGrade = gradeTo ?? MAX_GRADE_VALUE;
 
   const filtered = all.filter((h) => {
-    const matchesCampus = !campus || householdCampus(h) === campus;
+    const members = h.members ?? [];
+    const representativeCampus = householdCampus(h);
+    const matchesCampus = !campus?.length || (!!representativeCampus && campus.includes(representativeCampus));
     const matchesSearch =
       !needle ||
       [h.name ?? "", h.address ?? ""].some((field) => field.toLowerCase().includes(needle));
-    return matchesCampus && matchesSearch;
+    const matchesStatus = !status?.length || members.some((m) => status.includes(m.status));
+    const matchesGrade =
+      !gradeFilterActive ||
+      members.some(
+        (m) =>
+          m.academic_grade_value !== undefined &&
+          m.academic_grade_value >= lowerGrade &&
+          m.academic_grade_value <= upperGrade
+      );
+    const hasChild = members.some((m) => householdMemberType(m.household_role) === "Child");
+    const matchesChildren = !childrenMode || (childrenMode === "with" ? hasChild : !hasChild);
+    return matchesCampus && matchesSearch && matchesStatus && matchesGrade && matchesChildren;
   });
 
   const start = (page - 1) * pageSize;

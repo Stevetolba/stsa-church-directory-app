@@ -1,8 +1,10 @@
 import type { Profile } from "@/types/profile";
+import type { Household } from "@/types/household";
 import type { ChildWithParents } from "@/lib/subsplash";
 import type { CheckInRecord } from "@/types/attendance";
 import type { SeriesFrequencyPerson } from "@/lib/attendance";
 import { timeLabelInTz } from "@/lib/eventTime";
+import { householdCampus } from "@/lib/household";
 
 // Minimal CSV encoder — no dependency needed for the flat, string-only rows
 // this app exports. RFC 4180: quote a field if it contains a comma, quote,
@@ -91,6 +93,61 @@ export function childProfileToExportRow(child: ChildWithParents): Record<string,
     parent2_phone: child.parent2?.phone_number ?? "",
     parent2_email: child.parent2?.email ?? "",
   };
+}
+
+// Household export — one row per member, with the household's own fields
+// repeated on every row so opening the CSV in Excel/Sheets and sorting by
+// "Household Name" (already the row order below) visibly groups each
+// family's members together. A household with no members still gets a
+// single row (blank member fields) so it isn't silently dropped from the
+// export.
+export const HOUSEHOLD_EXPORT_COLUMNS: { key: string; label: string }[] = [
+  { key: "household_name", label: "Household Name" },
+  { key: "household_address", label: "Household Address" },
+  { key: "household_campus", label: "Household Campus" },
+  { key: "member_first_name", label: "Member First Name" },
+  { key: "member_last_name", label: "Member Last Name" },
+  { key: "household_role", label: "Household Role" },
+  { key: "status", label: "Status" },
+  { key: "grade", label: "Grade" },
+  { key: "email", label: "Email" },
+  { key: "phone", label: "Phone" },
+];
+
+export function householdsToExportRows(households: Household[]): Record<string, string>[] {
+  const sorted = [...households].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+  return sorted.flatMap((household) => {
+    const base = {
+      household_name: household.name ?? "",
+      household_address: household.address ?? "",
+      household_campus: householdCampus(household) ?? "",
+    };
+    const members = household.members ?? [];
+    if (members.length === 0) {
+      return [
+        {
+          ...base,
+          member_first_name: "",
+          member_last_name: "",
+          household_role: "",
+          status: "",
+          grade: "",
+          email: "",
+          phone: "",
+        },
+      ];
+    }
+    return members.map((member) => ({
+      ...base,
+      member_first_name: member.first_name,
+      member_last_name: member.last_name,
+      household_role: member.household_role ?? "",
+      status: member.status,
+      grade: member.academic_grade ?? "",
+      email: member.email,
+      phone: member.phone_number ?? "",
+    }));
+  });
 }
 
 // Occurrence attendance report export (ADR-0015 Phase 4; source column added
