@@ -1,15 +1,92 @@
 "use client";
 
+import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Home } from "lucide-react";
+import { Download, Home } from "lucide-react";
+import { toast } from "sonner";
 import { SearchBar } from "@/components/SearchBar";
 import { HouseholdCard } from "@/components/HouseholdCard";
 import { HouseholdCardSkeleton } from "@/components/HouseholdCardSkeleton";
 import { EmptyState } from "@/components/EmptyState";
+import { FilterPill } from "@/components/FilterPill";
+import { AddFilterMenu } from "@/components/AddFilterMenu";
+import { SuggestedFilters, type SuggestedFilter } from "@/components/SuggestedFilters";
 import { useHouseholds } from "@/hooks/useHouseholds";
-import type { Campus } from "@/types/profile";
+import { GRADE_LEVELS } from "@/lib/grades";
+import { downloadCsv, HOUSEHOLD_EXPORT_COLUMNS, householdsToExportRows, toCsv } from "@/lib/csv";
+import type { HouseholdChildrenMode, HouseholdSearchResult } from "@/lib/subsplash";
+import type { Campus, MemberStatus } from "@/types/profile";
 
-const CAMPUS_OPTIONS: Array<Campus | "All Campuses"> = ["All Campuses", "Arlington", "Leesburg"];
+// Same "dynamic filters" pattern as the People page (see PeoplePageClient):
+// only active filter dimensions show as a pill, inactive ones live behind
+// "+ Filter".
+
+const STATUS_OPTIONS: MemberStatus[] = [
+  "Member",
+  "Regular Attendee",
+  "Visitor",
+  "Newcomer",
+  "Former Attender",
+];
+
+const CAMPUS_OPTIONS: Campus[] = ["Arlington", "Leesburg"];
+
+const CHILDREN_MODE_OPTIONS: Array<{ value: HouseholdChildrenMode; label: string }> = [
+  { value: "with", label: "Has Children" },
+  { value: "without", label: "No Children" },
+];
+
+// Matches the cap CSV export already uses on the People page — plenty of
+// headroom for a single church directory without an unbounded in-memory scan.
+const SHOW_ALL_PAGE_SIZE = 5000;
+
+type FilterKey = "status" | "campus" | "grade" | "children";
+const ALL_FILTER_KEYS: FilterKey[] = ["status", "campus", "grade", "children"];
+const FILTER_LABELS: Record<FilterKey, string> = {
+  status: "Status",
+  campus: "Campus",
+  grade: "Grade",
+  children: "Children",
+};
+
+interface HouseholdPreset {
+  campus?: Campus;
+  childrenMode?: HouseholdChildrenMode;
+}
+
+const SUGGESTED_FILTERS: SuggestedFilter<HouseholdPreset>[] = [
+  { label: "Arlington Households", preset: { campus: "Arlington" } },
+  { label: "Leesburg Households", preset: { campus: "Leesburg" } },
+  { label: "Households with No Children", preset: { childrenMode: "without" } },
+  { label: "Households with Children", preset: { childrenMode: "with" } },
+];
+
+function summarizeStatus(status: MemberStatus[]): string {
+  if (status.length === 0) return "Status";
+  if (status.length > 2) return `Status: ${status.length} selected`;
+  return `Status: ${status.join(", ")}`;
+}
+
+function summarizeCampus(campus: Campus[]): string {
+  if (campus.length === 0) return "Campus";
+  return `Campus: ${campus.join(", ")}`;
+}
+
+function summarizeGrade(gradeFrom?: number, gradeTo?: number): string {
+  if (gradeFrom === undefined && gradeTo === undefined) return "Grade";
+  const from = GRADE_LEVELS.find((g) => g.value === gradeFrom)?.label;
+  const to = GRADE_LEVELS.find((g) => g.value === gradeTo)?.label;
+  if (from && to) return `Grade: ${from} – ${to}`;
+  if (from) return `Grade: ${from}+`;
+  if (to) return `Grade: up to ${to}`;
+  return "Grade";
+}
+
+function summarizeChildren(mode: HouseholdChildrenMode | null): string {
+  if (mode === "with") return "Has Children";
+  if (mode === "without") return "No Children";
+  return "Children";
+}
 
 export default function HouseholdsPage() {
   const router = useRouter();
@@ -17,10 +94,74 @@ export default function HouseholdsPage() {
   const searchParams = useSearchParams();
 
   const search = searchParams.get("search") ?? "";
-  const campus = (searchParams.get("campus") as Campus | null) ?? undefined;
+  const status = searchParams.getAll("status") as MemberStatus[];
+  const campus = searchParams.getAll("campus") as Campus[];
+  const gradeFromRaw = searchParams.get("gradeFrom");
+  const gradeToRaw = searchParams.get("gradeTo");
+  const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
+  const gradeTo = gradeToRaw ? Number(gradeToRaw) : undefined;
+  const childrenModeRaw = searchParams.get("childrenMode");
+  const childrenMode = CHILDREN_MODE_OPTIONS.some((o) => o.value === childrenModeRaw)
+    ? (childrenModeRaw as HouseholdChildrenMode)
+    : null;
   const page = Number(searchParams.get("page") ?? "1");
 
-  const { data, isLoading } = useHouseholds({ search, campus, page });
+  const { data, isLoading } = useHouseholds({
+    search,
+    status,
+    campus,
+    gradeFrom,
+    gradeTo,
+    childrenMode: childrenMode ?? undefined,
+    page,
+  });
+
+  // Dimensions with a real value are always "active" (so reloading a
+  // filtered URL still shows the right pills); manuallyAdded additionally
+  // keeps a just-added-but-not-yet-configured pill visible until it's given
+  // a value or removed.
+  const [manuallyAdded, setManuallyAdded] = useState<Set<FilterKey>>(new Set());
+  const [openFilter, setOpenFilter] = useState<FilterKey | null>(null);
+  const activeFilters = new Set<FilterKey>(manuallyAdded);
+  if (status.length > 0) activeFilters.add("status");
+  if (campus.length > 0) activeFilters.add("campus");
+  if (gradeFrom !== undefined || gradeTo !== undefined) activeFilters.add("grade");
+  if (childrenMode !== null) activeFilters.add("children");
+
+  const hasActiveFilter =
+    !!search ||
+    status.length > 0 ||
+    campus.length > 0 ||
+    gradeFrom !== undefined ||
+    gradeTo !== undefined ||
+    childrenMode !== null;
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Exports the currently filtered set of households (not just the visible
+  // page), grouped by household name — gated on hasActiveFilter so a click
+  // can't dump the whole directory, same rationale as the People page export.
+  async function handleExport() {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (search) params.set("search", search);
+      status.forEach((s) => params.append("status", s));
+      campus.forEach((c) => params.append("campus", c));
+      if (gradeFrom !== undefined) params.set("gradeFrom", String(gradeFrom));
+      if (gradeTo !== undefined) params.set("gradeTo", String(gradeTo));
+      if (childrenMode) params.set("childrenMode", childrenMode);
+      params.set("pageSize", String(SHOW_ALL_PAGE_SIZE));
+      const res = await fetch(`/api/households?${params.toString()}`);
+      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+      const result: HouseholdSearchResult = await res.json();
+      const csv = toCsv(householdsToExportRows(result.households), HOUSEHOLD_EXPORT_COLUMNS);
+      downloadCsv(`households-export-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+    } catch {
+      toast.error("Export failed. Please try again.");
+    } finally {
+      setIsExporting(false);
+    }
+  }
 
   function updateParams(updates: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -33,6 +174,61 @@ export default function HouseholdsPage() {
     }
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname);
+  }
+
+  // Toggles `value` in a multi-select query param (status/campus), resetting
+  // to page 1 the same way single-value filters already do.
+  function toggleListParam(key: "status" | "campus", value: string, current: string[]) {
+    const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete(key);
+    next.forEach((v) => params.append(key, v));
+    params.delete("page");
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  }
+
+  function handleAddFilter(key: FilterKey) {
+    setManuallyAdded((prev) => new Set(prev).add(key));
+    setOpenFilter(key);
+  }
+
+  function handleRemoveFilter(key: FilterKey) {
+    setManuallyAdded((prev) => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+    if (openFilter === key) setOpenFilter(null);
+    if (key === "status") updateParams({ status: null, page: null });
+    else if (key === "campus") updateParams({ campus: null, page: null });
+    else if (key === "grade") updateParams({ gradeFrom: null, gradeTo: null, page: null });
+    else updateParams({ childrenMode: null, page: null });
+  }
+
+  function handleClearAll() {
+    setManuallyAdded(new Set());
+    setOpenFilter(null);
+    updateParams({
+      status: null,
+      campus: null,
+      gradeFrom: null,
+      gradeTo: null,
+      childrenMode: null,
+      page: null,
+    });
+  }
+
+  // A suggested filter fully sets its exact values (rather than toggling
+  // into whatever was already selected) — it's meant as a "jump to this
+  // segment" shortcut. Search is left alone so a preset can still be
+  // combined with it.
+  function applyPreset(preset: HouseholdPreset) {
+    updateParams({
+      campus: preset.campus ?? null,
+      childrenMode: preset.childrenMode ?? null,
+      page: null,
+    });
   }
 
   const households = data?.households ?? [];
@@ -50,34 +246,182 @@ export default function HouseholdsPage() {
             {total} of {overallTotal} households
           </p>
         </div>
-        <div className="flex h-[34px] items-center rounded-full border border-[#C7E9F7] bg-[#E4F4FC] px-3 text-[12px] font-bold text-[#1B6E93]">
-          Staff only
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={!hasActiveFilter || isExporting}
+            title={hasActiveFilter ? undefined : "Apply a filter to export"}
+            className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {isExporting ? "Exporting…" : "Export CSV"}
+          </button>
+          <div className="flex h-[34px] items-center rounded-full border border-[#C7E9F7] bg-[#E4F4FC] px-3 text-[12px] font-bold text-[#1B6E93]">
+            Staff only
+          </div>
         </div>
       </div>
 
-      <div className="mb-7 flex flex-wrap items-center gap-3.5">
+      <div className="mb-4">
+        <SuggestedFilters filters={SUGGESTED_FILTERS} onSelect={applyPreset} />
+      </div>
+
+      <div className="mb-7 flex flex-col gap-3">
         <SearchBar
           defaultValue={search}
           onDebouncedChange={(value) => updateParams({ search: value || null, page: null })}
           placeholder="Search by household name or address"
         />
 
-        <select
-          value={campus ?? "All Campuses"}
-          onChange={(e) =>
-            updateParams({
-              campus: e.target.value === "All Campuses" ? null : e.target.value,
-              page: null,
-            })
-          }
-          className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
-        >
-          {CAMPUS_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          {activeFilters.has("status") && (
+            <FilterPill
+              label={summarizeStatus(status)}
+              active={status.length > 0}
+              open={openFilter === "status"}
+              onOpenChange={(open) => setOpenFilter(open ? "status" : null)}
+              onRemove={() => handleRemoveFilter("status")}
+            >
+              <div className="flex flex-col gap-1.5">
+                {STATUS_OPTIONS.map((option) => (
+                  <label
+                    key={option}
+                    className="flex cursor-pointer items-center gap-2 text-[13.5px] text-brand-navy"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={status.includes(option)}
+                      onChange={() => toggleListParam("status", option, status)}
+                      className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                    />
+                    {option}
+                  </label>
+                ))}
+              </div>
+            </FilterPill>
+          )}
+
+          {activeFilters.has("campus") && (
+            <FilterPill
+              label={summarizeCampus(campus)}
+              active={campus.length > 0}
+              open={openFilter === "campus"}
+              onOpenChange={(open) => setOpenFilter(open ? "campus" : null)}
+              onRemove={() => handleRemoveFilter("campus")}
+            >
+              <div className="flex flex-col gap-1.5">
+                {CAMPUS_OPTIONS.map((option) => (
+                  <label
+                    key={option}
+                    className="flex cursor-pointer items-center gap-2 text-[13.5px] text-brand-navy"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={campus.includes(option)}
+                      onChange={() => toggleListParam("campus", option, campus)}
+                      className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                    />
+                    {option}
+                  </label>
+                ))}
+              </div>
+            </FilterPill>
+          )}
+
+          {activeFilters.has("grade") && (
+            <FilterPill
+              label={summarizeGrade(gradeFrom, gradeTo)}
+              active={gradeFrom !== undefined || gradeTo !== undefined}
+              open={openFilter === "grade"}
+              onOpenChange={(open) => setOpenFilter(open ? "grade" : null)}
+              onRemove={() => handleRemoveFilter("grade")}
+            >
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                    Min
+                  </label>
+                  <select
+                    value={gradeFromRaw ?? ""}
+                    onChange={(e) => updateParams({ gradeFrom: e.target.value || null, page: null })}
+                    className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                  >
+                    <option value="">None</option>
+                    {GRADE_LEVELS.map((grade) => (
+                      <option key={grade.value} value={grade.value}>
+                        {grade.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                    Max
+                  </label>
+                  <select
+                    value={gradeToRaw ?? ""}
+                    onChange={(e) => updateParams({ gradeTo: e.target.value || null, page: null })}
+                    className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                  >
+                    <option value="">None</option>
+                    {GRADE_LEVELS.map((grade) => (
+                      <option key={grade.value} value={grade.value}>
+                        {grade.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </FilterPill>
+          )}
+
+          {activeFilters.has("children") && (
+            <FilterPill
+              label={summarizeChildren(childrenMode)}
+              active={childrenMode !== null}
+              open={openFilter === "children"}
+              onOpenChange={(open) => setOpenFilter(open ? "children" : null)}
+              onRemove={() => handleRemoveFilter("children")}
+            >
+              <div className="flex flex-col gap-1.5">
+                {CHILDREN_MODE_OPTIONS.map((option) => (
+                  <label
+                    key={option.value}
+                    className="flex cursor-pointer items-center gap-2 text-[13.5px] text-brand-navy"
+                  >
+                    <input
+                      type="radio"
+                      name="childrenMode"
+                      checked={childrenMode === option.value}
+                      onChange={() => updateParams({ childrenMode: option.value, page: null })}
+                      className="h-4 w-4 border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            </FilterPill>
+          )}
+
+          <AddFilterMenu
+            options={ALL_FILTER_KEYS.filter((key) => !activeFilters.has(key)).map((key) => ({
+              key,
+              label: FILTER_LABELS[key],
+            }))}
+            onSelect={(key) => handleAddFilter(key as FilterKey)}
+          />
+
+          {activeFilters.size > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              className="whitespace-nowrap text-[13px] font-semibold text-[#5B7185] underline-offset-2 hover:underline"
+            >
+              Clear all
+            </button>
+          )}
+        </div>
       </div>
 
       {isLoading ? (
