@@ -72,15 +72,47 @@ function mockStore(): Map<string, { subsplashId: string }> {
   return (globalThis.__mockCalendarEvents ??= new Map());
 }
 
+// Google's quota errors surface as 429, or as 403 with a reason of
+// rateLimitExceeded/userRateLimitExceeded (a plain 403 can also mean
+// "permission denied", which isn't retryable) — Google's own guidance is to
+// retry these with exponential backoff rather than fail immediately.
+// Confirmed in production: the sync loop fires one request per event with
+// no delay between them, and a run of ~140+ events reliably bursts past the
+// per-user quota, failing every event after the first handful.
+function isRateLimitResponse(status: number, data: unknown): boolean {
+  if (status === 429) return true;
+  if (status !== 403) return false;
+  const reasons =
+    data && typeof data === "object" && "error" in data
+      ? ((data as { error?: { errors?: { reason?: string }[] } }).error?.errors ?? [])
+      : [];
+  return reasons.some((e) => e.reason === "rateLimitExceeded" || e.reason === "userRateLimitExceeded");
+}
+
+const MAX_RATE_LIMIT_RETRIES = 5;
+const BASE_BACKOFF_MS = 1000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function googleFetch<T>(path: string, init: RequestInit = {}): Promise<{ status: number; data: T | null }> {
-  const token = await getGoogleCalendarServiceToken();
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(init.headers ?? {}) },
-  });
-  const text = await res.text();
-  const data = text ? (JSON.parse(text) as T) : null;
-  return { status: res.status, data };
+  for (let attempt = 0; ; attempt++) {
+    const token = await getGoogleCalendarServiceToken();
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(init.headers ?? {}) },
+    });
+    const text = await res.text();
+    const data = text ? (JSON.parse(text) as T) : null;
+    if (isRateLimitResponse(res.status, data) && attempt < MAX_RATE_LIMIT_RETRIES) {
+      const backoff = BASE_BACKOFF_MS * 2 ** attempt;
+      const jitter = Math.random() * backoff * 0.5;
+      await sleep(backoff + jitter);
+      continue;
+    }
+    return { status: res.status, data };
+  }
 }
 
 // Google's error responses shape as {"error": {"code", "message", "errors":
