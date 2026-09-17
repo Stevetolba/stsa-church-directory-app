@@ -19,7 +19,7 @@ import type { Campus, MemberStatus } from "@/types/profile";
 // volunteers already land there.
 //
 // An agenda is scrolled, not paged, so this fetches every filtered match in
-// one shot (capped server-side at 5000, same as CSV export) rather than
+// one shot (SHOW_ALL_PAGE_SIZE below, same as CSV export) rather than
 // paginating, and has no Sort control — the list is inherently date-ordered.
 
 const STATUS_OPTIONS: MemberStatus[] = [
@@ -31,6 +31,13 @@ const STATUS_OPTIONS: MemberStatus[] = [
 ];
 
 const CAMPUS_OPTIONS: Campus[] = ["Arlington", "Leesburg"];
+
+// Matches lib/subsplash.ts's FULL_ROSTER_PAGE_SIZE (not imported directly —
+// that module is server-only). An agenda can't sanely paginate, so this
+// fetches every filtered match in one shot; capping it below the org's real
+// profile count would silently drop people from the agenda (confirmed
+// against real data — see FULL_ROSTER_PAGE_SIZE's own comment).
+const SHOW_ALL_PAGE_SIZE = 20000;
 
 interface BirthdaysPreset {
   campus: Campus;
@@ -82,7 +89,14 @@ export default function BirthdaysPage() {
   const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
   const gradeTo = gradeToRaw ? Number(gradeToRaw) : undefined;
 
-  const { data, isLoading } = usePeople({ search, status, campus, gradeFrom, gradeTo, pageSize: 5000 });
+  const { data, isLoading } = usePeople({
+    search,
+    status,
+    campus,
+    gradeFrom,
+    gradeTo,
+    pageSize: SHOW_ALL_PAGE_SIZE,
+  });
 
   const [manuallyAdded, setManuallyAdded] = useState<Set<FilterKey>>(new Set());
   const [openFilter, setOpenFilter] = useState<FilterKey | null>(null);

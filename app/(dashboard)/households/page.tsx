@@ -36,9 +36,12 @@ const CHILDREN_MODE_OPTIONS: Array<{ value: HouseholdChildrenMode; label: string
   { value: "without", label: "No Children" },
 ];
 
-// Matches the cap CSV export already uses on the People page — plenty of
-// headroom for a single church directory without an unbounded in-memory scan.
-const SHOW_ALL_PAGE_SIZE = 5000;
+// Matches lib/subsplash.ts's FULL_ROSTER_PAGE_SIZE (not imported directly —
+// that module is server-only). Plenty of headroom for a single church
+// directory without risking an unbounded in-memory scan — a lower cap here
+// silently truncated both this "fetch every match" view and the CSV export
+// once the org passed 5,000 profiles (confirmed against real data).
+const SHOW_ALL_PAGE_SIZE = 20000;
 
 type FilterKey = "status" | "campus" | "grade" | "children";
 const ALL_FILTER_KEYS: FilterKey[] = ["status", "campus", "grade", "children"];
