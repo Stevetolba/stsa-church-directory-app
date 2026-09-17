@@ -3,7 +3,13 @@ import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import { Baby, Cake, CalendarCheck, Home, Search, Users } from "lucide-react";
 import { auth } from "@/lib/auth";
-import { listHouseholds, searchChildren, searchProfiles, type ProfileSearchResult } from "@/lib/subsplash";
+import {
+  FULL_ROSTER_PAGE_SIZE,
+  listHouseholds,
+  searchChildren,
+  searchProfiles,
+  type ProfileSearchResult,
+} from "@/lib/subsplash";
 import { listTodaysEvents } from "@/lib/events";
 import { windowState } from "@/lib/eventTime";
 import { groupProfilesByUpcomingBirthday, type BirthdayEntry } from "@/lib/birthdays";
@@ -40,12 +46,12 @@ export default async function DashboardPage() {
 // boundary once ready.
 function StaffDashboard({ name, role }: { name: string | null; role: Role }) {
   const now = new Date();
-  // Birthdays reuses the same "walk up to 5000 profiles" cap the standalone
-  // /birthdays page already accepts (its SHOW_ALL_PAGE_SIZE convention) — the
-  // profile list doubles as today's birthday source, so this doesn't add a
-  // second full-directory fetch beyond what the stat card needed anyway.
-  // Shared as one promise between the two sections below that need it.
-  const profilesPromise = searchProfiles({ pageSize: 5000 });
+  // Birthdays reuses the same "fetch every match" cap the standalone
+  // /birthdays page already accepts (FULL_ROSTER_PAGE_SIZE) — the profile
+  // list doubles as today's birthday source, so this doesn't add a second
+  // full-directory fetch beyond what the stat card needed anyway. Shared as
+  // one promise between the two sections below that need it.
+  const profilesPromise = searchProfiles({ pageSize: FULL_ROSTER_PAGE_SIZE });
   const householdsPromise = listHouseholds({ pageSize: 1 });
   const eventsPromise = listTodaysEvents(now);
 
@@ -104,7 +110,7 @@ function VolunteerDashboard({ name }: { name: string | null }) {
   // searchChildren defaults to memberType "Child" — the same child-bearing-
   // household scoping the /children page and ADR-0011's volunteer visibility
   // rules already enforce, so this never surfaces an adult profile.
-  const childrenPromise = searchChildren({ pageSize: 5000 });
+  const childrenPromise = searchChildren({ pageSize: FULL_ROSTER_PAGE_SIZE });
 
   return (
     <div>

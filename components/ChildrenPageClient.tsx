@@ -40,10 +40,12 @@ const STATUS_OPTIONS: MemberStatus[] = [
 
 const CAMPUS_OPTIONS: Campus[] = ["Arlington", "Leesburg"];
 
-// Matches the cap CSV export/birthdays already use for "fetch every match" —
-// plenty of headroom for a single church directory without risking an
-// unbounded in-memory scan (lib/subsplash.ts's searchChildren pageSize cap).
-const SHOW_ALL_PAGE_SIZE = 5000;
+// Matches lib/subsplash.ts's FULL_ROSTER_PAGE_SIZE (not imported directly —
+// that module is server-only). Plenty of headroom for a single church
+// directory without risking an unbounded in-memory scan — a lower cap here
+// silently truncated both this "fetch every match" view and the CSV export
+// once the org passed 5,000 profiles (confirmed against real data).
+const SHOW_ALL_PAGE_SIZE = 20000;
 
 const MEMBER_TYPE_OPTIONS: Array<{ value: ChildrenMemberType; label: string }> = [
   { value: "Child", label: "Children" },
@@ -216,7 +218,7 @@ export function ChildrenPageClient({
       if (ageTo !== undefined) params.set("ageTo", String(ageTo));
       params.set("memberType", memberType);
       params.set("sortBy", sortBy);
-      params.set("pageSize", "5000");
+      params.set("pageSize", String(SHOW_ALL_PAGE_SIZE));
       // Adds each row's Parent 1/Parent 2 contact info (name/phone/email) —
       // computed server-side from the same cached data, no extra requests.
       params.set("includeParents", "true");

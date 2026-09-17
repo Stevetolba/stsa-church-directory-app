@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { requireCanEmailChildren } from "@/lib/rbac";
 import { sendBulkEmail } from "@/lib/email";
 import { emailParentsSchema } from "@/lib/validation/email";
-import { attachParentContacts, searchChildren } from "@/lib/subsplash";
+import { attachParentContacts, FULL_ROSTER_PAGE_SIZE, searchChildren } from "@/lib/subsplash";
 import type { MemberStatus } from "@/types/profile";
 
 // ADR-0014: staff/admin only, plus (ADR-0017) a volunteer whose Subsplash
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     ageFrom,
     ageTo,
     memberType,
-    pageSize: 5000,
+    pageSize: FULL_ROSTER_PAGE_SIZE,
   });
 
   const withParents = await attachParentContacts(children);

@@ -112,7 +112,10 @@ export function EmailParentsDialog({
 
     const params = buildParams(filters);
     params.set("includeParents", "true");
-    params.set("pageSize", "5000");
+    // Matches lib/subsplash.ts's FULL_ROSTER_PAGE_SIZE — a lower cap here
+    // silently truncated the recipient count once the org passed 5,000
+    // profiles (confirmed against real data).
+    params.set("pageSize", "20000");
     let cancelled = false;
 
     fetch(`/api/children?${params.toString()}`)

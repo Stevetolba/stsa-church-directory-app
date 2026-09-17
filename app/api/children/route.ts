@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { recordAccessEvent } from "@/lib/accessLog";
 import {
   attachParentContacts,
+  FULL_ROSTER_PAGE_SIZE,
   searchChildren,
   type ChildrenMemberType,
   type SearchProfilesParams,
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
   // Callers (e.g. CSV export) can ask for more than the default page — capped
   // so a client can't force an unbounded in-memory scan.
   const pageSizeRaw = searchParams.get("pageSize");
-  const pageSize = pageSizeRaw ? Math.min(Number(pageSizeRaw), 5000) : undefined;
+  const pageSize = pageSizeRaw ? Math.min(Number(pageSizeRaw), FULL_ROSTER_PAGE_SIZE) : undefined;
   // Only the CSV export asks for this — attaches each row's parent/guardian
   // contacts (drawn from the same cached data, no extra Subsplash calls) so
   // the export can include Parent 1/Parent 2 columns.

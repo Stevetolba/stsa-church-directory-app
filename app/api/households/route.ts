@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireStaffOrAdmin } from "@/lib/rbac";
-import { listHouseholds, type HouseholdChildrenMode } from "@/lib/subsplash";
+import { FULL_ROSTER_PAGE_SIZE, listHouseholds, type HouseholdChildrenMode } from "@/lib/subsplash";
 import type { Campus, MemberStatus } from "@/types/profile";
 
 const VALID_CHILDREN_MODE: HouseholdChildrenMode[] = ["with", "without"];
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   // Same "fetch every match at once" pattern People's export already uses —
   // capped so a client can't force an unbounded in-memory scan.
   const pageSizeRaw = searchParams.get("pageSize");
-  const pageSize = pageSizeRaw ? Math.min(Number(pageSizeRaw), 5000) : undefined;
+  const pageSize = pageSizeRaw ? Math.min(Number(pageSizeRaw), FULL_ROSTER_PAGE_SIZE) : undefined;
 
   const result = await listHouseholds({
     search,

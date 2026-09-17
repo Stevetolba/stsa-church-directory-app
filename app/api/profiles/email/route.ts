@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { requireStaffOrAdmin } from "@/lib/rbac";
 import { sendBulkEmail } from "@/lib/email";
 import { emailPeopleSchema } from "@/lib/validation/email";
-import { searchProfiles } from "@/lib/subsplash";
+import { FULL_ROSTER_PAGE_SIZE, searchProfiles } from "@/lib/subsplash";
 import type { MemberStatus } from "@/types/profile";
 
 // ADR-0014: staff/admin only, same as GET /api/profiles — the People page
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     gradeFrom,
     gradeTo,
     withChildren,
-    pageSize: 5000,
+    pageSize: FULL_ROSTER_PAGE_SIZE,
   });
 
   const emails = new Set<string>();

@@ -1,6 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireStaffOrAdmin } from "@/lib/rbac";
-import { searchProfiles, type ChildrenFilterMode, type SearchProfilesParams } from "@/lib/subsplash";
+import {
+  FULL_ROSTER_PAGE_SIZE,
+  searchProfiles,
+  type ChildrenFilterMode,
+  type SearchProfilesParams,
+} from "@/lib/subsplash";
 import type { Campus, MemberStatus } from "@/types/profile";
 
 const VALID_SORT_BY: NonNullable<SearchProfilesParams["sortBy"]>[] = [
@@ -37,7 +42,7 @@ export async function GET(request: NextRequest) {
   // Callers (e.g. CSV export) can ask for more than the default page — capped
   // so a client can't force an unbounded in-memory scan.
   const pageSizeRaw = searchParams.get("pageSize");
-  const pageSize = pageSizeRaw ? Math.min(Number(pageSizeRaw), 5000) : undefined;
+  const pageSize = pageSizeRaw ? Math.min(Number(pageSizeRaw), FULL_ROSTER_PAGE_SIZE) : undefined;
   const expandHouseholds = searchParams.get("expandHouseholds") === "true";
 
   const childrenModeRaw = searchParams.get("childrenMode");
