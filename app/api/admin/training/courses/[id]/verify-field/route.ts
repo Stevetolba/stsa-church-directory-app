@@ -15,8 +15,8 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   if (!course.subsplashFieldName) {
     return NextResponse.json({ error: "This course has no Subsplash field name set" }, { status: 400 });
   }
-  const meta = await resolveChoiceFieldMeta(course.subsplashFieldName);
   const wanted = Object.values(SUBSPLASH_STATUS_LABEL);
+  const meta = await resolveChoiceFieldMeta(course.subsplashFieldName, wanted);
   const found = meta ? wanted.filter((w) => !!meta.choiceIds[w]) : [];
   return NextResponse.json({
     fieldName: course.subsplashFieldName,
