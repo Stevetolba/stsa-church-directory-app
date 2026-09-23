@@ -18,7 +18,18 @@ export async function POST(request: NextRequest) {
   }
   try {
     return NextResponse.json(await createCourse(parsed.data), { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "Could not create course (is the slug already in use?)" }, { status: 409 });
+  } catch (err) {
+    console.error("Training: create course failed", err);
+    // Postgres 23505 = unique_violation; the in-memory store throws its own message.
+    const cause = err as { code?: string; cause?: { code?: string }; message?: string };
+    const duplicate =
+      cause.code === "23505" || cause.cause?.code === "23505" || cause.message === "Slug already in use";
+    if (duplicate) {
+      return NextResponse.json({ error: "That slug is already in use — pick a different title." }, { status: 409 });
+    }
+    return NextResponse.json(
+      { error: "Could not create course. Has the training database migration been applied?" },
+      { status: 500 }
+    );
   }
 }
