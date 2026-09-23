@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Download, Mail, Users } from "lucide-react";
+import { Download, GraduationCap, Mail, Users } from "lucide-react";
 import { toast } from "sonner";
 import { SearchBar } from "@/components/SearchBar";
 import { PersonCard } from "@/components/PersonCard";
@@ -12,6 +12,7 @@ import { FilterPill } from "@/components/FilterPill";
 import { AddFilterMenu } from "@/components/AddFilterMenu";
 import { SuggestedFilters, type SuggestedFilter } from "@/components/SuggestedFilters";
 import { EmailPeopleDialog } from "@/components/EmailPeopleDialog";
+import { InviteToTrainingDialog } from "@/components/training/InviteToTrainingDialog";
 import { usePeople } from "@/hooks/usePeople";
 import { GRADE_LEVELS } from "@/lib/grades";
 import { downloadCsv, PROFILE_EXPORT_COLUMNS, profileToExportRow, toCsv } from "@/lib/csv";
@@ -125,9 +126,13 @@ function summarizeChildren(
 export function PeoplePageClient({
   user,
   fromAddress,
+  isAdmin = false,
 }: {
   user: { name: string; email: string };
   fromAddress: string;
+  // Gates the "Invite to Training" action (ADR-0023); the invitations API
+  // enforces requireAdmin itself.
+  isAdmin?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -193,12 +198,9 @@ export function PeoplePageClient({
     childrenMode !== null;
   const [isExporting, setIsExporting] = useState(false);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
 
-  // Exports the currently filtered result set (not just the visible page) —
-  // gated on hasActiveFilter so a click can't dump the whole directory.
-  async function handleExport() {
-    setIsExporting(true);
-    try {
+  function buildFilterParams(): URLSearchParams {
       const params = new URLSearchParams();
       if (search) params.set("search", search);
       status.forEach((s) => params.append("status", s));
@@ -214,6 +216,24 @@ export function PeoplePageClient({
       }
       params.set("sortBy", sortBy);
       params.set("pageSize", String(SHOW_ALL_PAGE_SIZE));
+      return params;
+  }
+
+  // Every profile id matching the current filter (not just the visible
+  // page) — used by the bulk "Invite to training" action.
+  async function fetchFilteredProfileIds(): Promise<string[]> {
+    const res = await fetch(`/api/profiles?${buildFilterParams().toString()}`);
+    if (!res.ok) throw new Error(`Could not load people: ${res.status}`);
+    const result: ProfileSearchResult = await res.json();
+    return result.profiles.map((p) => p.id);
+  }
+
+  // Exports the currently filtered result set (not just the visible page) —
+  // gated on hasActiveFilter so a click can't dump the whole directory.
+  async function handleExport() {
+    setIsExporting(true);
+    try {
+      const params = buildFilterParams();
       const res = await fetch(`/api/profiles?${params.toString()}`);
       if (!res.ok) throw new Error(`Export failed: ${res.status}`);
       const result: ProfileSearchResult = await res.json();
@@ -328,6 +348,18 @@ export function PeoplePageClient({
             <Mail className="h-3.5 w-3.5" />
             Email People
           </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setInviteDialogOpen(true)}
+              disabled={!hasActiveFilter}
+              title={hasActiveFilter ? undefined : "Apply a filter to invite people to training"}
+              className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <GraduationCap className="h-3.5 w-3.5" />
+              Invite to Training
+            </button>
+          )}
           <button
             type="button"
             onClick={handleExport}
@@ -652,6 +684,15 @@ export function PeoplePageClient({
             </>
           )}
         </div>
+      )}
+
+      {isAdmin && (
+        <InviteToTrainingDialog
+          open={inviteDialogOpen}
+          onOpenChange={setInviteDialogOpen}
+          getProfileIds={fetchFilteredProfileIds}
+          countLabel={`Everyone matching the current filter (${total}).`}
+        />
       )}
 
       <EmailPeopleDialog

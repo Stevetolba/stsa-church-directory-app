@@ -23,9 +23,13 @@ function isWorkspaceEmail(email: string): boolean {
 
 // Every church Workspace account (@stsa.church) is admin, same as anyone
 // explicitly listed in ADMIN_EMAILS — there's no separate read-only staff
-// tier anymore. Personal-email volunteers (ADR-0010) remain the only
-// non-admin tier. This only assigns a role to an already-authorized user —
-// the signIn gate (lib/auth.ts) decides who is allowed in at all.
+// tier anymore. Personal-email volunteers (ADR-0010) and training-only
+// learners (ADR-0023) remain the only non-admin tiers, both resolved
+// against Subsplash's DirectoryAccess/DirectoryRole fields by the jwt
+// callback in lib/auth.ts, not here — this only classifies the email's
+// *shape* (admin list / workspace domain / neither). The signIn gate
+// (lib/auth.ts) decides who is allowed in at all; a "volunteer" here may
+// end up "learner" once lib/auth.ts checks DirectoryRole.
 export function resolveRole(email: string): Role {
   if (isAdminEmail(email) || isWorkspaceEmail(email)) return "admin";
   return "volunteer";

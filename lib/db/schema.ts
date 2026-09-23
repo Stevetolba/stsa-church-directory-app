@@ -162,6 +162,191 @@ export const accessEvents = pgTable(
   })
 );
 
+// Training courses (video lessons + quizzes). Content and per-person
+// progress live here in Postgres — Subsplash only gets a one-field summary
+// per course (a choice custom field named by trainingCourses.subsplashFieldName,
+// e.g. "MembershipGroupStatus" = "In Progress"/"Completed"), written by
+// lib/training.ts's recomputeCourseStatus. Quiz answer keys
+// (trainingQuizQuestions.correctOptionIds) are never sent to a learner's
+// browser — only app/api/training routes read this table server-side.
+export const trainingCourses = pgTable("training_courses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  slug: text("slug").notNull().unique(),
+  title: text("title").notNull(),
+  description: text("description"),
+  coverImageUrl: text("cover_image_url"),
+  // 'all' = any signed-in role (admin/staff/volunteer/learner) can see it in
+  // the catalog once enrolled/published; 'volunteer' hides it from learners
+  // entirely (a volunteer-only training) even if they're somehow enrolled.
+  audience: text("audience").notNull().default("all"),
+  published: boolean("published").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+  // The Subsplash custom field this course's completion status is written
+  // to (a per-course choice field, e.g. "MembershipGroupStatus") — see
+  // lib/subsplash.ts's resolveChoiceFieldMeta/setCourseStatusField.
+  subsplashFieldName: text("subsplash_field_name"),
+  passThreshold: integer("pass_threshold").notNull().default(80),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const trainingLessons = pgTable(
+  "training_lessons",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    courseId: uuid("course_id")
+      .notNull()
+      .references(() => trainingCourses.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    title: text("title").notNull(),
+    description: text("description"),
+    // Bare 11-char YouTube video id (not a full URL) — the admin lesson
+    // editor extracts it from a pasted URL; see lib/youtube.ts.
+    youtubeVideoId: text("youtube_video_id").notNull(),
+    // % of the video that must be watched before the lesson counts as
+    // video-complete (and, if it has no quiz, complete outright).
+    minWatchPct: integer("min_watch_pct").notNull().default(90),
+    published: boolean("published").notNull().default(false),
+  },
+  (t) => ({
+    courseIdx: index("training_lessons_course_idx").on(t.courseId),
+  })
+);
+
+export const trainingQuizQuestions = pgTable(
+  "training_quiz_questions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    lessonId: uuid("lesson_id")
+      .notNull()
+      .references(() => trainingLessons.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    prompt: text("prompt").notNull(),
+    kind: text("kind").notNull().default("single"), // 'single' | 'multi' | 'true_false'
+    // [{id, text}] — option ids are short strings (e.g. "a","b","c") stable
+    // across edits so past training_progress answers stay interpretable.
+    options: jsonb("options").notNull(),
+    correctOptionIds: jsonb("correct_option_ids").notNull(), // string[]
+  },
+  (t) => ({
+    lessonIdx: index("training_quiz_questions_lesson_idx").on(t.lessonId),
+  })
+);
+
+// Per-person, per-lesson progress. Keyed on the Subsplash profile id (not a
+// local user table — this app has none; see ADR-0002/0010) plus an email/
+// name snapshot so the admin roster still reads if a profile is later
+// merged, same convention as checkIns.profileId/displayName.
+export const trainingProgress = pgTable(
+  "training_progress",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: text("profile_id").notNull(),
+    email: text("email").notNull(),
+    displayName: text("display_name").notNull(),
+    lessonId: uuid("lesson_id")
+      .notNull()
+      .references(() => trainingLessons.id, { onDelete: "cascade" }),
+    courseId: uuid("course_id")
+      .notNull()
+      .references(() => trainingCourses.id, { onDelete: "cascade" }),
+    watchedPct: integer("watched_pct").notNull().default(0),
+    videoCompletedAt: timestamp("video_completed_at", { withTimezone: true }),
+    quizScore: integer("quiz_score"),
+    quizPassedAt: timestamp("quiz_passed_at", { withTimezone: true }),
+    attempts: integer("attempts").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniquePerLesson: unique("training_progress_unique").on(t.profileId, t.lessonId),
+    profileIdx: index("training_progress_profile_idx").on(t.profileId),
+    courseIdx: index("training_progress_course_idx").on(t.courseId),
+  })
+);
+
+// Who's allowed to see a course. An admin enrolls someone (People list
+// "Invite to training" action, ADR-0023) — a learner only sees courses
+// they're enrolled in; a volunteer/admin sees every published course
+// without needing a row here (see lib/training.ts's listCoursesForViewer).
+export const trainingEnrollments = pgTable(
+  "training_enrollments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: text("profile_id").notNull(),
+    courseId: uuid("course_id")
+      .notNull()
+      .references(() => trainingCourses.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    displayName: text("display_name").notNull(),
+    invitedBy: text("invited_by").notNull(),
+    invitedAt: timestamp("invited_at", { withTimezone: true }).notNull().defaultNow(),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+  },
+  (t) => ({
+    uniquePerCourse: unique("training_enrollments_unique").on(t.profileId, t.courseId),
+    profileIdx: index("training_enrollments_profile_idx").on(t.profileId),
+  })
+);
+
+// Whole-course status per person, derived from training_progress by
+// lib/training.ts's recomputeCourseStatus — also the retry queue for
+// syncing to Subsplash (subsplashSyncedStatus lags status until the write
+// to the custom field succeeds; subsplashSyncError holds the last failure
+// so the admin roster/cron can retry rather than fail silently).
+export const trainingCourseStatus = pgTable(
+  "training_course_status",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: text("profile_id").notNull(),
+    email: text("email").notNull(),
+    displayName: text("display_name").notNull(),
+    courseId: uuid("course_id")
+      .notNull()
+      .references(() => trainingCourses.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("in_progress"), // 'in_progress' | 'completed'
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    subsplashSyncedStatus: text("subsplash_synced_status"),
+    subsplashSyncError: text("subsplash_sync_error"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniquePerCourse: unique("training_course_status_unique").on(t.profileId, t.courseId),
+    courseIdx: index("training_course_status_course_idx").on(t.courseId),
+  })
+);
+
+// Discovered write-metadata (definition id, revision id, dropdown choice
+// ids) for a Subsplash custom field, keyed by field name — Subsplash has no
+// custom-field-definitions endpoint, so this is learned once (by sampling
+// real profiles, or by an admin's "Verify field" click) and reused, rather
+// than re-sampled on every write. Generalizes the per-field *FieldMeta
+// interfaces already hand-written in lib/subsplash.ts (Campus, DirectoryAccess,
+// DirectoryRole, VolunteerNotes) to any field a training course names —
+// see lib/subsplash.ts's resolveChoiceFieldMeta.
+export const customFieldMetaCache = pgTable("custom_field_meta_cache", {
+  fieldName: text("field_name").primaryKey(),
+  definitionId: text("definition_id").notNull(),
+  revisionId: text("revision_id"),
+  type: text("type"),
+  choiceIds: jsonb("choice_ids").notNull().default({}), // Record<choiceName, choiceId>
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type TrainingCourseRow = typeof trainingCourses.$inferSelect;
+export type NewTrainingCourseRow = typeof trainingCourses.$inferInsert;
+export type TrainingLessonRow = typeof trainingLessons.$inferSelect;
+export type NewTrainingLessonRow = typeof trainingLessons.$inferInsert;
+export type TrainingQuizQuestionRow = typeof trainingQuizQuestions.$inferSelect;
+export type NewTrainingQuizQuestionRow = typeof trainingQuizQuestions.$inferInsert;
+export type TrainingProgressRow = typeof trainingProgress.$inferSelect;
+export type NewTrainingProgressRow = typeof trainingProgress.$inferInsert;
+export type TrainingEnrollmentRow = typeof trainingEnrollments.$inferSelect;
+export type NewTrainingEnrollmentRow = typeof trainingEnrollments.$inferInsert;
+export type TrainingCourseStatusRow = typeof trainingCourseStatus.$inferSelect;
+export type NewTrainingCourseStatusRow = typeof trainingCourseStatus.$inferInsert;
+export type CustomFieldMetaCacheRow = typeof customFieldMetaCache.$inferSelect;
+export type NewCustomFieldMetaCacheRow = typeof customFieldMetaCache.$inferInsert;
+
 export type CheckInRow = typeof checkIns.$inferSelect;
 export type NewCheckInRow = typeof checkIns.$inferInsert;
 // One row per attempted "sync public Subsplash events to Google Calendar"

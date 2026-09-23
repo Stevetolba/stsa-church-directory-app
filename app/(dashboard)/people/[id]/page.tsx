@@ -1,3 +1,4 @@
+import { InviteSingleButton } from "@/components/training/InviteSingleButton";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Mail, MapPin, Phone, Pencil } from "lucide-react";
@@ -108,13 +109,16 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
           </div>
 
           {isAdmin && (
-            <Link
-              href={`/people/${profile.id}/edit`}
-              className="flex shrink-0 items-center gap-2 rounded-[10px] bg-brand-navy px-4 py-2 text-[13.5px] font-semibold text-brand-cream"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              Edit Profile
-            </Link>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <InviteSingleButton profileId={profile.id} name={`${profile.first_name} ${profile.last_name}`} />
+              <Link
+                href={`/people/${profile.id}/edit`}
+                className="flex shrink-0 items-center gap-2 rounded-[10px] bg-brand-navy px-4 py-2 text-[13.5px] font-semibold text-brand-cream"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit Profile
+              </Link>
+            </div>
           )}
         </div>
 

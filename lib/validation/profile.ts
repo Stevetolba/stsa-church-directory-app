@@ -23,7 +23,7 @@ export const editProfileSchema = z.object({
   directory_access: z.boolean().optional(),
   // Elevates a non-staff person beyond the default volunteer tier
   // (ADR-0017) — see updateProfile's DirectoryRole custom-field write.
-  directory_role: z.enum(["Admin", "Team Lead", "Volunteer"]).optional(),
+  directory_role: z.enum(["Admin", "Team Lead", "Volunteer", "Learner"]).optional(),
   date_of_birth: z
     .string()
     .trim()

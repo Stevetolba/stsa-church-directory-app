@@ -6,7 +6,14 @@ import type { DefaultSession } from "next-auth";
 // are non-admin, so writes are blocked); the distinct label lets the UI
 // tell them apart and leaves room to restrict volunteers further. See
 // ADR-0010.
-export type Role = "admin" | "staff" | "volunteer";
+// "learner" (ADR-0023) is the tier below "volunteer": someone the admin
+// invited to training via the People list who has no DirectoryAccess and no
+// other DirectoryRole. It's scoped to /training only (middleware.ts) — it
+// can never see the People/Households/Children/Reports surfaces a
+// "volunteer" can. Getting DirectoryAccess or a stronger DirectoryRole
+// later (an admin edit, or another invite) supersedes it — see
+// lib/auth.ts's jwt callback.
+export type Role = "admin" | "staff" | "volunteer" | "learner";
 
 declare module "next-auth" {
   interface Session {
@@ -20,6 +27,10 @@ declare module "next-auth" {
       // every existing `role === "volunteer"` check across the app, when
       // the actual ask is one narrow, additive permission.
       canEmailChildren: boolean;
+      // Subsplash profile id for the signed-in person, resolved at sign-in
+      // (ADR-0023) — training progress/enrollment is keyed on this, same as
+      // checkIns.profileId. Undefined only if the email lookup failed.
+      profileId?: string;
     } & DefaultSession["user"];
   }
 }

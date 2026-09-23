@@ -4,7 +4,20 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Baby, BarChart3, Cake, CalendarCheck, History, Home, LogOut, Menu, Users, X } from "lucide-react";
+import {
+  Baby,
+  BarChart3,
+  Cake,
+  CalendarCheck,
+  GraduationCap,
+  History,
+  Home,
+  LogOut,
+  Menu,
+  Settings2,
+  Users,
+  X,
+} from "lucide-react";
 import { signOutAction } from "@/app/(dashboard)/actions";
 import type { Role } from "@/types/auth";
 
@@ -28,6 +41,15 @@ const NAV_ITEMS: Array<{ href: string; label: string; icon: typeof Users; roles:
   { href: "/children", label: "Children and Youth", icon: Baby, roles: ["admin", "staff", "volunteer"] },
   { href: "/events", label: "Events", icon: CalendarCheck, roles: ["admin", "staff", "volunteer"] },
   { href: "/reports", label: "Reports", icon: BarChart3, roles: ["admin", "staff", "volunteer"] },
+  // ADR-0023: Training is the one nav item a "learner" sees at all — every
+  // role can reach it (admin/staff/volunteer use it same as a learner does).
+  {
+    href: "/training",
+    label: "Training",
+    icon: GraduationCap,
+    roles: ["admin", "staff", "volunteer", "learner"],
+  },
+  { href: "/settings/training", label: "Manage Training", icon: Settings2, roles: ["admin"] },
   { href: "/settings/activity", label: "Activity Log", icon: History, roles: ["admin"] },
 ];
 
@@ -35,6 +57,7 @@ const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
   staff: "Staff (View Only)",
   volunteer: "Volunteer (View Only)",
+  learner: "Learner",
 };
 
 function initialsOf(name: string): string {

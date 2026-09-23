@@ -14,5 +14,5 @@ export default async function PeoplePage() {
     email: session?.user?.email ?? "",
   };
 
-  return <PeoplePageClient user={user} fromAddress={getFromAddress()} />;
+  return <PeoplePageClient user={user} fromAddress={getFromAddress()} isAdmin={session?.user?.role === "admin"} />;
 }

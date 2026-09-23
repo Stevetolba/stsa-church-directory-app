@@ -11,7 +11,7 @@ import Google from "next-auth/providers/google";
 import type { GoogleProfile } from "next-auth/providers/google";
 import type { Role } from "@/types/auth";
 import { isAdminEmail, resolveRole } from "./roles";
-import { getDirectoryRole, hasDirectoryAccess } from "./subsplash";
+import { getDirectoryRole, getProfileIdByEmail, hasDirectoryAccess } from "./subsplash";
 import { authConfig } from "./auth.config";
 import { recordAccessEvent } from "./accessLog";
 
@@ -59,12 +59,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
 
       // Everyone else: personal email, admitted either the original way
-      // (ADR-0010: flagged for read-only directory access) or via a
-      // Subsplash DirectoryRole of Admin/Team Lead (ADR-0017) — either is
-      // enough to sign in; the jwt callback below works out which. Fails
-      // closed on any lookup error.
+      // (ADR-0010: flagged for read-only directory access), via a
+      // Subsplash DirectoryRole of Admin/Team Lead (ADR-0017), or via
+      // DirectoryRole "Learner" (ADR-0023: set by the admin's "Invite to
+      // training" action on someone with no other access) — any of these
+      // is enough to sign in; the jwt callback below works out which role
+      // to grant. Fails closed on any lookup error.
       const directoryRole = await getDirectoryRole(email);
-      const grantedByRole = directoryRole === "Admin" || directoryRole === "Team Lead";
+      const grantedByRole =
+        directoryRole === "Admin" || directoryRole === "Team Lead" || directoryRole === "Learner";
       const granted = grantedByRole || (await hasDirectoryAccess(email));
       await recordAccessEvent({ email, name, role, eventType: granted ? "sign_in" : "sign_in_denied" });
       return granted;
@@ -77,6 +80,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // maxAge above is what forces re-validation, not this callback.
       if (!account) return token;
 
+      // ADR-0023: every signed-in person's Subsplash profile id, for the
+      // training feature (progress/enrollment are keyed on it, like
+      // checkIns.profileId). Best-effort — a lookup failure shouldn't block
+      // sign-in for roles that don't need it.
+      token.profileId = await getProfileIdByEmail(token.email);
+
       const baseRole = resolveRole(token.email);
       if (baseRole !== "volunteer") {
         token.role = baseRole;
@@ -85,12 +94,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
 
       // Non-staff, non-admin-by-list: check Subsplash's DirectoryRole field
-      // for an elevation (ADR-0017). Admin promotes the whole session, same
-      // as being listed in ADMIN_EMAILS; Team Lead only grants the one
-      // narrow permission (sending the Children/Youth "Email Parents"
-      // feature) — everything else about them stays exactly volunteer-scoped.
+      // for an elevation (ADR-0017), or the training-only "Learner" tier
+      // (ADR-0023). Admin promotes the whole session, same as being listed
+      // in ADMIN_EMAILS; Team Lead only grants the one narrow permission
+      // (sending the Children/Youth "Email Parents" feature); DirectoryRole
+      // "Learner" only applies when the person has no other access —
+      // hasDirectoryAccess already granted them a full "volunteer" session
+      // otherwise, and that always wins (ADR-0023 never restricts someone
+      // who already has broader access).
       const directoryRole = await getDirectoryRole(token.email);
-      token.role = directoryRole === "Admin" ? "admin" : "volunteer";
+      if (directoryRole === "Admin") {
+        token.role = "admin";
+      } else if (directoryRole === "Learner" && !(await hasDirectoryAccess(token.email))) {
+        token.role = "learner";
+      } else {
+        token.role = "volunteer";
+      }
       token.canEmailChildren = directoryRole === "Team Lead";
       return token;
     },
@@ -100,6 +119,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.role = role;
       }
       session.user.canEmailChildren = !!token.canEmailChildren;
+      session.user.profileId = token.profileId as string | undefined;
       return session;
     },
   },
