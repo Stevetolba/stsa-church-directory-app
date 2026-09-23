@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowDown, ArrowLeft, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { InvitePeopleDialog } from "@/components/training/InvitePeopleDialog";
 import { Input } from "@/components/ui/input";
 import { sendJson, useAdminCourse, useRoster, type AdminLesson } from "@/hooks/useTraining";
 import { extractYoutubeVideoId } from "@/lib/youtube";
@@ -126,12 +127,16 @@ function LessonEditor({
   count,
   onChanged,
   onMove,
+  registerSave,
 }: {
   lesson: AdminLesson;
   index: number;
   count: number;
   onChanged: () => void;
   onMove: (dir: -1 | 1) => void;
+  // Lets the parent's "Save all changes" call this lesson's save. Resolves
+  // true on success (or when there's nothing wrong to report), false on failure.
+  registerSave: (id: string, save: (() => Promise<boolean>) | null) => void;
 }) {
   const [f, setF] = useState({
     title: lesson.title,
@@ -146,8 +151,13 @@ function LessonEditor({
   const [open, setOpen] = useState(false);
   const videoId = extractYoutubeVideoId(f.video);
 
-  async function save() {
-    if (!videoId) return toast.error("Enter a valid YouTube link or video id");
+  // silent = called from "Save all changes", which reports one summary toast.
+  async function save(silent = false): Promise<boolean> {
+    if (!videoId) {
+      toast.error(`Lesson ${index + 1}: enter a valid YouTube link or video id`);
+      setOpen(true);
+      return false;
+    }
     try {
       await sendJson(`/api/admin/training/lessons/${lesson.id}`, "PATCH", {
         title: f.title,
@@ -157,12 +167,25 @@ function LessonEditor({
         published: f.published,
         questions: qs,
       });
-      toast.success("Lesson saved");
-      onChanged();
+      if (!silent) {
+        toast.success("Lesson saved");
+        onChanged();
+      }
+      return true;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not save lesson");
+      toast.error(`Lesson ${index + 1}: ${err instanceof Error ? err.message : "could not save"}`);
+      setOpen(true);
+      return false;
     }
   }
+
+  // Always register the latest closure so the parent saves current edits.
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  useEffect(() => {
+    registerSave(lesson.id, () => saveRef.current(true));
+    return () => registerSave(lesson.id, null);
+  }, [lesson.id, registerSave]);
 
   async function remove() {
     if (!confirm(`Delete lesson "${lesson.title}" and its quiz?`)) return;
@@ -300,15 +323,16 @@ function LessonEditor({
               </Button>
             </div>
           </div>
-          <Button onClick={save}>Save lesson</Button>
+          <Button onClick={() => save()}>Save lesson</Button>
         </div>
       )}
     </div>
   );
 }
 
-function Roster({ courseId }: { courseId: string }) {
+function Roster({ courseId, courseTitle }: { courseId: string; courseTitle: string }) {
   const { data, mutate } = useRoster(courseId);
+  const [inviteOpen, setInviteOpen] = useState(false);
   async function resync() {
     const r = await sendJson(`/api/admin/training/courses/${courseId}/resync`, "POST");
     toast.success(`Retried ${r.attempted}, ${r.failed} still failing`);
@@ -324,12 +348,24 @@ function Roster({ courseId }: { courseId: string }) {
     <section className="space-y-3 rounded-xl bg-card p-5 ring-1 ring-foreground/10">
       <div className="flex items-center justify-between">
         <h2 className="font-heading text-lg font-semibold">Roster</h2>
-        <Button variant="outline" size="sm" onClick={resync}>
-          Retry Subsplash sync
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" onClick={() => setInviteOpen(true)}>
+            <Plus /> Invite people
+          </Button>
+          <Button variant="outline" size="sm" onClick={resync}>
+            Retry Subsplash sync
+          </Button>
+        </div>
       </div>
+      <InvitePeopleDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        courseId={courseId}
+        courseTitle={courseTitle}
+        onInvited={() => mutate()}
+      />
       {data?.roster.length === 0 && (
-        <p className="text-sm text-muted-foreground">No one enrolled yet. Invite people from the People page.</p>
+        <p className="text-sm text-muted-foreground">No one enrolled yet. Use “Invite people” to add someone.</p>
       )}
       <ul className="divide-y text-sm">
         {data?.roster.map((r) => (
@@ -359,6 +395,27 @@ function Roster({ courseId }: { courseId: string }) {
 export function AdminCourseEditor({ id }: { id: string }) {
   const { data, mutate } = useAdminCourse(id);
   const router = useRouter();
+  const savers = useRef(new Map<string, () => Promise<boolean>>());
+  const [savingAll, setSavingAll] = useState(false);
+  // Stable so each lesson's registration effect doesn't re-run every render.
+  const registerSave = useRef((lessonId: string, fn: (() => Promise<boolean>) | null) => {
+    if (fn) savers.current.set(lessonId, fn);
+    else savers.current.delete(lessonId);
+  }).current;
+
+  async function saveAll() {
+    setSavingAll(true);
+    try {
+      const results = await Promise.all(Array.from(savers.current.values()).map((fn) => fn()));
+      const failed = results.filter((ok) => !ok).length;
+      if (failed === 0) toast.success(`Saved ${results.length} ${results.length === 1 ? "lesson" : "lessons"}`);
+      else toast.error(`${failed} of ${results.length} lessons could not be saved`);
+      await mutate();
+    } finally {
+      setSavingAll(false);
+    }
+  }
+
   if (!data) return <p className="text-sm text-muted-foreground">Loading…</p>;
   const { course, lessons } = data;
 
@@ -398,15 +455,38 @@ export function AdminCourseEditor({ id }: { id: string }) {
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-heading text-lg font-semibold">Lessons</h2>
-          <Button variant="outline" size="sm" onClick={addLesson}>
-            <Plus /> Add lesson
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={addLesson}>
+              <Plus /> Add lesson
+            </Button>
+            <Button size="sm" onClick={saveAll} disabled={savingAll || lessons.length === 0}>
+              {savingAll ? "Saving…" : "Save all changes"}
+            </Button>
+          </div>
         </div>
         {lessons.map((l, i) => (
-          <LessonEditor key={l.id} lesson={l} index={i} count={lessons.length} onChanged={mutate} onMove={(d) => move(i, d)} />
+          <LessonEditor
+            key={l.id}
+            lesson={l}
+            index={i}
+            count={lessons.length}
+            onChanged={mutate}
+            onMove={(d) => move(i, d)}
+            registerSave={registerSave}
+          />
         ))}
+        {lessons.length > 0 && (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={addLesson}>
+              <Plus /> Add lesson
+            </Button>
+            <Button size="sm" onClick={saveAll} disabled={savingAll}>
+              {savingAll ? "Saving…" : "Save all changes"}
+            </Button>
+          </div>
+        )}
       </section>
-      <Roster courseId={id} />
+      <Roster courseId={id} courseTitle={course.title} />
       <Button variant="destructive" onClick={removeCourse}>
         Delete course
       </Button>
