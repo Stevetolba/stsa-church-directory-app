@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowDown, ArrowLeft, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ProgressReportSection } from "@/components/training/ProgressReportSection";
 import { InvitePeopleDialog } from "@/components/training/InvitePeopleDialog";
 import { Input } from "@/components/ui/input";
 import { sendJson, useAdminCourse, useRoster, type AdminLesson } from "@/hooks/useTraining";
@@ -487,6 +488,7 @@ export function AdminCourseEditor({ id }: { id: string }) {
         )}
       </section>
       <Roster courseId={id} courseTitle={course.title} />
+      <ProgressReportSection courseId={id} />
       <Button variant="destructive" onClick={removeCourse}>
         Delete course
       </Button>

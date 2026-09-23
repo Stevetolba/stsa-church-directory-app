@@ -16,6 +16,7 @@ import {
 } from "./db/schema";
 import { setChoiceCustomField, getDirectoryRole, updateProfile } from "./subsplash";
 import { sendBulkEmail } from "./email";
+import { buildProgressReport, type ProgressReport } from "./trainingReport";
 import {
   SUBSPLASH_STATUS_LABEL,
   computeCourseStatus,
@@ -73,6 +74,7 @@ export interface Progress {
   quizScore: number | null;
   quizPassedAt: Date | null;
   attempts: number;
+  updatedAt: Date;
 }
 
 export interface Enrollment {
@@ -333,6 +335,14 @@ export async function getProgressForCourse(profileId: string, courseId: string):
   return mem().progress.filter((p) => p.profileId === profileId && p.courseId === courseId);
 }
 
+export async function listProgressForCourse(courseId: string): Promise<Progress[]> {
+  if (isDbConfigured()) {
+    const rows = await getDb().select().from(trainingProgress).where(eq(trainingProgress.courseId, courseId));
+    return rows.map(progressFromRow);
+  }
+  return mem().progress.filter((p) => p.courseId === courseId);
+}
+
 async function saveProgress(p: Progress): Promise<void> {
   if (isDbConfigured()) {
     await getDb()
@@ -352,6 +362,7 @@ async function saveProgress(p: Progress): Promise<void> {
     return;
   }
   const s = mem();
+  p.updatedAt = now();
   const i = s.progress.findIndex((x) => x.profileId === p.profileId && x.lessonId === p.lessonId);
   if (i >= 0) s.progress[i] = p;
   else s.progress.push(p);
@@ -369,6 +380,7 @@ function blankProgress(learner: Learner, lesson: Lesson): Progress {
     quizScore: null,
     quizPassedAt: null,
     attempts: 0,
+    updatedAt: now(),
   };
 }
 
@@ -876,4 +888,21 @@ export async function getRoster(courseId: string): Promise<RosterRow[]> {
     });
   }
   return Array.from(byProfile.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
+}
+
+// --- Progress report ---
+
+export async function getProgressReport(courseId: string): Promise<ProgressReport | null> {
+  const course = await getCourse(courseId);
+  if (!course) return null;
+  const lessons = await listLessons(courseId, { publishedOnly: true });
+  const withQuiz = await Promise.all(
+    lessons.map(async (l) => ({ id: l.id, title: l.title, hasQuiz: (await listQuestions(l.id)).length > 0 }))
+  );
+  const [enrollments, statuses, progress] = await Promise.all([
+    listEnrollmentsForCourse(courseId),
+    listCourseStatuses(courseId),
+    listProgressForCourse(courseId),
+  ]);
+  return buildProgressReport({ course: { id: course.id, title: course.title }, lessons: withQuiz, enrollments, statuses, progress });
 }

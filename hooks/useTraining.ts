@@ -1,6 +1,7 @@
 "use client";
 
 import useSWR from "swr";
+import type { ProgressReport } from "@/lib/trainingReport";
 import type { CourseSummary, CourseView, Course, Lesson, Question, RosterRow } from "@/lib/training";
 
 async function fetcher<T>(url: string): Promise<T> {
@@ -29,6 +30,10 @@ export function useAdminCourse(id: string) {
 
 export function useRoster(id: string) {
   return useSWR<{ roster: RosterRow[] }>(`/api/admin/training/courses/${id}/roster`, fetcher);
+}
+
+export function useProgressReport(id: string) {
+  return useSWR<ProgressReport>(`/api/admin/training/courses/${id}/report`, fetcher);
 }
 
 export async function sendJson(url: string, method: string, body?: unknown) {
