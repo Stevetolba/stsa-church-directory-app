@@ -829,6 +829,7 @@ export async function inviteToTraining(params: {
     const { subject, html } = buildInviteEmail({
       courseTitles: courses.map((c) => c.title),
       trainingUrl: `${params.appUrl}/training`,
+      logoUrl: `${params.appUrl}/stsa-logo.png`,
       invitedByName: params.fromName,
     });
     try {
