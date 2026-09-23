@@ -16,6 +16,7 @@ import {
 } from "./db/schema";
 import { setChoiceCustomField, getDirectoryRole, updateProfile } from "./subsplash";
 import { sendBulkEmail } from "./email";
+import { buildInviteEmail } from "./trainingEmail";
 import { buildProgressReport, type ProgressReport } from "./trainingReport";
 import {
   SUBSPLASH_STATUS_LABEL,
@@ -825,18 +826,18 @@ export async function inviteToTraining(params: {
   let emailed = 0;
   let emailError: string | undefined;
   if (params.sendEmail && emails.length > 0) {
-    const titles = courses.map((c) => c.title);
-    const list = titles.map((t) => `<li>${escapeHtml(t)}</li>`).join("");
+    const { subject, html } = buildInviteEmail({
+      courseTitles: courses.map((c) => c.title),
+      trainingUrl: `${params.appUrl}/training`,
+      invitedByName: params.fromName,
+    });
     try {
       await sendBulkEmail({
         bcc: emails,
         fromName: params.fromName,
         replyTo: params.replyTo,
-        subject: `You're invited to training: ${titles.join(", ")}`,
-        html:
-          `<p>You've been invited to complete the following training:</p><ul>${list}</ul>` +
-          `<p><a href="${params.appUrl}/training">Start your training</a></p>` +
-          `<p>Sign in with Google using this email address.</p>`,
+        subject,
+        html,
       });
       emailed = emails.length;
     } catch (err) {
@@ -844,10 +845,6 @@ export async function inviteToTraining(params: {
     }
   }
   return { results, emailed, emailError };
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 // --- Admin roster ---
