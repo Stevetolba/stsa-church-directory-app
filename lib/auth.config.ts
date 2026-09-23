@@ -29,6 +29,7 @@ export const authConfig = {
       if (role) {
         session.user.role = role;
       }
+      session.user.profileId = token.profileId as string | undefined;
       return session;
     },
   },

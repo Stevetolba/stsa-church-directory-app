@@ -32,3 +32,7 @@ Deliberately **not** a fourth `Role` value. `role === "volunteer"` (or `!== "vol
 
 - **A fourth `Role` value (`"team_lead"`).** Rejected — see the "Deliberately not a fourth Role value" reasoning above.
 - **A second env var allowlist** (e.g. `TEAM_LEAD_EMAILS`, mirroring `ADMIN_EMAILS`). Rejected for the same reason ADR-0010 rejected a `VOLUNTEER_EMAILS` list: it creates a second list to keep in sync by hand, when Subsplash (which the church already manages membership data in) can hold it instead.
+
+## Addendum (2026-09-23, ADR-0023)
+
+`DirectoryRole` gains a fourth value, **Learner**, set by the admin "Invite to training" action on people with no other access. It grants sign-in to `/training` only and never overrides `DirectoryAccess`, Team Lead, or Admin. See ADR-0023.

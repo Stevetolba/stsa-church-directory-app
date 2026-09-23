@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { auth } from "./auth";
 import { recordAccessEvent } from "./accessLog";
 import { isSundaySchoolSeriesId } from "./reportAccess";
+import type { Role } from "@/types/auth";
 
 export async function requireAdmin(): Promise<NextResponse | null> {
   const session = await auth();
@@ -32,7 +33,10 @@ export async function requireStaffOrAdmin(resource: string): Promise<NextRespons
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.role === "volunteer") {
+  // "learner" (ADR-0023) is scoped to training only, same as "volunteer" is
+  // denied here — checked as a deny-list of the two non-staff tiers rather
+  // than `=== "volunteer"` alone so a learner isn't silently let through.
+  if (session.user.role === "volunteer" || session.user.role === "learner") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   await recordAccessEvent({
@@ -57,7 +61,10 @@ export async function requireReportAccess(seriesId: string, resource: string): P
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.role === "volunteer" && !isSundaySchoolSeriesId(seriesId)) {
+  if (
+    (session.user.role === "volunteer" || session.user.role === "learner") &&
+    !isSundaySchoolSeriesId(seriesId)
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   await recordAccessEvent({
@@ -81,7 +88,10 @@ export async function requireCanEmailChildren(): Promise<NextResponse | null> {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.role === "volunteer" && !session.user.canEmailChildren) {
+  if (
+    (session.user.role === "volunteer" && !session.user.canEmailChildren) ||
+    session.user.role === "learner"
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   await recordAccessEvent({
@@ -92,4 +102,31 @@ export async function requireCanEmailChildren(): Promise<NextResponse | null> {
     resource: "children-email",
   });
   return null;
+}
+
+export interface SignedInActor {
+  email: string;
+  name: string | null;
+  role: Role;
+  profileId: string | undefined;
+}
+
+// ADR-0023: gates the training routes — any signed-in role (including
+// "learner") may hit these; each route further scopes by profileId/
+// enrollment itself (e.g. a learner only ever reads/writes their own
+// progress, on a course they're enrolled in). Unlike requireStaffOrAdmin,
+// this deliberately admits every role since training is the one surface a
+// learner IS meant to use. Returns the actor's identity directly (instead
+// of null) since every training route needs it.
+export async function requireSignedIn(): Promise<NextResponse | SignedInActor> {
+  const session = await auth();
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return {
+    email: session.user.email,
+    name: session.user.name ?? null,
+    role: session.user.role,
+    profileId: session.user.profileId,
+  };
 }

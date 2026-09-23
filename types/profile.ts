@@ -18,7 +18,11 @@ export type Campus = "Arlington" | "Leesburg";
 // the Children/Youth "Email Parents" feature). Unset, or "Volunteer", leaves
 // someone exactly where the existing DirectoryAccess field already puts
 // them — this field only ever elevates, never restricts.
-export type DirectoryRole = "Admin" | "Team Lead" | "Volunteer";
+// "Learner" (ADR-0023) is set by the admin "Invite to training" action, not
+// hand-picked from the profile edit form's normal use — it only ever
+// applies to someone with no other access, so it never overrides Admin/Team
+// Lead/Volunteer (see lib/training.ts's inviteToTraining).
+export type DirectoryRole = "Admin" | "Team Lead" | "Volunteer" | "Learner";
 
 // Mirrors Subsplash's HouseholdRole enum exactly (openapi.yaml) — not
 // "head"/"spouse" as earlier mock data guessed before this was checked.

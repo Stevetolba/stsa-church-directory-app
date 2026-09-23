@@ -27,6 +27,12 @@ const { auth } = NextAuth(authConfig);
 // series a volunteer sees (lib/reportAccess.ts / requireReportAccess).
 const VOLUNTEER_BLOCKED_PATHS = new Set(["/people", "/households", "/birthdays"]);
 
+// ADR-0023: a "learner" (invited to training only, no DirectoryAccess) is
+// scoped to /training — everything else in the app (even the volunteer-
+// scoped "/" landing page and "/children") assumes at least directory
+// read access, which a learner doesn't have.
+const LEARNER_ALLOWED_PREFIXES = ["/training", "/login"];
+
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
   const isLoginPage = req.nextUrl.pathname.startsWith("/login");
@@ -36,6 +42,13 @@ export default auth((req) => {
   }
   if (isLoggedIn && isLoginPage) {
     return NextResponse.redirect(new URL("/", req.nextUrl.origin));
+  }
+
+  if (isLoggedIn && req.auth?.user?.role === "learner") {
+    const allowed = LEARNER_ALLOWED_PREFIXES.some((p) => req.nextUrl.pathname.startsWith(p));
+    if (!allowed) {
+      return NextResponse.redirect(new URL("/training", req.nextUrl.origin));
+    }
   }
 
   if (isLoggedIn && VOLUNTEER_BLOCKED_PATHS.has(req.nextUrl.pathname)) {

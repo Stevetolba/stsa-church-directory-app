@@ -57,6 +57,13 @@
       "when": 1787586753081,
       "tag": "0007_mighty_doctor_spectrum",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790177331435,
+      "tag": "0008_sparkling_angel",
+      "breakpoints": true
     }
   ]
 }

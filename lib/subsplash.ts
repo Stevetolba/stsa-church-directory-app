@@ -15,6 +15,9 @@ import { mockHouseholds, mockProfiles } from "./mockData";
 import { formatAddressParts, householdCampus, householdMemberType, parseAddressString } from "./household";
 import { MAX_GRADE_VALUE, MIN_GRADE_VALUE } from "./grades";
 import { calculateAge } from "./age";
+import { eq } from "drizzle-orm";
+import { getDb, isDbConfigured } from "./db";
+import { customFieldMetaCache } from "./db/schema";
 
 const USE_MOCK_DATA = process.env.SUBSPLASH_USE_MOCK !== "false";
 const BASE_URL = process.env.SUBSPLASH_BASE_URL ?? "https://core.subsplash.com";
@@ -227,7 +230,7 @@ const NOTES_FIELD_NAME = (process.env.SUBSPLASH_NOTES_FIELD_NAME ?? "VOLUNTEERNO
   .trim()
   .toLowerCase();
 
-const DIRECTORY_ROLE_VALUES: DirectoryRole[] = ["Admin", "Team Lead", "Volunteer"];
+const DIRECTORY_ROLE_VALUES: DirectoryRole[] = ["Admin", "Team Lead", "Volunteer", "Learner"];
 
 function normalizeDirectoryRole(value: string | undefined): DirectoryRole | undefined {
   if (!value) return undefined;
@@ -1155,6 +1158,32 @@ export async function getDirectoryRole(email: string): Promise<DirectoryRole | u
   }
 }
 
+// ADR-0023: resolves an email to its Subsplash profile id, for the training
+// feature — training_progress/enrollments are keyed on profile id (like
+// checkIns), and the jwt callback stores it on the session so client code
+// never has to look it up. Returns undefined (not an error) on any lookup
+// failure or no match, same fail-open-to-"no id" posture as the other
+// email lookups here — callers that need identity to gate access (auth.ts)
+// already separately require hasDirectoryAccess/getDirectoryRole to pass.
+export async function getProfileIdByEmail(email: string): Promise<string | undefined> {
+  const needle = email.trim().toLowerCase();
+  if (!needle) return undefined;
+
+  if (USE_MOCK_DATA) {
+    return mockProfiles.find((p) => p.email?.toLowerCase() === needle)?.id;
+  }
+
+  try {
+    const data = await subsplashFetch<HalCollection<RawProfile>>(
+      `/people/v1/profiles?filter[email]=${encodeURIComponent(needle)}`
+    );
+    const active = data._embedded.profiles.find((raw) => !raw.status || raw.status.toLowerCase() === "active");
+    return active?.id;
+  } catch {
+    return undefined;
+  }
+}
+
 // Only the fields actually editable via PATCH /people/v1/profiles/{id} at
 // the top level, plus campus and address_parts (handled separately below —
 // campus lives in custom_fields, address_parts under _embedded.address, not
@@ -1378,6 +1407,242 @@ async function buildVolunteerNotesFieldInput(
     custom_field_definition: { id: meta.definitionId, revision_id: meta.revisionId },
     value: { text: notes },
   };
+}
+
+// --- Generic choice-field writer (ADR-0023) ---
+//
+// Every field above (Campus, DirectoryAccess, DirectoryRole, VolunteerNotes)
+// has its own hand-written FieldMeta interface/merge/sample/build quartet.
+// A training course names an arbitrary Subsplash field
+// (trainingCourses.subsplashFieldName), so instead of generating that
+// quartet per course, this is one generic path any course can use. Unlike
+// the fields above, its resolved meta is persisted in Postgres
+// (custom_field_meta_cache) rather than only unstable_cache, so a course's
+// write metadata survives once discovered instead of depending on page 1 of
+// the live roster still containing a sampled value.
+export interface GenericChoiceFieldMeta {
+  definitionId: string;
+  revisionId?: string;
+  type?: string;
+  choiceIds: Record<string, string>;
+}
+
+function findGenericField(
+  customFields: RawCustomFieldValue[] | undefined,
+  fieldName: string
+): RawCustomFieldValue | undefined {
+  const needle = fieldName.trim().toLowerCase();
+  return customFields?.find((f) => f.custom_field_definition.name.trim().toLowerCase() === needle);
+}
+
+function mergeGenericFieldMeta(
+  existing: GenericChoiceFieldMeta | null,
+  field: RawCustomFieldValue
+): GenericChoiceFieldMeta {
+  const def = field.custom_field_definition;
+  const meta: GenericChoiceFieldMeta = existing ?? { definitionId: def.id, choiceIds: {} };
+  meta.definitionId = def.id;
+  if (def.revision_id) meta.revisionId = def.revision_id;
+  if (def.type) meta.type = def.type;
+  const choices = field.value.choices?.length
+    ? field.value.choices
+    : field.value.choice
+      ? [field.value.choice]
+      : [];
+  for (const choice of choices) {
+    meta.choiceIds[choice.name] = choice.id;
+  }
+  return meta;
+}
+
+function genericFieldUsesChoices(meta: GenericChoiceFieldMeta): boolean {
+  return meta.type === "dropdown" || Object.keys(meta.choiceIds).length > 0;
+}
+
+async function loadCachedFieldMeta(fieldName: string): Promise<GenericChoiceFieldMeta | null> {
+  if (!isDbConfigured()) return null;
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(customFieldMetaCache)
+    .where(eq(customFieldMetaCache.fieldName, fieldName))
+    .limit(1);
+  if (!row) return null;
+  return {
+    definitionId: row.definitionId,
+    revisionId: row.revisionId ?? undefined,
+    type: row.type ?? undefined,
+    choiceIds: (row.choiceIds as Record<string, string>) ?? {},
+  };
+}
+
+async function saveCachedFieldMeta(fieldName: string, meta: GenericChoiceFieldMeta): Promise<void> {
+  if (!isDbConfigured()) return;
+  const db = getDb();
+  await db
+    .insert(customFieldMetaCache)
+    .values({
+      fieldName,
+      definitionId: meta.definitionId,
+      revisionId: meta.revisionId ?? null,
+      type: meta.type ?? null,
+      choiceIds: meta.choiceIds,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: customFieldMetaCache.fieldName,
+      set: {
+        definitionId: meta.definitionId,
+        revisionId: meta.revisionId ?? null,
+        type: meta.type ?? null,
+        choiceIds: meta.choiceIds,
+        updatedAt: new Date(),
+      },
+    });
+}
+
+// Walks the full roster (bounded by FULL_ROSTER_PAGE_SIZE, same cap every
+// other "fetch everything" caller uses) sampling `fieldName`, merging every
+// choice seen. Page 1 alone (the sampling every other field here relies on)
+// often isn't enough for a brand-new training field — it depends on which
+// profiles happen to have a value set yet — so this walks further before
+// giving up. Used by the admin "Verify field" action and as a resolve-time
+// fallback when neither the DB cache nor the target profile already has a
+// usable value.
+async function sampleFieldMetaFromRoster(fieldName: string): Promise<GenericChoiceFieldMeta | null> {
+  let meta: GenericChoiceFieldMeta | null = null;
+  let page = 1;
+  while (page <= MAX_SUBSPLASH_PAGES) {
+    const data = await subsplashFetch<HalCollection<RawProfile>>(
+      `/people/v1/profiles?page[number]=${page}&page[size]=${MAX_SUBSPLASH_PAGE_SIZE}`
+    );
+    for (const raw of data._embedded.profiles) {
+      const field = findGenericField(raw.custom_fields, fieldName);
+      if (field) meta = mergeGenericFieldMeta(meta, field);
+    }
+    // Definition id/revision id are the same across every profile that has
+    // the field at all — once we have those plus every choice we're likely
+    // to need (checked by the caller), there's no reason to keep walking.
+    if (meta?.revisionId && Object.keys(meta.choiceIds).length >= 2) break;
+    if (data._embedded.profiles.length < MAX_SUBSPLASH_PAGE_SIZE) break;
+    page += 1;
+  }
+  return meta;
+}
+
+// Resolves `fieldName`'s write metadata: DB cache first, then a roster
+// sample (cached back to Postgres so future calls skip the walk). Used by
+// both the "Verify field" admin action and buildChoiceFieldInput's
+// fallback path.
+export async function resolveChoiceFieldMeta(fieldName: string): Promise<GenericChoiceFieldMeta | null> {
+  const cached = await loadCachedFieldMeta(fieldName);
+  if (cached?.revisionId) return cached;
+  const sampled = USE_MOCK_DATA ? null : await sampleFieldMetaFromRoster(fieldName);
+  const merged = sampled
+    ? cached
+      ? { ...sampled, choiceIds: { ...sampled.choiceIds, ...cached.choiceIds } }
+      : sampled
+    : cached;
+  if (merged?.revisionId) await saveCachedFieldMeta(fieldName, merged);
+  return merged;
+}
+
+// Builds the custom_fields entry that sets `fieldName` to `choiceName` on a
+// profile — same discover-from-real-data shape as
+// buildDirectoryAccessFieldInput/buildDirectoryRoleFieldInput, generalized
+// to an arbitrary field name and choice value (ADR-0023). Throws
+// CustomFieldUpdateError if the field's write metadata, or the requested
+// choice's id, can't be resolved — the caller (lib/training.ts's
+// recomputeCourseStatus) catches this and records it as a pending sync
+// rather than failing the learner's request.
+export async function buildChoiceFieldInput(
+  profileId: string,
+  fieldName: string,
+  choiceName: string
+): Promise<{ custom_field_definition: { id: string; revision_id?: string }; value: object }> {
+  const currentRaw = await subsplashFetch<RawProfile>(`/people/v1/profiles/${profileId}`).catch(
+    () => null
+  );
+  const fromProfile = currentRaw ? findGenericField(currentRaw.custom_fields, fieldName) : undefined;
+  let meta = fromProfile ? mergeGenericFieldMeta(null, fromProfile) : null;
+
+  if (!meta || !meta.revisionId || (genericFieldUsesChoices(meta) && !meta.choiceIds[choiceName])) {
+    const resolved = await resolveChoiceFieldMeta(fieldName);
+    if (resolved) {
+      meta = meta
+        ? { ...resolved, ...meta, choiceIds: { ...resolved.choiceIds, ...meta.choiceIds } }
+        : resolved;
+    }
+  }
+
+  if (!meta || !meta.revisionId) {
+    throw new CustomFieldUpdateError(
+      `Could not resolve the "${fieldName}" custom field's write metadata from Subsplash — it may not be configured. Set it once on a test profile, then use "Verify field".`
+    );
+  }
+
+  let value: { choice: { id: string } } | { text: string };
+  if (genericFieldUsesChoices(meta)) {
+    const choiceId = meta.choiceIds[choiceName];
+    if (!choiceId) {
+      throw new CustomFieldUpdateError(
+        `No known Subsplash dropdown choice id for "${choiceName}" on the "${fieldName}" field — set it on a test profile once, then use "Verify field".`
+      );
+    }
+    value = { choice: { id: choiceId } };
+  } else {
+    value = { text: choiceName };
+  }
+
+  return {
+    custom_field_definition: { id: meta.definitionId, revision_id: meta.revisionId },
+    value,
+  };
+}
+
+// Sets an arbitrary Subsplash choice field to `choiceName` on a profile —
+// the training-course equivalent of updateProfile's campus/directory_access/
+// directory_role/care_notes writes, but generic since the field name is
+// data (trainingCourses.subsplashFieldName), not a fixed constant. Mock mode
+// edits mockProfiles in place, matching updateProfile's own mock branch.
+export async function setChoiceCustomField(
+  profileId: string,
+  fieldName: string,
+  choiceName: string
+): Promise<void> {
+  if (USE_MOCK_DATA) {
+    const existing = mockProfiles.find((p) => p.id === profileId);
+    if (!existing) throw new Error(`Profile not found: ${profileId}`);
+    const needle = fieldName.trim().toLowerCase();
+    const field = existing.custom_fields?.find((f) => f.label.trim().toLowerCase() === needle);
+    if (field) {
+      field.value = choiceName;
+    } else {
+      existing.custom_fields = [
+        ...(existing.custom_fields ?? []),
+        { id: `cf-${needle}`, label: fieldName, value: choiceName },
+      ];
+    }
+    return;
+  }
+
+  if (!ORG_KEY) {
+    throw new Error("Missing SUBSPLASH_ORG_KEY — required as filter[org_key] on every request.");
+  }
+  const input = await buildChoiceFieldInput(profileId, fieldName, choiceName);
+  const token = await getServiceToken();
+  const res = await fetch(`${BASE_URL}/people/v1/profiles/${profileId}?filter[org_key]=${ORG_KEY}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ custom_fields: [input] }),
+  });
+  if (!res.ok) {
+    throw new Error(`Subsplash API error: ${res.status} PATCH /people/v1/profiles/${profileId}`);
+  }
+  revalidateTag("subsplash-profiles");
 }
 
 export async function updateProfile(id: string, patch: UpdateProfileInput): Promise<Profile> {
