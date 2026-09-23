@@ -1354,9 +1354,30 @@ async function buildDirectoryRoleFieldInput(
     }
   }
 
+  // Page 1 of the roster often has no profile with DirectoryRole set (it's
+  // only set on a handful of people), so walk the whole roster and cache
+  // what's found (ADR-0023's generic resolver) before giving up — this is
+  // what lets "Invite to training" set the new "Learner" choice.
+  if (!meta || !meta.revisionId || (roleFieldUsesChoices(meta) && !meta.choiceIds[role])) {
+    const resolved = await resolveChoiceFieldMeta(ROLE_FIELD_NAME, [role]);
+    if (resolved?.revisionId) {
+      const choiceIds: Partial<Record<DirectoryRole, string>> = { ...(meta?.choiceIds ?? {}) };
+      for (const [name, id] of Object.entries(resolved.choiceIds)) {
+        const normalized = normalizeDirectoryRole(name);
+        if (normalized) choiceIds[normalized] = id;
+      }
+      meta = {
+        definitionId: resolved.definitionId,
+        revisionId: resolved.revisionId,
+        type: resolved.type ?? meta?.type,
+        choiceIds,
+      };
+    }
+  }
+
   if (!meta || !meta.revisionId) {
     throw new CustomFieldUpdateError(
-      `Could not resolve the ${ROLE_FIELD_NAME} custom field's write metadata from Subsplash — it may not be configured.`
+      `Could not find the "DirectoryRole" custom field on any Subsplash profile. In Subsplash, set a DirectoryRole value on one profile (any value), then try again.`
     );
   }
 
@@ -1365,7 +1386,7 @@ async function buildDirectoryRoleFieldInput(
     const choiceId = meta.choiceIds[role];
     if (!choiceId) {
       throw new CustomFieldUpdateError(
-        `No known Subsplash dropdown choice id for "${role}" on the ${ROLE_FIELD_NAME} field — it hasn't appeared on any sampled profile yet.`
+        `Subsplash has no "${role}" choice on the DirectoryRole field yet. In Subsplash, add "${role}" to the DirectoryRole dropdown and set it on one profile, then try again.`
       );
     }
     value = { choice: { id: choiceId } };
@@ -1509,7 +1530,10 @@ async function saveCachedFieldMeta(fieldName: string, meta: GenericChoiceFieldMe
 // giving up. Used by the admin "Verify field" action and as a resolve-time
 // fallback when neither the DB cache nor the target profile already has a
 // usable value.
-async function sampleFieldMetaFromRoster(fieldName: string): Promise<GenericChoiceFieldMeta | null> {
+async function sampleFieldMetaFromRoster(
+  fieldName: string,
+  wantedChoices: string[] = []
+): Promise<GenericChoiceFieldMeta | null> {
   let meta: GenericChoiceFieldMeta | null = null;
   let page = 1;
   while (page <= MAX_SUBSPLASH_PAGES) {
@@ -1523,7 +1547,7 @@ async function sampleFieldMetaFromRoster(fieldName: string): Promise<GenericChoi
     // Definition id/revision id are the same across every profile that has
     // the field at all — once we have those plus every choice we're likely
     // to need (checked by the caller), there's no reason to keep walking.
-    if (meta?.revisionId && Object.keys(meta.choiceIds).length >= 2) break;
+    if (meta?.revisionId && wantedChoices.every((c) => meta!.choiceIds[c])) break;
     if (data._embedded.profiles.length < MAX_SUBSPLASH_PAGE_SIZE) break;
     page += 1;
   }
@@ -1534,10 +1558,16 @@ async function sampleFieldMetaFromRoster(fieldName: string): Promise<GenericChoi
 // sample (cached back to Postgres so future calls skip the walk). Used by
 // both the "Verify field" admin action and buildChoiceFieldInput's
 // fallback path.
-export async function resolveChoiceFieldMeta(fieldName: string): Promise<GenericChoiceFieldMeta | null> {
+export async function resolveChoiceFieldMeta(
+  fieldName: string,
+  wantedChoices: string[] = []
+): Promise<GenericChoiceFieldMeta | null> {
   const cached = await loadCachedFieldMeta(fieldName);
-  if (cached?.revisionId) return cached;
-  const sampled = USE_MOCK_DATA ? null : await sampleFieldMetaFromRoster(fieldName);
+  // A cached entry only short-circuits when it already knows every choice
+  // the caller needs — otherwise a field cached with just one choice would
+  // never learn the others.
+  if (cached?.revisionId && wantedChoices.every((c) => cached.choiceIds[c])) return cached;
+  const sampled = USE_MOCK_DATA ? null : await sampleFieldMetaFromRoster(fieldName, wantedChoices);
   const merged = sampled
     ? cached
       ? { ...sampled, choiceIds: { ...sampled.choiceIds, ...cached.choiceIds } }
@@ -1567,7 +1597,7 @@ export async function buildChoiceFieldInput(
   let meta = fromProfile ? mergeGenericFieldMeta(null, fromProfile) : null;
 
   if (!meta || !meta.revisionId || (genericFieldUsesChoices(meta) && !meta.choiceIds[choiceName])) {
-    const resolved = await resolveChoiceFieldMeta(fieldName);
+    const resolved = await resolveChoiceFieldMeta(fieldName, [choiceName]);
     if (resolved) {
       meta = meta
         ? { ...resolved, ...meta, choiceIds: { ...resolved.choiceIds, ...meta.choiceIds } }
