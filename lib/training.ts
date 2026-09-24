@@ -509,10 +509,14 @@ async function saveStatus(row: CourseStatusRow): Promise<void> {
 // throws: a failure is stored on the row (subsplashSyncError) so the admin
 // roster shows it and a retry can pick it up — a Subsplash outage or an
 // undiscovered choice id must never fail the learner's own request.
-async function syncStatusToSubsplash(course: Course, row: CourseStatusRow): Promise<CourseStatusRow> {
+async function syncStatusToSubsplash(
+  course: Course,
+  row: CourseStatusRow,
+  opts: { force?: boolean } = {}
+): Promise<CourseStatusRow> {
   if (!course.subsplashFieldName) return row;
   try {
-    await setChoiceCustomField(row.profileId, course.subsplashFieldName, SUBSPLASH_STATUS_LABEL[row.status]);
+    await setChoiceCustomField(row.profileId, course.subsplashFieldName, SUBSPLASH_STATUS_LABEL[row.status], opts);
     return { ...row, subsplashSyncedStatus: row.status, subsplashSyncError: null };
   } catch (err) {
     console.error("Training: Subsplash sync failed", err);
@@ -569,17 +573,48 @@ function needsSubsplashSync(course: Course, row: CourseStatusRow | null): boolea
 }
 
 // Admin "resync": retries every status row whose Subsplash value lags.
-export async function resyncCourse(courseId: string): Promise<{ attempted: number; failed: number }> {
+// Admin "reset": wipes one person's progress and status for a course so they
+// can take it again from lesson 1. Their enrollment is kept. Their Subsplash
+// status field is left as-is — a choice field can't be cleared through this
+// API — and is overwritten the next time they make progress.
+export async function resetProgress(courseId: string, profileId: string): Promise<void> {
+  if (isDbConfigured()) {
+    const db = getDb();
+    await db.delete(trainingProgress).where(and(eq(trainingProgress.courseId, courseId), eq(trainingProgress.profileId, profileId)));
+    await db
+      .delete(trainingCourseStatus)
+      .where(and(eq(trainingCourseStatus.courseId, courseId), eq(trainingCourseStatus.profileId, profileId)));
+    return;
+  }
+  const s = mem();
+  s.progress = s.progress.filter((p) => !(p.courseId === courseId && p.profileId === profileId));
+  s.statuses = s.statuses.filter((x) => !(x.courseId === courseId && x.profileId === profileId));
+}
+
+export interface ResyncResult {
+  attempted: number;
+  failed: number;
+  // One entry per failure, with the person's name — surfaced to the admin.
+  errors: string[];
+}
+
+// Admin "resync": re-sends every status row whose Subsplash value lags — or
+// just one person's when `profileId` is given (the per-row "Update Subsplash"
+// button). An explicit admin action, so it bypasses the recent-miss cache
+// and retries the full-roster field lookup.
+export async function resyncCourse(courseId: string, profileId?: string): Promise<ResyncResult> {
   const course = await getCourse(courseId);
-  if (!course) return { attempted: 0, failed: 0 };
-  const rows = (await listCourseStatuses(courseId)).filter((r) => r.subsplashSyncedStatus !== r.status);
-  let failed = 0;
+  if (!course) return { attempted: 0, failed: 0, errors: [] };
+  const rows = (await listCourseStatuses(courseId)).filter(
+    (r) => r.subsplashSyncedStatus !== r.status && (!profileId || r.profileId === profileId)
+  );
+  const errors: string[] = [];
   for (const r of rows) {
-    const next = await syncStatusToSubsplash(course, r);
-    if (next.subsplashSyncError) failed += 1;
+    const next = await syncStatusToSubsplash(course, r, { force: true });
+    if (next.subsplashSyncError) errors.push(`${r.displayName}: ${next.subsplashSyncError}`);
     await saveStatus(next);
   }
-  return { attempted: rows.length, failed };
+  return { attempted: rows.length, failed: errors.length, errors };
 }
 
 // --- Learner-facing operations ---
