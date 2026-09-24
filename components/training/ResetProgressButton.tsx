@@ -21,14 +21,21 @@ export function ResetProgressButton({
   async function run() {
     if (
       !confirm(
-        `Reset ${name}'s progress in this course?\\n\\nTheir watched videos, quiz scores and completion are erased and they start again from lesson 1. Their Subsplash status is left as-is until they make progress again.`
+        `Reset ${name}'s progress in this course?\\n\\nTheir watched videos, quiz scores and completion are erased and they start again from lesson 1. Their Subsplash status is set to \"Not Started\".`
       )
     )
       return;
     setBusy(true);
     try {
-      await sendJson(`/api/admin/training/courses/${courseId}/reset?profileId=${encodeURIComponent(profileId)}`, "POST");
-      toast.success(`${name}'s progress was reset`);
+      const r = (await sendJson(
+        `/api/admin/training/courses/${courseId}/reset?profileId=${encodeURIComponent(profileId)}`,
+        "POST"
+      )) as { subsplashUpdated?: boolean; subsplashError?: string };
+      if (r.subsplashError) {
+        toast.warning(`${name}'s progress was reset, but Subsplash wasn't updated: ${r.subsplashError}`);
+      } else {
+        toast.success(`${name}'s progress was reset${r.subsplashUpdated ? " and Subsplash set to Not Started" : ""}`);
+      }
       onDone();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not reset progress");

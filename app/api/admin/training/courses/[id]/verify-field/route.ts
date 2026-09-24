@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/rbac";
 import { resolveChoiceFieldMeta } from "@/lib/subsplash";
-import { SUBSPLASH_STATUS_LABEL } from "@/lib/trainingLogic";
+import { SUBSPLASH_NOT_STARTED_LABEL, SUBSPLASH_STATUS_LABEL } from "@/lib/trainingLogic";
 import { getCourse } from "@/lib/training";
 
 // Discovers (and caches) the course field's write metadata. Subsplash has no
@@ -15,7 +15,8 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   if (!course.subsplashFieldName) {
     return NextResponse.json({ error: "This course has no Subsplash field name set" }, { status: 400 });
   }
-  const wanted = Object.values(SUBSPLASH_STATUS_LABEL);
+  // "Not Started" is written by Reset progress.
+  const wanted = [SUBSPLASH_NOT_STARTED_LABEL, ...Object.values(SUBSPLASH_STATUS_LABEL)];
   const meta = await resolveChoiceFieldMeta(course.subsplashFieldName, wanted, { force: true });
   const found = meta ? wanted.filter((w) => !!meta.choiceIds[w]) : [];
   return NextResponse.json({

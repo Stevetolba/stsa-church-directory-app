@@ -97,6 +97,9 @@ export function computeCourseStatus(
 }
 
 // The choice name written to the Subsplash course field.
+// Written to the Subsplash field when an admin resets someone's progress.
+export const SUBSPLASH_NOT_STARTED_LABEL = "Not Started";
+
 export const SUBSPLASH_STATUS_LABEL: Record<CourseStatusValue, string> = {
   in_progress: "In Progress",
   completed: "Completed",

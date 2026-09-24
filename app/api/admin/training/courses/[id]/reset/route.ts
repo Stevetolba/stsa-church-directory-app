@@ -9,6 +9,5 @@ export async function POST(request: Request, { params }: { params: { id: string 
   const profileId = new URL(request.url).searchParams.get("profileId");
   if (!profileId) return NextResponse.json({ error: "profileId is required" }, { status: 400 });
   if (!(await getCourse(params.id))) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  await resetProgress(params.id, profileId);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, ...(await resetProgress(params.id, profileId)) });
 }

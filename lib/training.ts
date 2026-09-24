@@ -14,11 +14,12 @@ import {
   trainingProgress,
   trainingQuizQuestions,
 } from "./db/schema";
-import { setChoiceCustomField, getDirectoryRole, updateProfile } from "./subsplash";
+import { setChoiceCustomField, getProfile, updateProfile } from "./subsplash";
 import { sendBulkEmail } from "./email";
 import { buildInviteEmail } from "./trainingEmail";
 import { buildProgressReport, type ProgressReport } from "./trainingReport";
 import {
+  SUBSPLASH_NOT_STARTED_LABEL,
   SUBSPLASH_STATUS_LABEL,
   computeCourseStatus,
   computeLessonStates,
@@ -574,21 +575,35 @@ function needsSubsplashSync(course: Course, row: CourseStatusRow | null): boolea
 
 // Admin "resync": retries every status row whose Subsplash value lags.
 // Admin "reset": wipes one person's progress and status for a course so they
-// can take it again from lesson 1. Their enrollment is kept. Their Subsplash
-// status field is left as-is — a choice field can't be cleared through this
-// API — and is overwritten the next time they make progress.
-export async function resetProgress(courseId: string, profileId: string): Promise<void> {
+// can take it again from lesson 1. Their enrollment is kept, and their
+// Subsplash status field is set to "Not Started" (best-effort: if that choice
+// doesn't exist on the field yet, the reset still succeeds and the error is
+// returned so the admin can fix the field).
+export async function resetProgress(
+  courseId: string,
+  profileId: string
+): Promise<{ subsplashUpdated: boolean; subsplashError?: string }> {
   if (isDbConfigured()) {
     const db = getDb();
     await db.delete(trainingProgress).where(and(eq(trainingProgress.courseId, courseId), eq(trainingProgress.profileId, profileId)));
     await db
       .delete(trainingCourseStatus)
       .where(and(eq(trainingCourseStatus.courseId, courseId), eq(trainingCourseStatus.profileId, profileId)));
-    return;
+  } else {
+    const s = mem();
+    s.progress = s.progress.filter((p) => !(p.courseId === courseId && p.profileId === profileId));
+    s.statuses = s.statuses.filter((x) => !(x.courseId === courseId && x.profileId === profileId));
   }
-  const s = mem();
-  s.progress = s.progress.filter((p) => !(p.courseId === courseId && p.profileId === profileId));
-  s.statuses = s.statuses.filter((x) => !(x.courseId === courseId && x.profileId === profileId));
+
+  const course = await getCourse(courseId);
+  if (!course?.subsplashFieldName) return { subsplashUpdated: false };
+  try {
+    await setChoiceCustomField(profileId, course.subsplashFieldName, SUBSPLASH_NOT_STARTED_LABEL, { force: true });
+    return { subsplashUpdated: true };
+  } catch (err) {
+    console.error("Training: could not set Not Started in Subsplash", err);
+    return { subsplashUpdated: false, subsplashError: err instanceof Error ? err.message : "Subsplash update failed" };
+  }
 }
 
 export interface ResyncResult {
@@ -732,7 +747,7 @@ export async function getCourseView(actor: { role: string; profileId?: string },
 // Runs the deferred Subsplash write for the lesson's course. Called by the
 // client right after a watch/quiz response says needsSync.
 export async function syncCourseStatus(actor: LearnerActor, lessonId: string): Promise<{ synced: boolean; error?: string }> {
-  if (!actor.profileId) throw new TrainingError("No directory profile is linked to your email", 400);
+  if (!actor.profileId) throw new TrainingError("We couldn't match your Google account's name and email to a directory profile. Please ask an admin.", 400);
   const lesson = await getLesson(lessonId);
   if (!lesson) throw new TrainingError("Lesson not found", 404);
   const course = await getCourse(lesson.courseId);
@@ -762,7 +777,7 @@ interface LearnerActor {
 }
 
 async function loadLessonForLearner(actor: LearnerActor, lessonId: string) {
-  if (!actor.profileId) throw new TrainingError("No directory profile is linked to your email", 400);
+  if (!actor.profileId) throw new TrainingError("We couldn't match your Google account's name and email to a directory profile. Please ask an admin.", 400);
   const lesson = await getLesson(lessonId);
   if (!lesson) throw new TrainingError("Lesson not found", 404);
   const course = await getCourse(lesson.courseId);
@@ -828,6 +843,7 @@ export interface InviteResult {
   profileId: string;
   status: "invited" | "skipped";
   roleSet?: boolean;
+  // For "skipped": why. For "invited": a note (e.g. no email to send to).
   reason?: string;
 }
 
@@ -860,16 +876,19 @@ export async function inviteToTraining(params: {
   const results: InviteResult[] = [];
   const emails: string[] = [];
   for (const person of params.people) {
-    const email = person.email?.trim();
-    if (!email) {
-      results.push({ profileId: person.id, status: "skipped", reason: "No email on the profile" });
-      continue;
-    }
-    // A live lookup rather than trusting the (up to 5-minute cached) list
+    // Invitations are keyed on the Subsplash profile id, not the email: a
+    // person with no email (or a child who shares a parent's) is still
+    // enrolled. The email is only used to send the message, when there is one.
+    const email = person.email?.trim() ?? "";
+    // A live lookup of *this person's own profile* (by id, not by email:
+    // children often share a parent's email, so an email lookup could read
+    // someone else's role) rather than trusting the up-to-5-minute cached list
     // row, so a just-granted role isn't clobbered.
-    const currentRole = await getDirectoryRole(email);
+    const live = await getProfile(person.id);
+    const currentRole = live?.directory_role ?? person.directory_role;
+    const hasAccess = live?.directory_access ?? person.directory_access;
     let roleSet = false;
-    if (!person.directory_access && !currentRole) {
+    if (!hasAccess && !currentRole) {
       try {
         await updateProfile(person.id, { directory_role: "Learner" });
         roleSet = true;
@@ -891,13 +910,22 @@ export async function inviteToTraining(params: {
         invitedBy: params.invitedBy,
       });
     }
-    results.push({ profileId: person.id, status: "invited", roleSet });
-    emails.push(email);
+    results.push({
+      profileId: person.id,
+      status: "invited",
+      roleSet,
+      reason: email
+        ? undefined
+        : "No email on the profile — enrolled, but no invitation was emailed and they can't sign in until an email is added",
+    });
+    if (email) emails.push(email);
   }
 
   let emailed = 0;
   let emailError: string | undefined;
-  if (params.sendEmail && emails.length > 0) {
+  // People who share an address (a parent and child) get one message, not two.
+  const uniqueEmails = Array.from(new Map(emails.map((e) => [e.toLowerCase(), e])).values());
+  if (params.sendEmail && uniqueEmails.length > 0) {
     const { subject, html } = buildInviteEmail({
       courseTitles: courses.map((c) => c.title),
       trainingUrl: `${params.appUrl}/training`,
@@ -906,13 +934,13 @@ export async function inviteToTraining(params: {
     });
     try {
       await sendBulkEmail({
-        bcc: emails,
+        bcc: uniqueEmails,
         fromName: params.fromName,
         replyTo: params.replyTo,
         subject,
         html,
       });
-      emailed = emails.length;
+      emailed = uniqueEmails.length;
     } catch (err) {
       emailError = err instanceof Error ? err.message : "Email failed";
     }
