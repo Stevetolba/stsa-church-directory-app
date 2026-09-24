@@ -27,7 +27,10 @@ export function CoursePlayer({ slug }: { slug: string }) {
     if (rounded <= (lastSent.current[lessonId] ?? -1)) return;
     lastSent.current[lessonId] = rounded;
     try {
-      await sendJson(`/api/training/lessons/${lessonId}/watch`, "POST", { pct: rounded });
+      const r = (await sendJson(`/api/training/lessons/${lessonId}/watch`, "POST", { pct: rounded })) as {
+        needsSync?: boolean;
+      };
+      if (r.needsSync) void fetch(`/api/training/lessons/${lessonId}/sync`, { method: "POST" }).catch(() => {});
       await mutate();
       globalMutate("/api/training/courses");
     } catch {

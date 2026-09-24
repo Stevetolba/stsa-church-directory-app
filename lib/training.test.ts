@@ -18,6 +18,7 @@ import {
   recordWatch,
   replaceQuestions,
   submitQuiz,
+  syncCourseStatus,
 } from "./training";
 
 const FIELD = "MembershipGroupStatus";
@@ -100,7 +101,12 @@ describe("training flow (mock mode)", () => {
     // Quiz can't be graded before the video is watched.
     await expect(submitQuiz(learner, l1.id, { nope: ["a"] })).rejects.toMatchObject({ status: 403 });
 
-    await recordWatch(learner, l1.id, 40);
+    // Watching/grading return without touching Subsplash; the client then
+    // calls the sync endpoint (syncCourseStatus) when told needsSync.
+    const first = await recordWatch(learner, l1.id, 40);
+    expect(first.needsSync).toBe(true);
+    expect(await fieldValue()).toBeUndefined();
+    await syncCourseStatus(learner, l1.id);
     expect(await fieldValue()).toBe("In Progress");
     await recordWatch(learner, l1.id, 95);
 
@@ -112,13 +118,17 @@ describe("training flow (mock mode)", () => {
 
     const qid = view!.lessons[0].questions[0].id;
     expect((await submitQuiz(learner, l1.id, { [qid]: ["b"] })).passed).toBe(false);
-    expect((await submitQuiz(learner, l1.id, { [qid]: ["a"] })).passed).toBe(true);
+    const graded = await submitQuiz(learner, l1.id, { [qid]: ["a"] });
+    expect(graded.passed).toBe(true);
+    expect(graded.needsSync).toBe(false); // still "In Progress", already synced
 
     view = await getCourseView(learner, course.slug);
     expect(view!.lessons[1].locked).toBe(false);
     expect(view!.status).toBe("in_progress");
 
-    await recordWatch(learner, l2.id, 100); // no quiz → complete on video
+    expect((await recordWatch(learner, l2.id, 100)).needsSync).toBe(true); // no quiz → complete on video
+    expect(await fieldValue()).toBe("In Progress");
+    expect(await syncCourseStatus(learner, l2.id)).toMatchObject({ synced: true });
     view = await getCourseView(learner, course.slug);
     expect(view!.status).toBe("completed");
     expect(await fieldValue()).toBe("Completed");
