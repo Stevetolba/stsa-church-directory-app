@@ -9,8 +9,8 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   const parsed = watchSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   try {
-    await recordWatch(actor, params.id, parsed.data.pct);
-    return NextResponse.json({ ok: true });
+    const { needsSync } = await recordWatch(actor, params.id, parsed.data.pct);
+    return NextResponse.json({ ok: true, needsSync });
   } catch (err) {
     if (err instanceof TrainingError) return NextResponse.json({ error: err.message }, { status: err.status });
     throw err;

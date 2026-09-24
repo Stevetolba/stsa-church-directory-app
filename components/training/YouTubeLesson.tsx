@@ -11,10 +11,8 @@ interface YTPlayer {
 }
 interface YTApi {
   Player: new (
-    el: HTMLElement,
+    el: HTMLIFrameElement,
     opts: {
-      videoId: string;
-      playerVars?: Record<string, number | string>;
       events?: { onStateChange?: (e: { data: number }) => void };
     }
   ) => YTPlayer;
@@ -68,7 +66,12 @@ export function YouTubeLesson({
   unrestricted?: boolean;
   onProgress: (pct: number) => void;
 }) {
-  const hostRef = useRef<HTMLDivElement>(null);
+  // React owns exactly one <iframe> per lesson (the parent keys this
+  // component on the lesson id), and the YouTube API only *attaches* to it.
+  // The earlier version let the API build and replace its own iframe inside
+  // a React-managed div, which could leave the previous lesson's player on
+  // screen after switching lessons.
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const cb = useRef(onProgress);
   cb.current = onProgress;
   const initial = useRef(initialPct);
@@ -83,9 +86,17 @@ export function YouTubeLesson({
     let seeded = false;
     let cancelled = false;
 
+    // The player methods only exist once it's ready, so every call is guarded.
+    const safe = <T,>(fn: () => T): T | undefined => {
+      try {
+        return fn();
+      } catch {
+        return undefined;
+      }
+    };
+
     const report = () => {
-      if (!player) return;
-      const duration = player.getDuration();
+      const duration = player && safe(() => player!.getDuration());
       if (!duration) return;
       cb.current(Math.min(100, (furthest / duration) * 100));
     };
@@ -93,32 +104,25 @@ export function YouTubeLesson({
     // Runs ~4x/second while playing: advances `furthest` through normal
     // playback, and undoes forward seeks.
     const guard = () => {
-      if (!player) return;
-      const duration = player.getDuration();
-      if (!duration) return;
+      const duration = player && safe(() => player!.getDuration());
+      if (!player || !duration) return;
       if (!seeded) {
         furthest = (initial.current / 100) * duration;
         seeded = true;
       }
-      const t = player.getCurrentTime();
+      const t = safe(() => player!.getCurrentTime()) ?? 0;
       if (free.current) {
         furthest = Math.max(furthest, t);
       } else if (t > furthest + SKIP_TOLERANCE_SECONDS) {
-        player.seekTo(furthest, true);
+        safe(() => player!.seekTo(furthest, true));
       } else {
         furthest = Math.max(furthest, t);
       }
     };
 
     loadYouTubeApi().then((YT) => {
-      if (cancelled || !hostRef.current) return;
-      const mount = document.createElement("div");
-      hostRef.current.replaceChildren(mount);
-      player = new YT.Player(mount, {
-        videoId,
-        // disablekb removes the arrow-key seek shortcuts; the guard above is
-        // what actually enforces it (the progress bar can still be dragged).
-        playerVars: { rel: 0, modestbranding: 1, disablekb: 1 },
+      if (cancelled || !iframeRef.current) return;
+      player = new YT.Player(iframeRef.current, {
         events: {
           onStateChange: (e) => {
             clearInterval(reportTimer);
@@ -140,13 +144,26 @@ export function YouTubeLesson({
       clearInterval(reportTimer);
       clearInterval(guardTimer);
       report();
-      player?.destroy();
+      // No player.destroy(): React removes the iframe itself on unmount.
     };
   }, [videoId]);
 
+  // disablekb removes the arrow-key seek shortcuts; the guard above is what
+  // actually enforces no-skipping (the progress bar can still be dragged).
+  const origin = typeof window !== "undefined" ? `&origin=${encodeURIComponent(window.location.origin)}` : "";
+  const src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&rel=0&modestbranding=1&disablekb=1${origin}`;
+
   return (
-    <div className="aspect-video w-full overflow-hidden rounded-xl bg-black [&_iframe]:h-full [&_iframe]:w-full">
-      <div ref={hostRef} className="h-full w-full" />
+    <div className="aspect-video w-full overflow-hidden rounded-xl bg-black">
+      <iframe
+        key={videoId}
+        ref={iframeRef}
+        src={src}
+        title="Lesson video"
+        className="h-full w-full"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+        allowFullScreen
+      />
     </div>
   );
 }

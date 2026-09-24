@@ -28,6 +28,8 @@ export function LessonQuiz({ lesson, onDone }: { lesson: LessonView; onDone: () 
     try {
       const r = (await sendJson(`/api/training/lessons/${lesson.lesson.id}/quiz`, "POST", { answers })) as QuizResult;
       setResult(r);
+      // Subsplash is updated after the result is on screen, not before.
+      if (r.needsSync) void fetch(`/api/training/lessons/${lesson.lesson.id}/sync`, { method: "POST" }).catch(() => {});
       if (r.passed) toast.success(`Passed with ${r.score}%`);
       onDone();
     } catch (err) {

@@ -522,7 +522,16 @@ async function syncStatusToSubsplash(course: Course, row: CourseStatusRow): Prom
 
 // Recomputes a person's course status from their lesson progress and, when
 // it changed (or a previous sync is still pending), writes it to Subsplash.
-export async function recomputeCourseStatus(learner: Learner, courseId: string): Promise<CourseStatusRow | null> {
+// `sync: false` skips the Subsplash write (the slow part — it can involve
+// several network round trips) so a learner's own request returns fast; the
+// row is left with subsplashSyncedStatus lagging, and syncCourseStatus (fired
+// by the client right after) or the admin retry picks it up.
+export async function recomputeCourseStatus(
+  learner: Learner,
+  courseId: string,
+  opts: { sync?: boolean } = {}
+): Promise<CourseStatusRow | null> {
+  const sync = opts.sync ?? true;
   const course = await getCourse(courseId);
   if (!course) return null;
   const lessons = await listLessons(courseId, { publishedOnly: true });
@@ -545,11 +554,18 @@ export async function recomputeCourseStatus(learner: Learner, courseId: string):
     subsplashSyncedStatus: existing?.subsplashSyncedStatus ?? null,
     subsplashSyncError: existing?.subsplashSyncError ?? null,
   };
-  if (row.subsplashSyncedStatus !== status) {
+  if (sync && row.subsplashSyncedStatus !== status) {
     row = await syncStatusToSubsplash(course, row);
   }
   await saveStatus(row);
   return row;
+}
+
+// True when the person's Subsplash value lags their real status and the
+// course actually writes one — the client uses this to decide whether to
+// call the sync endpoint.
+function needsSubsplashSync(course: Course, row: CourseStatusRow | null): boolean {
+  return !!row && !!course.subsplashFieldName && row.subsplashSyncedStatus !== row.status;
 }
 
 // Admin "resync": retries every status row whose Subsplash value lags.
@@ -640,9 +656,11 @@ export async function getCourseView(actor: { role: string; profileId?: string },
   const course = await getCourse(slug);
   if (!course || !(await canAccessCourse(actor, course))) return null;
   const lessons = await listLessons(course.id, { publishedOnly: actor.role !== "admin" ? true : false });
-  const questionsByLesson = new Map<string, Question[]>();
-  for (const l of lessons) questionsByLesson.set(l.id, await listQuestions(l.id));
-  const progress = actor.profileId ? await getProgressForCourse(actor.profileId, course.id) : [];
+  const [questionLists, progress] = await Promise.all([
+    Promise.all(lessons.map((l) => listQuestions(l.id))),
+    actor.profileId ? getProgressForCourse(actor.profileId, course.id) : Promise.resolve([] as Progress[]),
+  ]);
+  const questionsByLesson = new Map<string, Question[]>(lessons.map((l, i) => [l.id, questionLists[i]]));
   const byLesson = Object.fromEntries(progress.map((p) => [p.lessonId, p]));
   const states = computeLessonStates(
     lessons.map((l) => ({ id: l.id, hasQuiz: (questionsByLesson.get(l.id) ?? []).length > 0 })),
@@ -674,6 +692,22 @@ export async function getCourseView(actor: { role: string; profileId?: string },
       };
     }),
   };
+}
+
+// Runs the deferred Subsplash write for the lesson's course. Called by the
+// client right after a watch/quiz response says needsSync.
+export async function syncCourseStatus(actor: LearnerActor, lessonId: string): Promise<{ synced: boolean; error?: string }> {
+  if (!actor.profileId) throw new TrainingError("No directory profile is linked to your email", 400);
+  const lesson = await getLesson(lessonId);
+  if (!lesson) throw new TrainingError("Lesson not found", 404);
+  const course = await getCourse(lesson.courseId);
+  if (!course || !(await canAccessCourse(actor, course))) throw new TrainingError("Lesson not found", 404);
+  const row = await recomputeCourseStatus(
+    { profileId: actor.profileId, email: actor.email, displayName: actor.name ?? actor.email },
+    course.id
+  );
+  if (!row) return { synced: true };
+  return { synced: row.subsplashSyncedStatus === row.status, error: row.subsplashSyncError ?? undefined };
 }
 
 export class TrainingError extends Error {
@@ -711,21 +745,24 @@ async function loadLessonForLearner(actor: LearnerActor, lessonId: string) {
 
 // Records how far a learner has watched. Only ever increases; reaching
 // min_watch_pct marks the video complete.
-export async function recordWatch(actor: LearnerActor, lessonId: string, pct: number): Promise<void> {
-  const { lesson, learner } = await loadLessonForLearner(actor, lessonId);
+export async function recordWatch(actor: LearnerActor, lessonId: string, pct: number): Promise<{ needsSync: boolean }> {
+  const { lesson, course, learner } = await loadLessonForLearner(actor, lessonId);
   const clamped = Math.max(0, Math.min(100, Math.round(pct)));
   const existing = (await getProgressForCourse(learner.profileId, lesson.courseId)).find((p) => p.lessonId === lesson.id);
   const p = existing ?? blankProgress(learner, lesson);
   p.watchedPct = Math.max(p.watchedPct, clamped);
   if (!p.videoCompletedAt && p.watchedPct >= lesson.minWatchPct) p.videoCompletedAt = now();
   await saveProgress(p);
-  await recomputeCourseStatus(learner, lesson.courseId);
+  const row = await recomputeCourseStatus(learner, lesson.courseId, { sync: false });
+  return { needsSync: needsSubsplashSync(course, row) };
 }
 
 export interface QuizResult {
   score: number;
   passed: boolean;
   perQuestion: Record<string, boolean>;
+  // The Subsplash write happens in a follow-up call so grading returns fast.
+  needsSync?: boolean;
 }
 
 export async function submitQuiz(
@@ -746,8 +783,8 @@ export async function submitQuiz(
   p.quizScore = Math.max(p.quizScore ?? 0, result.score);
   if (result.passed && !p.quizPassedAt) p.quizPassedAt = now();
   await saveProgress(p);
-  await recomputeCourseStatus(learner, lesson.courseId);
-  return result;
+  const row = await recomputeCourseStatus(learner, lesson.courseId, { sync: false });
+  return { ...result, needsSync: needsSubsplashSync(course, row) };
 }
 
 // --- Admin invites ---

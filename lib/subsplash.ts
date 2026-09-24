@@ -1558,16 +1558,31 @@ async function sampleFieldMetaFromRoster(
 // sample (cached back to Postgres so future calls skip the walk). Used by
 // both the "Verify field" admin action and buildChoiceFieldInput's
 // fallback path.
+// A full-roster walk can be 80+ sequential Subsplash requests. When one finds
+// nothing usable (the field/choices haven't been set on any profile yet), don't
+// repeat it on every learner action — remember the miss for a few minutes.
+// Per server instance; the admin "Verify field" button passes force to bypass.
+const ROSTER_MISS_TTL_MS = 5 * 60 * 1000;
+const rosterMisses = new Map<string, number>();
+
 export async function resolveChoiceFieldMeta(
   fieldName: string,
-  wantedChoices: string[] = []
+  wantedChoices: string[] = [],
+  opts: { force?: boolean } = {}
 ): Promise<GenericChoiceFieldMeta | null> {
+  const missKey = `${fieldName}|${wantedChoices.join(",")}`;
   const cached = await loadCachedFieldMeta(fieldName);
   // A cached entry only short-circuits when it already knows every choice
   // the caller needs — otherwise a field cached with just one choice would
   // never learn the others.
   if (cached?.revisionId && wantedChoices.every((c) => cached.choiceIds[c])) return cached;
-  const sampled = USE_MOCK_DATA ? null : await sampleFieldMetaFromRoster(fieldName, wantedChoices);
+  const recentMiss = !opts.force && Date.now() - (rosterMisses.get(missKey) ?? 0) < ROSTER_MISS_TTL_MS;
+  const sampled = USE_MOCK_DATA || recentMiss ? null : await sampleFieldMetaFromRoster(fieldName, wantedChoices);
+  if (!USE_MOCK_DATA && !recentMiss) {
+    const complete = !!sampled?.revisionId && wantedChoices.every((c) => sampled.choiceIds[c]);
+    if (complete) rosterMisses.delete(missKey);
+    else rosterMisses.set(missKey, Date.now());
+  }
   const merged = sampled
     ? cached
       ? { ...sampled, choiceIds: { ...sampled.choiceIds, ...cached.choiceIds } }
