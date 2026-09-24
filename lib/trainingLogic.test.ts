@@ -5,6 +5,7 @@ import {
   gradeQuiz,
   isAnswerCorrect,
   isLessonComplete,
+  lessonSlugs,
 } from "./trainingLogic";
 import { extractYoutubeVideoId } from "./youtube";
 
@@ -83,5 +84,18 @@ describe("extractYoutubeVideoId", () => {
     expect(extractYoutubeVideoId(`https://youtu.be/${id}`)).toBe(id);
     expect(extractYoutubeVideoId(`https://www.youtube.com/embed/${id}`)).toBe(id);
     expect(extractYoutubeVideoId("nope")).toBeUndefined();
+  });
+});
+
+describe("lessonSlugs", () => {
+  it("makes URL-friendly, unique slugs", () => {
+    expect(lessonSlugs(["The Message of the Gospel", "God the Father & God the Son", "The Lord's Prayer", "Lesson"])).toEqual([
+      "the-message-of-the-gospel",
+      "god-the-father-and-god-the-son",
+      "the-lord-s-prayer",
+      "lesson",
+    ]);
+    expect(lessonSlugs(["Intro", "Intro", "Intro"])).toEqual(["intro", "intro-2", "intro-3"]);
+    expect(lessonSlugs(["???"])).toEqual(["lesson-1"]);
   });
 });

@@ -86,10 +86,12 @@ export function InvitePeopleDialog({
       const invited = r.results.filter((x) => x.status === "invited").length;
       const skipped = r.results.filter((x) => x.status === "skipped");
       const learners = r.results.filter((x) => x.roleSet).length;
+      const noEmail = r.results.filter((x) => x.status === "invited" && x.reason).length;
       setSummary(
         [
           `Invited ${invited} ${invited === 1 ? "person" : "people"}${learners ? ` (${learners} given learner access)` : ""}.`,
           sendEmail ? (r.emailError ? `Email failed: ${r.emailError}` : `${r.emailed} invitation emails sent.`) : "",
+          noEmail ? `${noEmail} ${noEmail === 1 ? "has" : "have"} no email, so nothing was sent to them.` : "",
           skipped.length ? `Skipped ${skipped.length}: ${Array.from(new Set(skipped.map((s) => s.reason))).join("; ")}` : "",
         ]
           .filter(Boolean)
@@ -127,7 +129,7 @@ export function InvitePeopleDialog({
                   <span className="font-medium">
                     {p.first_name} {p.last_name}
                   </span>
-                  <span className="truncate text-xs text-muted-foreground">{p.email || "no email"}</span>
+                  <span className="truncate text-xs text-muted-foreground">{p.email || "no email — can still be enrolled"}</span>
                 </label>
               ))}
             </div>

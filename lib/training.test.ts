@@ -7,7 +7,8 @@ vi.mock("./email", () => ({
 }));
 
 import { sendBulkEmail } from "./email";
-import { getProfile } from "./subsplash";
+import { getProfile, getProfileIdByEmail, getDirectoryRole, hasDirectoryAccess } from "./subsplash";
+import { mockProfiles } from "./mockData";
 import {
   createCourse,
   createLesson,
@@ -76,6 +77,21 @@ describe("training flow (mock mode)", () => {
     expect((await getProfile("profile-daniel-okafor"))?.directory_role).toBe("Learner");
     expect((await listCoursesForViewer(learner)).map((c) => c.course.id)).toEqual([course.id]);
     expect((await getRoster(course.id))[0]).toMatchObject({ status: "invited" });
+  });
+
+  it("enrolls by profile id even with no email, and emails a shared address once", async () => {
+    const { course } = await seed();
+    (sendBulkEmail as unknown as ReturnType<typeof vi.fn>).mockClear();
+    const person = (id: string, first: string, email?: string) => ({ id, email, first_name: first, last_name: "Test", directory_access: true });
+    const r = await inviteToTraining({
+      people: [person("p-noemail", "NoEmail"), person("p-parent", "Parent", "Family@x.org"), person("p-child", "Child", "family@x.org")],
+      courseIds: [course.id], invitedBy: "a", sendEmail: true, fromName: "A", replyTo: "a@x.org", appUrl: "https://app.test",
+    });
+    expect(r.results.map((x) => x.status)).toEqual(["invited", "invited", "invited"]);
+    expect(r.results[0].reason).toMatch(/No email/);
+    expect(r.emailed).toBe(1);
+    expect((sendBulkEmail as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0].bcc.map((e: string) => e.toLowerCase())).toEqual(["family@x.org"]);
+    expect((await getRoster(course.id)).map((x) => x.profileId).sort()).toEqual(["p-child", "p-noemail", "p-parent"]);
   });
 
   it("does not downgrade someone who already has access", async () => {
@@ -149,7 +165,9 @@ describe("training flow (mock mode)", () => {
     await recordWatch(learner, l2.id, 100);
     expect((await getCourseView(learner, course.slug))!.status).toBe("completed");
 
-    await resetProgress(course.id, d.id);
+    const reset = await resetProgress(course.id, d.id);
+    expect(reset).toEqual({ subsplashUpdated: true });
+    expect(await fieldValue()).toBe("Not Started");
     const view = (await getCourseView(learner, course.slug))!;
     expect(view.status).toBe("not_started");
     expect(view.lessons.map((l) => [l.complete, l.locked, l.watchedPct])).toEqual([[false, false, 0], [false, true, 0]]);
@@ -172,5 +190,25 @@ describe("training flow (mock mode)", () => {
     await updateCourse(course.id, { audience: "all", published: false });
     expect(await getCourseView(learner, course.slug)).toBeNull();
     expect(await getCourseView({ role: "admin", profileId: "x" }, course.slug)).not.toBeNull();
+  });
+});
+
+describe("profile lookups match on name as well as email", () => {
+  it("does not confuse a child who shares a parent's email", async () => {
+    const parent = (await getProfile("profile-margaret-whitfield"))!; // DirectoryAccess=Yes
+    const child = { ...parent, id: "profile-test-child", first_name: "Tiny", last_name: "Whitfield", custom_fields: [], directory_access: false };
+    mockProfiles.push(child);
+    try {
+      const email = parent.email;
+      expect(await getProfileIdByEmail(email, "Margaret Whitfield")).toBe(parent.id);
+      expect(await getProfileIdByEmail(email, "Tiny Whitfield")).toBe(child.id);
+      expect(await getProfileIdByEmail(email, "Someone Else")).toBeUndefined();
+      // Access/role belong to the matching person only.
+      expect(await hasDirectoryAccess(email, "Margaret Whitfield")).toBe(true);
+      expect(await hasDirectoryAccess(email, "Tiny Whitfield")).toBe(false);
+      expect(await getDirectoryRole(email, "Tiny Whitfield")).toBeUndefined();
+    } finally {
+      mockProfiles.splice(mockProfiles.indexOf(child), 1);
+    }
   });
 });

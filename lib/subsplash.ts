@@ -16,6 +16,7 @@ import { formatAddressParts, householdCampus, householdMemberType, parseAddressS
 import { MAX_GRADE_VALUE, MIN_GRADE_VALUE } from "./grades";
 import { calculateAge } from "./age";
 import { eq } from "drizzle-orm";
+import { profileMatchesName } from "./profileMatch";
 import { getDb, isDbConfigured } from "./db";
 import { customFieldMetaCache } from "./db/schema";
 
@@ -1092,7 +1093,7 @@ function extractCareNotes(customFields: RawCustomFieldValue[] | undefined): stri
 // access via Subsplash? Used by the sign-in gate (lib/auth.ts) to admit
 // personal-email volunteers. Returns false (deny) on any lookup error —
 // fail closed, since this decides who can see member PII.
-export async function hasDirectoryAccess(email: string): Promise<boolean> {
+export async function hasDirectoryAccess(email: string, name?: string | null): Promise<boolean> {
   const needle = email.trim().toLowerCase();
   if (!needle) return false;
 
@@ -1100,6 +1101,7 @@ export async function hasDirectoryAccess(email: string): Promise<boolean> {
     return mockProfiles.some(
       (p) =>
         p.email?.toLowerCase() === needle &&
+        profileMatchesName(p, name) &&
         p.custom_fields?.some(
           (f) => f.label.trim().toLowerCase() === ACCESS_FIELD_NAME && isAccessValueGranted(f.value)
         )
@@ -1115,6 +1117,9 @@ export async function hasDirectoryAccess(email: string): Promise<boolean> {
     );
     return data._embedded.profiles.some((raw) => {
       const active = !raw.status || raw.status.toLowerCase() === "active";
+      // Children often carry a parent's email — only the profile whose name
+      // matches the signed-in person counts.
+      if (!profileMatchesName(raw, name)) return false;
       const granted = raw.custom_fields?.some(
         (f) =>
           f.custom_field_definition.name.trim().toLowerCase() === ACCESS_FIELD_NAME &&
@@ -1132,12 +1137,12 @@ export async function hasDirectoryAccess(email: string): Promise<boolean> {
 // resolution (lib/auth.ts) to admit/elevate a personal-email person beyond
 // the default volunteer tier. Returns undefined (no elevation) on any
 // lookup error or if unset — fails closed, same as hasDirectoryAccess.
-export async function getDirectoryRole(email: string): Promise<DirectoryRole | undefined> {
+export async function getDirectoryRole(email: string, name?: string | null): Promise<DirectoryRole | undefined> {
   const needle = email.trim().toLowerCase();
   if (!needle) return undefined;
 
   if (USE_MOCK_DATA) {
-    const match = mockProfiles.find((p) => p.email?.toLowerCase() === needle);
+    const match = mockProfiles.find((p) => p.email?.toLowerCase() === needle && profileMatchesName(p, name));
     const field = match?.custom_fields?.find((f) => f.label.trim().toLowerCase() === ROLE_FIELD_NAME);
     return normalizeDirectoryRole(field?.value);
   }
@@ -1148,7 +1153,7 @@ export async function getDirectoryRole(email: string): Promise<DirectoryRole | u
     );
     for (const raw of data._embedded.profiles) {
       const active = !raw.status || raw.status.toLowerCase() === "active";
-      if (!active) continue;
+      if (!active || !profileMatchesName(raw, name)) continue;
       const role = extractDirectoryRole(raw.custom_fields);
       if (role) return role;
     }
@@ -1165,19 +1170,21 @@ export async function getDirectoryRole(email: string): Promise<DirectoryRole | u
 // failure or no match, same fail-open-to-"no id" posture as the other
 // email lookups here — callers that need identity to gate access (auth.ts)
 // already separately require hasDirectoryAccess/getDirectoryRole to pass.
-export async function getProfileIdByEmail(email: string): Promise<string | undefined> {
+export async function getProfileIdByEmail(email: string, name?: string | null): Promise<string | undefined> {
   const needle = email.trim().toLowerCase();
   if (!needle) return undefined;
 
   if (USE_MOCK_DATA) {
-    return mockProfiles.find((p) => p.email?.toLowerCase() === needle)?.id;
+    return mockProfiles.find((p) => p.email?.toLowerCase() === needle && profileMatchesName(p, name))?.id;
   }
 
   try {
     const data = await subsplashFetch<HalCollection<RawProfile>>(
       `/people/v1/profiles?filter[email]=${encodeURIComponent(needle)}`
     );
-    const active = data._embedded.profiles.find((raw) => !raw.status || raw.status.toLowerCase() === "active");
+    const active = data._embedded.profiles.find(
+      (raw) => (!raw.status || raw.status.toLowerCase() === "active") && profileMatchesName(raw, name)
+    );
     return active?.id;
   } catch {
     return undefined;

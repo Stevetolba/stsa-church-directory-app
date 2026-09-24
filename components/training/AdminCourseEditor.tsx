@@ -110,7 +110,7 @@ function CourseSettings({ course, onSaved }: { course: Course; onSaved: () => vo
       </div>
       {verify && <p className="text-sm text-muted-foreground">{verify}</p>}
       <p className="text-xs text-muted-foreground">
-        The field needs the choices “In Progress” and “Completed”. Save before verifying.
+        The field needs the choices “Not Started” (used by Reset progress), “In Progress” and “Completed”. Save before verifying.
       </p>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={f.published} onChange={(e) => setF({ ...f, published: e.target.checked })} />
