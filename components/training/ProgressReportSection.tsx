@@ -3,6 +3,8 @@
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useProgressReport } from "@/hooks/useTraining";
+import { ResetProgressButton } from "@/components/training/ResetProgressButton";
+import { UpdateSubsplashButton } from "@/components/training/UpdateSubsplashButton";
 import { downloadCsv, toCsv } from "@/lib/csv";
 import { reportToCsvRows } from "@/lib/trainingReport";
 
@@ -27,7 +29,7 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 // Admin progress report for a course: summary numbers, a per-person table
 // with each lesson's watch/quiz state, and a CSV export of the same data.
 export function ProgressReportSection({ courseId }: { courseId: string }) {
-  const { data, error } = useProgressReport(courseId);
+  const { data, error, mutate } = useProgressReport(courseId);
 
   function exportCsv() {
     if (!data) return;
@@ -71,7 +73,8 @@ export function ProgressReportSection({ courseId }: { courseId: string }) {
                       </th>
                     ))}
                     <th className="py-2 pr-3">Avg quiz</th>
-                    <th className="py-2">Last activity</th>
+                    <th className="py-2 pr-3">Last activity</th>
+                    <th className="py-2" />
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -85,7 +88,12 @@ export function ProgressReportSection({ courseId }: { courseId: string }) {
                         <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLE[r.status]}`}>
                           {STATUS_LABEL[r.status]}
                         </span>
-                        {!r.subsplashSynced && <div className="mt-1 text-[11px] text-amber-700">Subsplash pending</div>}
+                        {!r.subsplashSynced && (
+                          <div className="mt-1 flex flex-col items-start gap-1">
+                            <span className="text-[11px] text-amber-700">Subsplash pending</span>
+                            <UpdateSubsplashButton courseId={courseId} profileId={r.profileId} onDone={() => mutate()} />
+                          </div>
+                        )}
                       </td>
                       <td className="py-2 pr-3">
                         {r.lessonsCompleted}/{data.lessons.length}
@@ -107,7 +115,17 @@ export function ProgressReportSection({ courseId }: { courseId: string }) {
                         </td>
                       ))}
                       <td className="py-2 pr-3">{r.averageQuizScore === null ? "—" : `${r.averageQuizScore}%`}</td>
-                      <td className="py-2">{fmtDate(r.lastActivityAt)}</td>
+                      <td className="py-2 pr-3">{fmtDate(r.lastActivityAt)}</td>
+                      <td className="py-2">
+                        {r.status !== "invited" && (
+                          <ResetProgressButton
+                            courseId={courseId}
+                            profileId={r.profileId}
+                            name={r.displayName}
+                            onDone={() => mutate()}
+                          />
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

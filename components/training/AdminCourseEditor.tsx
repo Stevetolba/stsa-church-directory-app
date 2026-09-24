@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowDown, ArrowLeft, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { UpdateSubsplashButton } from "@/components/training/UpdateSubsplashButton";
 import { ProgressReportSection } from "@/components/training/ProgressReportSection";
 import { InvitePeopleDialog } from "@/components/training/InvitePeopleDialog";
 import { Input } from "@/components/ui/input";
@@ -377,8 +378,11 @@ function Roster({ courseId, courseTitle }: { courseId: string; courseTitle: stri
             </div>
             <div className="flex items-center gap-3">
               {!r.subsplashSynced && (
-                <span className="text-xs text-amber-700" title={r.subsplashSyncError ?? "Pending"}>
-                  Subsplash pending
+                <span className="flex items-center gap-2">
+                  <span className="text-xs text-amber-700" title={r.subsplashSyncError ?? "Pending"}>
+                    Subsplash pending
+                  </span>
+                  <UpdateSubsplashButton courseId={courseId} profileId={r.profileId} onDone={() => mutate()} />
                 </span>
               )}
               <span className="text-xs capitalize">{r.status.replace("_", " ")}</span>

@@ -17,6 +17,7 @@ import {
   listCoursesForViewer,
   recordWatch,
   replaceQuestions,
+  resetProgress,
   submitQuiz,
   syncCourseStatus,
 } from "./training";
@@ -133,6 +134,29 @@ describe("training flow (mock mode)", () => {
     expect(view!.status).toBe("completed");
     expect(await fieldValue()).toBe("Completed");
     expect((await getRoster(course.id))[0]).toMatchObject({ status: "completed", subsplashSynced: true });
+  });
+
+  it("resets one person's progress so they can retake the course", async () => {
+    const { course, l1, l2 } = await seed();
+    const d = (await getProfile("profile-daniel-okafor"))!;
+    await inviteToTraining({
+      people: [{ id: d.id, email: d.email, first_name: "Daniel", last_name: "Okafor", directory_access: d.directory_access }],
+      courseIds: [course.id], invitedBy: "a", sendEmail: false, fromName: "A", replyTo: "a@x.org", appUrl: "https://app.test",
+    });
+    await recordWatch(learner, l1.id, 95);
+    const qid = (await getCourseView(learner, course.slug))!.lessons[0].questions[0].id;
+    await submitQuiz(learner, l1.id, { [qid]: ["a"] });
+    await recordWatch(learner, l2.id, 100);
+    expect((await getCourseView(learner, course.slug))!.status).toBe("completed");
+
+    await resetProgress(course.id, d.id);
+    const view = (await getCourseView(learner, course.slug))!;
+    expect(view.status).toBe("not_started");
+    expect(view.lessons.map((l) => [l.complete, l.locked, l.watchedPct])).toEqual([[false, false, 0], [false, true, 0]]);
+    // Still enrolled, and can start over.
+    expect((await listCoursesForViewer(learner)).map((c) => c.course.id)).toEqual([course.id]);
+    await recordWatch(learner, l1.id, 50);
+    expect((await getCourseView(learner, course.slug))!.status).toBe("in_progress");
   });
 
   it("hides volunteer-only and unpublished courses from learners", async () => {

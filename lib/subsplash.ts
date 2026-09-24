@@ -1603,7 +1603,8 @@ export async function resolveChoiceFieldMeta(
 export async function buildChoiceFieldInput(
   profileId: string,
   fieldName: string,
-  choiceName: string
+  choiceName: string,
+  opts: { force?: boolean } = {}
 ): Promise<{ custom_field_definition: { id: string; revision_id?: string }; value: object }> {
   const currentRaw = await subsplashFetch<RawProfile>(`/people/v1/profiles/${profileId}`).catch(
     () => null
@@ -1612,7 +1613,7 @@ export async function buildChoiceFieldInput(
   let meta = fromProfile ? mergeGenericFieldMeta(null, fromProfile) : null;
 
   if (!meta || !meta.revisionId || (genericFieldUsesChoices(meta) && !meta.choiceIds[choiceName])) {
-    const resolved = await resolveChoiceFieldMeta(fieldName, [choiceName]);
+    const resolved = await resolveChoiceFieldMeta(fieldName, [choiceName], opts);
     if (resolved) {
       meta = meta
         ? { ...resolved, ...meta, choiceIds: { ...resolved.choiceIds, ...meta.choiceIds } }
@@ -1653,7 +1654,8 @@ export async function buildChoiceFieldInput(
 export async function setChoiceCustomField(
   profileId: string,
   fieldName: string,
-  choiceName: string
+  choiceName: string,
+  opts: { force?: boolean } = {}
 ): Promise<void> {
   if (USE_MOCK_DATA) {
     const existing = mockProfiles.find((p) => p.id === profileId);
@@ -1674,7 +1676,7 @@ export async function setChoiceCustomField(
   if (!ORG_KEY) {
     throw new Error("Missing SUBSPLASH_ORG_KEY — required as filter[org_key] on every request.");
   }
-  const input = await buildChoiceFieldInput(profileId, fieldName, choiceName);
+  const input = await buildChoiceFieldInput(profileId, fieldName, choiceName, opts);
   const token = await getServiceToken();
   const res = await fetch(`${BASE_URL}/people/v1/profiles/${profileId}?filter[org_key]=${ORG_KEY}`, {
     method: "PATCH",
