@@ -104,3 +104,22 @@ export const SUBSPLASH_STATUS_LABEL: Record<CourseStatusValue, string> = {
   in_progress: "In Progress",
   completed: "Completed",
 };
+
+// URL-friendly lesson names for /training/<course>?lesson=<slug>. Unique
+// within a course: a repeated name gets -2, -3, … appended.
+export function lessonSlugs(titles: string[]): string[] {
+  const seen = new Map<string, number>();
+  return titles.map((title, i) => {
+    const base =
+      title
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .toLowerCase()
+        .replace(/&/g, " and ")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || `lesson-${i + 1}`;
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    return n === 1 ? base : `${base}-${n}`;
+  });
+}

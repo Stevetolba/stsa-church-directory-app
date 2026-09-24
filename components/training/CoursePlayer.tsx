@@ -1,26 +1,44 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Circle, Lock, PartyPopper } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { ArrowLeft, ArrowRight, CheckCircle2, Circle, Lock, PartyPopper } from "lucide-react";
 import { useSWRConfig } from "swr";
 import { useCourseView, sendJson } from "@/hooks/useTraining";
 import { YouTubeLesson } from "@/components/training/YouTubeLesson";
 import { LessonQuiz } from "@/components/training/LessonQuiz";
+import { lessonSlugs } from "@/lib/trainingLogic";
 
 export function CoursePlayer({ slug }: { slug: string }) {
   const { data, error, mutate } = useCourseView(slug);
   const { mutate: globalMutate } = useSWRConfig();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const requestedLesson = searchParams.get("lesson");
   const lastSent = useRef<Record<string, number>>({});
+
+  // With no ?lesson= in the URL, add the lesson we default to (first not yet
+  // complete) so the address always names the lesson. replaceState — no reload.
+  useEffect(() => {
+    if (!data || requestedLesson || data.lessons.length === 0) return;
+    const slugs = lessonSlugs(data.lessons.map((l) => l.lesson.title));
+    const idx = Math.max(0, data.lessons.findIndex((l) => !l.complete && !l.locked));
+    window.history.replaceState(null, "", `/training/${slug}?lesson=${slugs[idx]}`);
+  }, [data, requestedLesson, slug]);
 
   if (error) return <p className="text-sm text-red-700">Could not load this course.</p>;
   if (!data) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
   const { course, lessons } = data;
-  // Default to the first lesson that isn't complete yet.
-  const current =
-    lessons.find((l) => l.lesson.id === selectedId) ?? lessons.find((l) => !l.complete && !l.locked) ?? lessons[0];
+  const slugs = lessonSlugs(lessons.map((l) => l.lesson.title));
+  const lessonHref = (i: number) => `/training/${slug}?lesson=${slugs[i]}`;
+  // The lesson named in the URL (if it exists and isn't locked); otherwise the
+  // first lesson that isn't complete yet.
+  const requestedIndex = requestedLesson ? slugs.indexOf(requestedLesson) : -1;
+  const defaultIndex = Math.max(0, lessons.findIndex((l) => !l.complete && !l.locked));
+  const currentIndex = requestedIndex >= 0 && !lessons[requestedIndex].locked ? requestedIndex : defaultIndex;
+  const current = lessons[currentIndex];
+  const next = lessons[currentIndex + 1];
 
   async function reportProgress(lessonId: string, pct: number) {
     const rounded = Math.round(pct);
@@ -56,27 +74,38 @@ export function CoursePlayer({ slug }: { slug: string }) {
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[280px_1fr]">
         <nav className="space-y-1">
-          {lessons.map((l, i) => (
-            <button
-              key={l.lesson.id}
-              disabled={l.locked}
-              onClick={() => setSelectedId(l.lesson.id)}
-              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
-                current?.lesson.id === l.lesson.id ? "bg-brand-sky/20 font-semibold" : "hover:bg-muted"
-              } disabled:cursor-not-allowed disabled:opacity-50`}
-            >
-              {l.complete ? (
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
-              ) : l.locked ? (
-                <Lock className="h-4 w-4 shrink-0" />
-              ) : (
-                <Circle className="h-4 w-4 shrink-0" />
-              )}
-              <span>
-                {i + 1}. {l.lesson.title}
-              </span>
-            </button>
-          ))}
+          {lessons.map((l, i) => {
+            const cls = `flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
+              current?.lesson.id === l.lesson.id ? "bg-brand-sky/20 font-semibold" : "hover:bg-muted"
+            }`;
+            const inner = (
+              <>
+                {l.complete ? (
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+                ) : l.locked ? (
+                  <Lock className="h-4 w-4 shrink-0" />
+                ) : (
+                  <Circle className="h-4 w-4 shrink-0" />
+                )}
+                <span>
+                  {i + 1}. {l.lesson.title}
+                </span>
+              </>
+            );
+            // A plain <a> (not next/link) on purpose: choosing a lesson is a
+            // full page load, so every lesson starts from a clean page and
+            // player, and the address names the lesson.
+            return l.locked ? (
+              <div key={l.lesson.id} aria-disabled className={`${cls} cursor-not-allowed opacity-50`}>
+                {inner}
+              </div>
+            ) : (
+              // eslint-disable-next-line @next/next/no-html-link-for-pages
+              <a key={l.lesson.id} href={lessonHref(i)} className={cls}>
+                {inner}
+              </a>
+            );
+          })}
           {lessons.length === 0 && <p className="text-sm text-muted-foreground">No lessons yet.</p>}
         </nav>
 
@@ -110,6 +139,15 @@ export function CoursePlayer({ slug }: { slug: string }) {
             )}
             {current.questions.length > 0 && !current.videoComplete && (
               <p className="text-sm text-muted-foreground">The quiz unlocks after you finish the video.</p>
+            )}
+            {current.complete && next && !next.locked && (
+              // eslint-disable-next-line @next/next/no-html-link-for-pages
+              <a
+                href={lessonHref(currentIndex + 1)}
+                className="inline-flex items-center gap-2 rounded-lg bg-brand-navy px-4 py-2 text-sm font-semibold text-brand-cream"
+              >
+                Next lesson: {next.lesson.title} <ArrowRight className="h-4 w-4" />
+              </a>
             )}
           </section>
         )}
