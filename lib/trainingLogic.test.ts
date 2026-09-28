@@ -36,8 +36,8 @@ describe("gradeQuiz", () => {
   });
 });
 
-const done = { watchedPct: 100, videoCompletedAt: new Date(), quizPassedAt: new Date() };
-const videoOnly = { watchedPct: 100, videoCompletedAt: new Date(), quizPassedAt: null };
+const done = { watchedPct: 100, contentCompletedAt: new Date(), quizPassedAt: new Date() };
+const videoOnly = { watchedPct: 100, contentCompletedAt: new Date(), quizPassedAt: null };
 
 describe("lesson completion and unlock order", () => {
   it("needs the quiz only when the lesson has one", () => {
@@ -66,7 +66,7 @@ describe("computeCourseStatus", () => {
     expect(computeCourseStatus([], {})).toBeNull();
   });
   it("is in_progress after partial activity", () => {
-    expect(computeCourseStatus(lessons, { l1: { ...videoOnly, watchedPct: 40, videoCompletedAt: null } })).toBe(
+    expect(computeCourseStatus(lessons, { l1: { ...videoOnly, watchedPct: 40, contentCompletedAt: null } })).toBe(
       "in_progress"
     );
     expect(computeCourseStatus(lessons, { l1: done })).toBe("in_progress");

@@ -13,7 +13,7 @@ export const courseInputSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(200),
   description: z.string().trim().max(5000).nullable().optional().transform((v) => v || null),
   coverImageUrl: z.string().trim().url().max(2000).nullable().optional().or(z.literal("")).transform((v) => v || null),
-  audience: z.enum(["all", "volunteer"]).default("all"),
+  audience: z.enum(["all", "volunteer", "invite_only"]).default("all"),
   published: z.boolean().default(false),
   sortOrder: z.number().int().min(0).max(10000).default(0),
   // A Subsplash custom-field name — the per-course choice field the status is written to.
@@ -25,14 +25,21 @@ export type CourseInputValues = z.infer<typeof courseInputSchema>;
 export const lessonInputSchema = z.object({
   sortOrder: z.number().int().min(0).max(10000).default(0),
   title: z.string().trim().min(1, "Title is required").max(200),
+  type: z.enum(["video", "reading"]).default("video"),
   description: z.string().max(20000).nullable().optional().transform((v) => v || null),
-  // Accepts a full URL or bare id; stored as the bare id.
+  // Accepts a full URL or bare id; stored as the bare id. Null for a
+  // 'reading' lesson. The admin editor enforces "video lessons need a valid
+  // id" client-side (this schema is also used with .partial() for PATCH, so
+  // a cross-field refine here can't require it only when type === "video").
   youtubeVideoId: z
     .string()
     .trim()
-    .transform((v) => extractYoutubeVideoId(v))
-    .pipe(z.string({ error: "Enter a valid YouTube link or video id" })),
+    .transform((v) => extractYoutubeVideoId(v) ?? null)
+    .nullable()
+    .default(null),
   minWatchPct: z.number().int().min(1).max(100).default(90),
+  // A pasted link to a handout — same shape as courseInputSchema.coverImageUrl.
+  handoutUrl: z.string().trim().url().max(2000).nullable().optional().or(z.literal("")).transform((v) => v || null),
   published: z.boolean().default(false),
 });
 export type LessonInputValues = z.infer<typeof lessonInputSchema>;
