@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, CheckCircle2, Circle, Lock, PartyPopper } from "lucide-react";
 import { useSWRConfig } from "swr";
+import { toast } from "sonner";
 import { useCourseView, sendJson } from "@/hooks/useTraining";
 import { YouTubeLesson } from "@/components/training/YouTubeLesson";
+import { ReadingLesson } from "@/components/training/ReadingLesson";
 import { LessonQuiz } from "@/components/training/LessonQuiz";
 import { lessonSlugs } from "@/lib/trainingLogic";
 
@@ -16,6 +18,7 @@ export function CoursePlayer({ slug }: { slug: string }) {
   const searchParams = useSearchParams();
   const requestedLesson = searchParams.get("lesson");
   const lastSent = useRef<Record<string, number>>({});
+  const [markingRead, setMarkingRead] = useState(false);
 
   // With no ?lesson= in the URL, add the lesson we default to (first not yet
   // complete) so the address always names the lesson. replaceState — no reload.
@@ -53,6 +56,20 @@ export function CoursePlayer({ slug }: { slug: string }) {
       globalMutate("/api/training/courses");
     } catch {
       // Best-effort; the next tick retries.
+    }
+  }
+
+  async function markRead(lessonId: string) {
+    setMarkingRead(true);
+    try {
+      const r = (await sendJson(`/api/training/lessons/${lessonId}/read`, "POST")) as { needsSync?: boolean };
+      if (r.needsSync) void fetch(`/api/training/lessons/${lessonId}/sync`, { method: "POST" }).catch(() => {});
+      await mutate();
+      globalMutate("/api/training/courses");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setMarkingRead(false);
     }
   }
 
@@ -112,22 +129,44 @@ export function CoursePlayer({ slug }: { slug: string }) {
         {current && (
           <section className="min-w-0 space-y-6">
             <h2 className="font-heading text-lg font-semibold">{current.lesson.title}</h2>
-            <YouTubeLesson
-              key={current.lesson.id}
-              videoId={current.lesson.youtubeVideoId}
-              initialPct={current.watchedPct}
-              unrestricted={current.videoComplete}
-              onProgress={(pct) => reportProgress(current.lesson.id, pct)}
-            />
-            <p className="text-xs text-muted-foreground">
-              {current.videoComplete
-                ? "Video complete."
-                : `Watch at least ${current.lesson.minWatchPct}% of the video to continue (${current.watchedPct}% so far). Skipping ahead isn't allowed.`}
-            </p>
-            {current.lesson.description && (
-              <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: current.lesson.description }} />
+            {current.lesson.type === "video" && current.lesson.youtubeVideoId ? (
+              <>
+                <YouTubeLesson
+                  key={current.lesson.id}
+                  videoId={current.lesson.youtubeVideoId}
+                  initialPct={current.watchedPct}
+                  unrestricted={current.contentComplete}
+                  onProgress={(pct) => reportProgress(current.lesson.id, pct)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {current.contentComplete
+                    ? "Video complete."
+                    : `Watch at least ${current.lesson.minWatchPct}% of the video to continue (${current.watchedPct}% so far). Skipping ahead isn't allowed.`}
+                </p>
+                {current.lesson.description && (
+                  <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: current.lesson.description }} />
+                )}
+              </>
+            ) : (
+              <ReadingLesson
+                key={current.lesson.id}
+                content={current.lesson.description}
+                complete={current.contentComplete}
+                busy={markingRead}
+                onMarkRead={() => markRead(current.lesson.id)}
+              />
             )}
-            {current.questions.length > 0 && current.videoComplete && (
+            {current.lesson.handoutUrl && (
+              <a
+                href={current.lesson.handoutUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-sm font-medium text-brand-sky underline underline-offset-2"
+              >
+                Download handout
+              </a>
+            )}
+            {current.questions.length > 0 && current.contentComplete && (
               <LessonQuiz
                 key={current.lesson.id}
                 lesson={current}
@@ -137,8 +176,10 @@ export function CoursePlayer({ slug }: { slug: string }) {
                 }}
               />
             )}
-            {current.questions.length > 0 && !current.videoComplete && (
-              <p className="text-sm text-muted-foreground">The quiz unlocks after you finish the video.</p>
+            {current.questions.length > 0 && !current.contentComplete && (
+              <p className="text-sm text-muted-foreground">
+                The quiz unlocks after you {current.lesson.type === "video" ? "finish the video" : "read the lesson"}.
+              </p>
             )}
             {current.complete && next && !next.locked && (
               // eslint-disable-next-line @next/next/no-html-link-for-pages

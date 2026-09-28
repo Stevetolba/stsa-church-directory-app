@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowDown, ArrowLeft, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import { UpdateSubsplashButton } from "@/components/training/UpdateSubsplashButton";
 import { ProgressReportSection } from "@/components/training/ProgressReportSection";
 import { InvitePeopleDialog } from "@/components/training/InvitePeopleDialog";
@@ -92,6 +93,7 @@ function CourseSettings({ course, onSaved }: { course: Course; onSaved: () => vo
           >
             <option value="all">Everyone invited (members, volunteers)</option>
             <option value="volunteer">Volunteers only (hidden from learners)</option>
+            <option value="invite_only">By invitation only (hidden from everyone but admins until enrolled)</option>
           </select>
         </div>
         <div>
@@ -142,9 +144,11 @@ function LessonEditor({
 }) {
   const [f, setF] = useState({
     title: lesson.title,
-    video: lesson.youtubeVideoId,
+    type: lesson.type,
+    video: lesson.youtubeVideoId ?? "",
     description: lesson.description ?? "",
     minWatchPct: lesson.minWatchPct,
+    handoutUrl: lesson.handoutUrl ?? "",
     published: lesson.published,
   });
   const [qs, setQs] = useState<QDraft[]>(
@@ -155,7 +159,7 @@ function LessonEditor({
 
   // silent = called from "Save all changes", which reports one summary toast.
   async function save(silent = false): Promise<boolean> {
-    if (!videoId) {
+    if (f.type === "video" && !videoId) {
       toast.error(`Lesson ${index + 1}: enter a valid YouTube link or video id`);
       setOpen(true);
       return false;
@@ -163,9 +167,11 @@ function LessonEditor({
     try {
       await sendJson(`/api/admin/training/lessons/${lesson.id}`, "PATCH", {
         title: f.title,
-        youtubeVideoId: f.video,
+        type: f.type,
+        youtubeVideoId: f.type === "video" ? f.video : null,
         description: f.description,
         minWatchPct: f.minWatchPct,
+        handoutUrl: f.handoutUrl,
         published: f.published,
         questions: qs,
       });
@@ -231,32 +237,66 @@ function LessonEditor({
               <Input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} />
             </div>
             <div>
-              <span className={label}>YouTube link or video id</span>
-              <Input value={f.video} onChange={(e) => setF({ ...f, video: e.target.value })} />
-              {!videoId && f.video && <p className="mt-1 text-xs text-red-700">Not a recognizable YouTube link</p>}
+              <span className={label}>Lesson type</span>
+              <select
+                className="h-8 w-full rounded-lg border bg-background px-2 text-sm"
+                value={f.type}
+                onChange={(e) => setF({ ...f, type: e.target.value as "video" | "reading" })}
+              >
+                <option value="video">Video</option>
+                <option value="reading">Reading (text)</option>
+              </select>
             </div>
+            {f.type === "video" ? (
+              <>
+                <div>
+                  <span className={label}>YouTube link or video id</span>
+                  <Input value={f.video} onChange={(e) => setF({ ...f, video: e.target.value })} />
+                  {!videoId && f.video && <p className="mt-1 text-xs text-red-700">Not a recognizable YouTube link</p>}
+                </div>
+                <div>
+                  <span className={label}>Watch at least (%)</span>
+                  <Input type="number" value={f.minWatchPct} onChange={(e) => setF({ ...f, minWatchPct: Number(e.target.value) })} />
+                </div>
+              </>
+            ) : null}
             <div>
-              <span className={label}>Watch at least (%)</span>
-              <Input type="number" value={f.minWatchPct} onChange={(e) => setF({ ...f, minWatchPct: Number(e.target.value) })} />
+              <span className={label}>Handout link (optional)</span>
+              <Input
+                value={f.handoutUrl}
+                placeholder="https://…"
+                onChange={(e) => setF({ ...f, handoutUrl: e.target.value })}
+              />
             </div>
             <label className="flex items-center gap-2 self-end text-sm">
               <input type="checkbox" checked={f.published} onChange={(e) => setF({ ...f, published: e.target.checked })} />
               Published
             </label>
           </div>
-          {videoId && (
+          {f.type === "video" && videoId && (
             <div className="aspect-video max-w-md overflow-hidden rounded-lg bg-black">
               <iframe className="h-full w-full" src={`https://www.youtube.com/embed/${videoId}`} title="Preview" allowFullScreen />
             </div>
           )}
-          <div>
-            <span className={label}>Description (HTML allowed)</span>
-            <textarea
-              className="min-h-24 w-full rounded-lg border bg-background p-2 text-sm"
-              value={f.description}
-              onChange={(e) => setF({ ...f, description: e.target.value })}
-            />
-          </div>
+          {f.type === "video" ? (
+            <div>
+              <span className={label}>Description (HTML allowed)</span>
+              <textarea
+                className="min-h-24 w-full rounded-lg border bg-background p-2 text-sm"
+                value={f.description}
+                onChange={(e) => setF({ ...f, description: e.target.value })}
+              />
+            </div>
+          ) : (
+            <div>
+              <span className={label}>Lesson content</span>
+              <RichTextEditor
+                value={f.description}
+                onChange={(html) => setF({ ...f, description: html })}
+                placeholder="Write the lesson text…"
+              />
+            </div>
+          )}
 
           <div className="space-y-3">
             <h3 className="text-sm font-semibold">Quiz questions</h3>

@@ -10,17 +10,20 @@ import { sendBulkEmail } from "./email";
 import { getProfile, getProfileIdByEmail, getDirectoryRole, hasDirectoryAccess } from "./subsplash";
 import { mockProfiles } from "./mockData";
 import {
+  canAccessCourse,
   createCourse,
   createLesson,
   getCourseView,
   getRoster,
   inviteToTraining,
   listCoursesForViewer,
+  markContentRead,
   recordWatch,
   replaceQuestions,
   resetProgress,
   submitQuiz,
   syncCourseStatus,
+  updateCourse,
 } from "./training";
 
 const FIELD = "MembershipGroupStatus";
@@ -38,10 +41,10 @@ async function seed() {
     passThreshold: 80,
   });
   const l1 = await createLesson(course.id, {
-    sortOrder: 0, title: "Gospel", description: null, youtubeVideoId: "dQw4w9WgXcQ", minWatchPct: 90, published: true,
+    sortOrder: 0, title: "Gospel", type: "video", description: null, youtubeVideoId: "dQw4w9WgXcQ", minWatchPct: 90, handoutUrl: null, published: true,
   });
   const l2 = await createLesson(course.id, {
-    sortOrder: 1, title: "God", description: null, youtubeVideoId: "dQw4w9WgXcQ", minWatchPct: 90, published: true,
+    sortOrder: 1, title: "God", type: "video", description: null, youtubeVideoId: "dQw4w9WgXcQ", minWatchPct: 90, handoutUrl: null, published: true,
   });
   await replaceQuestions(l1.id, [
     { prompt: "Q1", kind: "single", options: [{ id: "a", text: "x" }, { id: "b", text: "y" }], correctOptionIds: ["a"] },
@@ -128,7 +131,7 @@ describe("training flow (mock mode)", () => {
     await recordWatch(learner, l1.id, 95);
 
     let view = await getCourseView(learner, course.slug);
-    expect(view!.lessons[0].videoComplete).toBe(true);
+    expect(view!.lessons[0].contentComplete).toBe(true);
     expect(view!.lessons[1].locked).toBe(true); // quiz not passed yet
     // Answer keys never leave the server.
     expect(JSON.stringify(view)).not.toContain("correctOptionIds");
@@ -150,6 +153,40 @@ describe("training flow (mock mode)", () => {
     expect(view!.status).toBe("completed");
     expect(await fieldValue()).toBe("Completed");
     expect((await getRoster(course.id))[0]).toMatchObject({ status: "completed", subsplashSynced: true });
+  });
+
+  it("walks a learner through a reading lesson via markContentRead", async () => {
+    const course = await createCourse({
+      slug: "reading-course", title: "Reading Course", description: null, coverImageUrl: null,
+      audience: "all", published: true, sortOrder: 0, subsplashFieldName: FIELD, passThreshold: 80,
+    });
+    const video = await createLesson(course.id, {
+      sortOrder: 0, title: "Intro video", type: "video", description: null, youtubeVideoId: "dQw4w9WgXcQ", minWatchPct: 90, handoutUrl: null, published: true,
+    });
+    const reading = await createLesson(course.id, {
+      sortOrder: 1, title: "A Reading", type: "reading", description: "<p>Read this.</p>", youtubeVideoId: null, minWatchPct: 90, handoutUrl: "https://example.org/handout.pdf", published: true,
+    });
+    const daniel = (await getProfile("profile-daniel-okafor"))!;
+    await inviteToTraining({
+      people: [{ id: daniel.id, email: daniel.email, first_name: "Priya", last_name: "Anand", directory_access: daniel.directory_access }],
+      courseIds: [course.id], invitedBy: "a", sendEmail: false, fromName: "A", replyTo: "a@x.org", appUrl: "https://app.test",
+    });
+
+    // markContentRead only applies to reading lessons.
+    await expect(markContentRead(learner, video.id)).rejects.toMatchObject({ status: 400 });
+    // The reading lesson is locked until the video lesson is complete.
+    await expect(markContentRead(learner, reading.id)).rejects.toMatchObject({ status: 403 });
+
+    await recordWatch(learner, video.id, 95);
+    const result = await markContentRead(learner, reading.id);
+    expect(result.needsSync).toBe(true);
+
+    const view = await getCourseView(learner, course.slug);
+    const readingView = view!.lessons.find((l) => l.lesson.id === reading.id)!;
+    expect(readingView.contentComplete).toBe(true);
+    expect(readingView.complete).toBe(true); // no quiz on this lesson → complete outright
+    expect(readingView.lesson.handoutUrl).toBe("https://example.org/handout.pdf");
+    expect(view!.status).toBe("completed");
   });
 
   it("resets one person's progress so they can retake the course", async () => {
@@ -177,6 +214,28 @@ describe("training flow (mock mode)", () => {
     expect((await getCourseView(learner, course.slug))!.status).toBe("in_progress");
   });
 
+  it("restricts an invite_only course to admins and whoever is enrolled, regardless of role", async () => {
+    const { course } = await seed();
+    await updateCourse(course.id, { audience: "invite_only" });
+    const daniel = (await getProfile("profile-daniel-okafor"))!;
+    const staff = { role: "staff", profileId: "profile-staff-x" };
+    const volunteer = { role: "volunteer", profileId: "profile-volunteer-x" };
+    const admin = { role: "admin", profileId: "profile-admin-x" };
+
+    // Not enrolled: even staff/volunteer are turned away.
+    expect(await canAccessCourse(staff, course)).toBe(false);
+    expect(await canAccessCourse(volunteer, course)).toBe(false);
+    expect(await canAccessCourse(learner, course)).toBe(false);
+    // Admins always manage every course.
+    expect(await canAccessCourse(admin, course)).toBe(true);
+
+    await inviteToTraining({
+      people: [{ id: daniel.id, email: daniel.email, first_name: "P", last_name: "A", directory_access: daniel.directory_access }],
+      courseIds: [course.id], invitedBy: "a", sendEmail: false, fromName: "A", replyTo: "a@x.org", appUrl: "https://app.test",
+    });
+    expect(await canAccessCourse(learner, course)).toBe(true);
+  });
+
   it("hides volunteer-only and unpublished courses from learners", async () => {
     const { course } = await seed();
     const daniel = (await getProfile("profile-daniel-okafor"))!;
@@ -184,7 +243,6 @@ describe("training flow (mock mode)", () => {
       people: [{ id: daniel.id, email: daniel.email, first_name: "P", last_name: "A", directory_access: daniel.directory_access }],
       courseIds: [course.id], invitedBy: "a", sendEmail: false, fromName: "A", replyTo: "a@x.org", appUrl: "https://app.test",
     });
-    const { updateCourse } = await import("./training");
     await updateCourse(course.id, { audience: "volunteer" });
     expect(await getCourseView(learner, course.slug)).toBeNull();
     await updateCourse(course.id, { audience: "all", published: false });

@@ -177,7 +177,9 @@ export const trainingCourses = pgTable("training_courses", {
   coverImageUrl: text("cover_image_url"),
   // 'all' = any signed-in role (admin/staff/volunteer/learner) can see it in
   // the catalog once enrolled/published; 'volunteer' hides it from learners
-  // entirely (a volunteer-only training) even if they're somehow enrolled.
+  // entirely (a volunteer-only training) even if they're somehow enrolled;
+  // 'invite_only' hides it from everyone but admins and whoever is actually
+  // enrolled — staff/volunteer no longer see it automatically either.
   audience: text("audience").notNull().default("all"),
   published: boolean("published").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
@@ -199,13 +201,22 @@ export const trainingLessons = pgTable(
       .references(() => trainingCourses.id, { onDelete: "cascade" }),
     sortOrder: integer("sort_order").notNull().default(0),
     title: text("title").notNull(),
+    // For a 'video' lesson, supplementary text shown under the video. For a
+    // 'reading' lesson, this IS the lesson body (rendered the same way).
     description: text("description"),
+    // 'video' | 'reading'. A reading lesson has no youtubeVideoId.
+    type: text("type").notNull().default("video"),
     // Bare 11-char YouTube video id (not a full URL) — the admin lesson
-    // editor extracts it from a pasted URL; see lib/youtube.ts.
-    youtubeVideoId: text("youtube_video_id").notNull(),
+    // editor extracts it from a pasted URL; see lib/youtube.ts. Null for a
+    // 'reading' lesson.
+    youtubeVideoId: text("youtube_video_id"),
     // % of the video that must be watched before the lesson counts as
-    // video-complete (and, if it has no quiz, complete outright).
+    // content-complete (and, if it has no quiz, complete outright). Unused
+    // for 'reading' lessons — those complete via an explicit "Mark as read".
     minWatchPct: integer("min_watch_pct").notNull().default(90),
+    // A pasted link to a handout (Drive/Dropbox/S3/etc.) — no upload/storage
+    // integration exists in this app, so this is a URL like coverImageUrl.
+    handoutUrl: text("handout_url"),
     published: boolean("published").notNull().default(false),
   },
   (t) => ({
@@ -251,7 +262,11 @@ export const trainingProgress = pgTable(
       .notNull()
       .references(() => trainingCourses.id, { onDelete: "cascade" }),
     watchedPct: integer("watched_pct").notNull().default(0),
-    videoCompletedAt: timestamp("video_completed_at", { withTimezone: true }),
+    // Named "content" (not "video") because it also gates a 'reading'
+    // lesson's explicit "Mark as read" — the underlying column name is kept
+    // as video_completed_at to avoid a rename migration on a table with real
+    // production progress data; see docs/adr/0024.
+    contentCompletedAt: timestamp("video_completed_at", { withTimezone: true }),
     quizScore: integer("quiz_score"),
     quizPassedAt: timestamp("quiz_passed_at", { withTimezone: true }),
     attempts: integer("attempts").notNull().default(0),

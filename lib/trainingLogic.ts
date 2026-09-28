@@ -16,7 +16,9 @@ export interface GradableQuestion {
 
 export interface LessonProgress {
   watchedPct: number;
-  videoCompletedAt: Date | string | null;
+  // The lesson's primary content is done — video watched to minWatchPct, or
+  // a reading lesson's "Mark as read".
+  contentCompletedAt: Date | string | null;
   quizPassedAt: Date | string | null;
 }
 
@@ -54,10 +56,11 @@ export function gradeQuiz(
   return { score, passed: score >= passThreshold, perQuestion };
 }
 
-// A lesson is complete once its video is (watched to min_watch_pct) AND its
-// quiz is passed — or immediately after the video when it has no quiz.
+// A lesson is complete once its content is done (video watched to
+// min_watch_pct, or a reading lesson marked read) AND its quiz is passed —
+// or immediately after the content when it has no quiz.
 export function isLessonComplete(progress: LessonProgress | undefined, hasQuiz: boolean): boolean {
-  if (!progress?.videoCompletedAt) return false;
+  if (!progress?.contentCompletedAt) return false;
   return hasQuiz ? !!progress.quizPassedAt : true;
 }
 
@@ -91,7 +94,7 @@ export function computeCourseStatus(
   if (states.every((s) => s.complete)) return "completed";
   const anyActivity = lessons.some((l) => {
     const p = progressByLesson[l.id];
-    return !!p && (p.watchedPct > 0 || !!p.videoCompletedAt || !!p.quizPassedAt);
+    return !!p && (p.watchedPct > 0 || !!p.contentCompletedAt || !!p.quizPassedAt);
   });
   return anyActivity ? "in_progress" : null;
 }

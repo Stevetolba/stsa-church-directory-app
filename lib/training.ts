@@ -37,7 +37,7 @@ export interface Course {
   title: string;
   description: string | null;
   coverImageUrl: string | null;
-  audience: "all" | "volunteer";
+  audience: "all" | "volunteer" | "invite_only";
   published: boolean;
   sortOrder: number;
   subsplashFieldName: string | null;
@@ -49,9 +49,11 @@ export interface Lesson {
   courseId: string;
   sortOrder: number;
   title: string;
+  type: "video" | "reading";
   description: string | null;
-  youtubeVideoId: string;
+  youtubeVideoId: string | null;
   minWatchPct: number;
+  handoutUrl: string | null;
   published: boolean;
 }
 
@@ -72,7 +74,7 @@ export interface Progress {
   email: string;
   displayName: string;
   watchedPct: number;
-  videoCompletedAt: Date | null;
+  contentCompletedAt: Date | null;
   quizScore: number | null;
   quizPassedAt: Date | null;
   attempts: number;
@@ -144,7 +146,7 @@ function courseFromRow(r: typeof trainingCourses.$inferSelect): Course {
     title: r.title,
     description: r.description,
     coverImageUrl: r.coverImageUrl,
-    audience: r.audience === "volunteer" ? "volunteer" : "all",
+    audience: r.audience === "volunteer" || r.audience === "invite_only" ? r.audience : "all",
     published: r.published,
     sortOrder: r.sortOrder,
     subsplashFieldName: r.subsplashFieldName,
@@ -211,7 +213,7 @@ export async function deleteCourse(id: string): Promise<void> {
 // --- Lessons ---
 
 function lessonFromRow(r: typeof trainingLessons.$inferSelect): Lesson {
-  return { ...r };
+  return { ...r, type: r.type === "reading" ? "reading" : "video" };
 }
 
 export async function listLessons(courseId: string, opts: { publishedOnly?: boolean } = {}): Promise<Lesson[]> {
@@ -354,7 +356,7 @@ async function saveProgress(p: Progress): Promise<void> {
         target: [trainingProgress.profileId, trainingProgress.lessonId],
         set: {
           watchedPct: p.watchedPct,
-          videoCompletedAt: p.videoCompletedAt,
+          contentCompletedAt: p.contentCompletedAt,
           quizScore: p.quizScore,
           quizPassedAt: p.quizPassedAt,
           attempts: p.attempts,
@@ -378,7 +380,7 @@ function blankProgress(learner: Learner, lesson: Lesson): Progress {
     lessonId: lesson.id,
     courseId: lesson.courseId,
     watchedPct: 0,
-    videoCompletedAt: null,
+    contentCompletedAt: null,
     quizScore: null,
     quizPassedAt: null,
     attempts: 0,
@@ -636,13 +638,20 @@ export async function resyncCourse(courseId: string, profileId?: string): Promis
 
 // Whether `learner` may see/take `course`. Admin/staff/volunteer see every
 // published course whose audience allows it; a learner only sees courses
-// they're enrolled in (and never volunteer-only ones).
+// they're enrolled in (and never volunteer-only ones); an 'invite_only'
+// course requires enrollment from everyone but admins, regardless of role.
 export async function canAccessCourse(
   actor: { role: string; profileId?: string },
   course: Course
 ): Promise<boolean> {
   if (!course.published) return actor.role === "admin";
-  if (actor.role === "admin" || actor.role === "staff") return true;
+  if (actor.role === "admin") return true;
+  if (course.audience === "invite_only") {
+    if (!actor.profileId) return false;
+    const enrollments = await listEnrollmentsForProfile(actor.profileId);
+    return enrollments.some((e) => e.courseId === course.id);
+  }
+  if (actor.role === "staff") return true;
   if (actor.role === "volunteer") return true;
   if (actor.role === "learner") {
     if (course.audience === "volunteer" || !actor.profileId) return false;
@@ -688,7 +697,7 @@ export interface LessonView {
   complete: boolean;
   locked: boolean;
   watchedPct: number;
-  videoComplete: boolean;
+  contentComplete: boolean;
   quizScore: number | null;
   quizPassed: boolean;
   // Answer keys are never included — only prompt/kind/options.
@@ -730,7 +739,7 @@ export async function getCourseView(actor: { role: string; profileId?: string },
         complete: states[i].complete,
         locked: states[i].locked,
         watchedPct: p?.watchedPct ?? 0,
-        videoComplete: !!p?.videoCompletedAt,
+        contentComplete: !!p?.contentCompletedAt,
         quizScore: p?.quizScore ?? null,
         quizPassed: !!p?.quizPassedAt,
         questions: (questionsByLesson.get(l.id) ?? []).map((q) => ({
@@ -801,7 +810,21 @@ export async function recordWatch(actor: LearnerActor, lessonId: string, pct: nu
   const existing = (await getProgressForCourse(learner.profileId, lesson.courseId)).find((p) => p.lessonId === lesson.id);
   const p = existing ?? blankProgress(learner, lesson);
   p.watchedPct = Math.max(p.watchedPct, clamped);
-  if (!p.videoCompletedAt && p.watchedPct >= lesson.minWatchPct) p.videoCompletedAt = now();
+  if (!p.contentCompletedAt && p.watchedPct >= lesson.minWatchPct) p.contentCompletedAt = now();
+  await saveProgress(p);
+  const row = await recomputeCourseStatus(learner, lesson.courseId, { sync: false });
+  return { needsSync: needsSubsplashSync(course, row) };
+}
+
+// A reading lesson's counterpart to recordWatch: the learner clicks
+// "Mark as read" (there's no watch-percentage to track), which sets the same
+// contentCompletedAt gate a video's minWatchPct would.
+export async function markContentRead(actor: LearnerActor, lessonId: string): Promise<{ needsSync: boolean }> {
+  const { lesson, course, learner } = await loadLessonForLearner(actor, lessonId);
+  if (lesson.type !== "reading") throw new TrainingError("This lesson isn't a reading lesson", 400);
+  const existing = (await getProgressForCourse(learner.profileId, lesson.courseId)).find((p) => p.lessonId === lesson.id);
+  const p = existing ?? blankProgress(learner, lesson);
+  if (!p.contentCompletedAt) p.contentCompletedAt = now();
   await saveProgress(p);
   const row = await recomputeCourseStatus(learner, lesson.courseId, { sync: false });
   return { needsSync: needsSubsplashSync(course, row) };
@@ -824,9 +847,11 @@ export async function submitQuiz(
   const questions = await listQuestions(lesson.id);
   if (questions.length === 0) throw new TrainingError("This lesson has no quiz", 400);
   const existing = (await getProgressForCourse(learner.profileId, lesson.courseId)).find((p) => p.lessonId === lesson.id);
-  // The quiz follows the video — grading before it's watched would let a
+  // The quiz follows the content — grading before it's done would let a
   // learner skip straight to answers.
-  if (!existing?.videoCompletedAt) throw new TrainingError("Watch the video first", 403);
+  if (!existing?.contentCompletedAt) {
+    throw new TrainingError(lesson.type === "reading" ? "Read the lesson first" : "Watch the video first", 403);
+  }
   const result = gradeQuizPure(questions, answers, course.passThreshold);
   const p = existing;
   p.attempts += 1;

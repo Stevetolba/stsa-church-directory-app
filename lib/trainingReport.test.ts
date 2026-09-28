@@ -19,9 +19,9 @@ const report = buildProgressReport({
     { ...bob, status: "in_progress", completedAt: null, subsplashSyncedStatus: null },
   ],
   progress: [
-    { profileId: "p1", lessonId: "l1", watchedPct: 100, videoCompletedAt: d("2026-09-09"), quizScore: 90, quizPassedAt: d("2026-09-09"), attempts: 2, updatedAt: d("2026-09-09") },
-    { profileId: "p1", lessonId: "l2", watchedPct: 100, videoCompletedAt: d("2026-09-10"), quizScore: null, quizPassedAt: null, attempts: 0, updatedAt: d("2026-09-10") },
-    { profileId: "p2", lessonId: "l1", watchedPct: 40, videoCompletedAt: null, quizScore: null, quizPassedAt: null, attempts: 0, updatedAt: d("2026-09-05") },
+    { profileId: "p1", lessonId: "l1", watchedPct: 100, contentCompletedAt: d("2026-09-09"), quizScore: 90, quizPassedAt: d("2026-09-09"), attempts: 2, updatedAt: d("2026-09-09") },
+    { profileId: "p1", lessonId: "l2", watchedPct: 100, contentCompletedAt: d("2026-09-10"), quizScore: null, quizPassedAt: null, attempts: 0, updatedAt: d("2026-09-10") },
+    { profileId: "p2", lessonId: "l1", watchedPct: 40, contentCompletedAt: null, quizScore: null, quizPassedAt: null, attempts: 0, updatedAt: d("2026-09-05") },
   ],
 });
 
@@ -41,7 +41,7 @@ describe("buildProgressReport", () => {
   it("includes someone with progress but no enrollment", () => {
     const r = buildProgressReport({
       course: { id: "c", title: "T" }, lessons, enrollments: [], statuses: [],
-      progress: [{ profileId: "px", lessonId: "l1", watchedPct: 10, videoCompletedAt: null, quizScore: null, quizPassedAt: null, attempts: 0, updatedAt: d("2026-09-02") }],
+      progress: [{ profileId: "px", lessonId: "l1", watchedPct: 10, contentCompletedAt: null, quizScore: null, quizPassedAt: null, attempts: 0, updatedAt: d("2026-09-02") }],
     });
     expect(r.rows).toHaveLength(1);
   });

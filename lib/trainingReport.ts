@@ -13,7 +13,7 @@ export interface ReportProgressInput {
   profileId: string;
   lessonId: string;
   watchedPct: number;
-  videoCompletedAt: Date | null;
+  contentCompletedAt: Date | null;
   quizScore: number | null;
   quizPassedAt: Date | null;
   attempts: number;
@@ -39,7 +39,7 @@ export type PersonStatus = "invited" | "in_progress" | "completed";
 export interface LessonCell {
   lessonId: string;
   watchedPct: number;
-  videoComplete: boolean;
+  contentComplete: boolean;
   quizScore: number | null;
   quizPassed: boolean;
   attempts: number;
@@ -96,7 +96,7 @@ export function buildProgressReport(input: ReportInput): ProgressReport {
       return {
         lessonId: l.id,
         watchedPct: p?.watchedPct ?? 0,
-        videoComplete: !!p?.videoCompletedAt,
+        contentComplete: !!p?.contentCompletedAt,
         quizScore: p?.quizScore ?? null,
         quizPassed: !!p?.quizPassedAt,
         attempts: p?.attempts ?? 0,
