@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import { signInWithGoogle } from "./actions";
 
 // Auth.js appends ?error=<code> to pages.error on failure — pointed at this
@@ -50,6 +51,13 @@ export default function LoginPage({
             Sign in with Google
           </button>
         </form>
+
+        <p className="mt-4 text-xs text-muted-foreground">
+          Invited to training but don&apos;t use Google?{" "}
+          <Link href="/login/code" className="font-semibold text-brand-navy underline">
+            Sign in with an email code
+          </Link>
+        </p>
 
         <p className="mt-6 text-xs text-muted-foreground">
           Staff — sign in with your church Google Workspace email.

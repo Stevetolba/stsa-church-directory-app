@@ -106,3 +106,27 @@ export async function sendBulkEmail({
 
   return { batches: batches.length };
 }
+
+// One message to one recipient, with no copy to the from address — unlike
+// sendBulkEmail, which always addresses EMAIL_FROM_ADDRESS. Used for login
+// codes, which must reach only the person signing in. With no RESEND_API_KEY
+// (local dev) it logs the message, including the body, instead of sending.
+export async function sendEmail({
+  to,
+  fromName,
+  subject,
+  html,
+}: {
+  to: string;
+  fromName: string;
+  subject: string;
+  html: string;
+}): Promise<void> {
+  const from = `${fromName} <${getFromAddress()}>`;
+  if (!resend) {
+    console.log("[email:mock] would send", { from, to, subject, html });
+    return;
+  }
+  const { error } = await resend.emails.send({ from, to, subject, html });
+  if (error) throw new Error(error.message);
+}
