@@ -2,7 +2,7 @@
 // can be unit-tested; lib/training.ts's inviteToTraining sends it.
 
 export const CHURCH_NAME = "STSA Church";
-const TAGLINE = "An Ancient Faith in a modern world";
+const TAGLINE = "an ancient faith in a modern world";
 const WEBSITE = { label: "www.stsa.church", href: "https://www.stsa.church" };
 
 function escapeHtml(s: string): string {
@@ -41,12 +41,40 @@ export function buildInviteEmail(params: {
     <p style="margin:24px 0">
       <a href="${escapeHtml(trainingUrl)}" style="background:#14304a;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;display:inline-block">Start your training</a>
     </p>
-    <p style="font-size:14px">Sign in with Google using the email address this message was sent to. The course videos and quizzes are available any time — you can pick up where you left off.</p>
+    <p style="font-size:14px">Sign in with Google using the email address this message was sent to. No Google account? On the sign-in page choose “Sign in with an email code” and we'll email you a code. The course videos and quizzes are available any time — you can pick up where you left off.</p>
     <hr style="border:0;border-top:1px solid #eee;margin:24px 0" />
     <p style="font-size:12px;color:#6b7a88;margin:0">
       This is an ${escapeHtml(CHURCH_NAME)} training course.
       <a href="${WEBSITE.href}" style="color:#6b7a88">${WEBSITE.label}</a>
     </p>
+  </div>
+</div>`.trim();
+  return { subject, html };
+}
+
+export function buildLoginCodeEmail(params: { code: string; minutesValid: number; logoUrl: string }): {
+  subject: string;
+  html: string;
+} {
+  const { code, minutesValid, logoUrl } = params;
+  const subject = `Your ${CHURCH_NAME} sign-in code: ${code}`;
+  const html = `
+<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1f2d3a;line-height:1.5">
+  <div style="background:#14304a;color:#f6f0e2;padding:18px 24px;border-radius:10px 10px 0 0">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="padding-right:14px;vertical-align:middle">
+        <img src="${escapeHtml(logoUrl)}" width="48" height="48" alt="${escapeHtml(CHURCH_NAME)} logo" style="display:block;border-radius:50%;background:#ffffff" />
+      </td>
+      <td style="vertical-align:middle">
+        <div style="font-size:20px;font-weight:700;color:#f6f0e2">${escapeHtml(CHURCH_NAME)}</div>
+        <div style="font-size:13px;opacity:.85;font-style:italic;color:#f6f0e2">${escapeHtml(TAGLINE)}</div>
+      </td>
+    </tr></table>
+  </div>
+  <div style="border:1px solid #e5dcc8;border-top:0;padding:24px;border-radius:0 0 10px 10px">
+    <p style="margin-top:0">Enter this code on the sign-in page to open your training:</p>
+    <p style="font-size:32px;font-weight:700;letter-spacing:6px;margin:16px 0">${escapeHtml(code)}</p>
+    <p style="font-size:14px">It works once and expires in ${minutesValid} minutes. If you didn't ask for it, you can ignore this message.</p>
   </div>
 </div>`.trim();
   return { subject, html };

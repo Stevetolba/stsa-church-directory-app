@@ -1191,6 +1191,47 @@ export async function getProfileIdByEmail(email: string, name?: string | null): 
   }
 }
 
+// Email-code sign-in for learners (ADR-0025): every active profile with this
+// email whose DirectoryRole is "Learner" and who has no DirectoryAccess —
+// the same rule lib/auth.ts's jwt callback uses to grant the learner role.
+// Several can share one email (a child using a parent's address), so this
+// returns a list. Fails closed (empty list) on any lookup error.
+export async function listLearnerProfilesByEmail(email: string): Promise<{ id: string; name: string }[]> {
+  const needle = email.trim().toLowerCase();
+  if (!needle) return [];
+
+  if (USE_MOCK_DATA) {
+    return mockProfiles
+      .filter((p) => {
+        if (p.email?.toLowerCase() !== needle) return false;
+        const role = normalizeDirectoryRole(
+          p.custom_fields?.find((f) => f.label.trim().toLowerCase() === ROLE_FIELD_NAME)?.value
+        );
+        const access = p.custom_fields?.some(
+          (f) => f.label.trim().toLowerCase() === ACCESS_FIELD_NAME && isAccessValueGranted(f.value)
+        );
+        return role === "Learner" && !access;
+      })
+      .map((p) => ({ id: p.id, name: `${p.first_name} ${p.last_name}`.trim() }));
+  }
+
+  try {
+    const data = await subsplashFetch<HalCollection<RawProfile>>(
+      `/people/v1/profiles?filter[email]=${encodeURIComponent(needle)}`
+    );
+    return data._embedded.profiles
+      .filter(
+        (raw) =>
+          (!raw.status || raw.status.toLowerCase() === "active") &&
+          extractDirectoryRole(raw.custom_fields) === "Learner" &&
+          !extractDirectoryAccess(raw.custom_fields)
+      )
+      .map((raw) => ({ id: raw.id, name: `${raw.first_name} ${raw.last_name}`.trim() }));
+  } catch {
+    return [];
+  }
+}
+
 // Only the fields actually editable via PATCH /people/v1/profiles/{id} at
 // the top level, plus campus and address_parts (handled separately below —
 // campus lives in custom_fields, address_parts under _embedded.address, not

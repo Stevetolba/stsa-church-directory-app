@@ -11,7 +11,7 @@ describe("buildInviteEmail", () => {
   it("identifies the course as an STSA Church course", () => {
     expect(email.subject).toBe("STSA Church training: you're invited to Ancient Faith Class 101");
     expect(email.html).toContain("This is an STSA Church training course.");
-    expect(email.html).toContain("An Ancient Faith in a modern world");
+    expect(email.html).toContain("an ancient faith in a modern world");
     expect(email.html).toContain('src="https://app.example.org/stsa-logo.png"');
     expect(email.html).toContain('href="https://www.stsa.church"');
     expect(email.html).toContain("www.stsa.church");

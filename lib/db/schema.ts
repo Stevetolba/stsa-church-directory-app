@@ -145,7 +145,7 @@ export const accessEvents = pgTable(
     // Resolved via lib/roles.ts's resolveRole — set even for a denied sign-in
     // (resolveRole only classifies the email shape, it doesn't itself decide
     // access) so a denied row still shows who they would have been.
-    role: text("role").notNull(), // 'admin' | 'staff' | 'volunteer'
+    role: text("role").notNull(), // 'admin' | 'staff' | 'volunteer' | 'learner'
     eventType: text("event_type").notNull(), // 'sign_in' | 'sign_in_denied' | 'directory_read'
     // Short label for what was read — e.g. "profiles", "households",
     // "children", "attendance-report". Null for sign_in/sign_in_denied.
@@ -154,11 +154,30 @@ export const accessEvents = pgTable(
   (t) => ({
     occurredAtIdx: index("access_events_occurred_at_idx").on(t.occurredAt),
     emailIdx: index("access_events_email_idx").on(t.email),
-    roleCheck: check("access_events_role_check", sql`${t.role} in ('admin','staff','volunteer')`),
+    roleCheck: check("access_events_role_check", sql`${t.role} in ('admin','staff','volunteer','learner')`),
     eventTypeCheck: check(
       "access_events_event_type_check",
       sql`${t.eventType} in ('sign_in','sign_in_denied','directory_read')`
     ),
+  })
+);
+
+// One-time email codes for learner sign-in (ADR-0025). The code itself is
+// never stored — only a salted hash — and a row is dead once consumed,
+// expired, or after too many wrong guesses (lib/loginCode.ts).
+export const loginCodes = pgTable(
+  "login_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: text("email").notNull(), // lowercased
+    codeHash: text("code_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    emailIdx: index("login_codes_email_idx").on(t.email),
   })
 );
 

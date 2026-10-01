@@ -8,24 +8,52 @@
 
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import Credentials from "next-auth/providers/credentials";
 import type { GoogleProfile } from "next-auth/providers/google";
 import type { Role } from "@/types/auth";
 import { isAdminEmail, resolveRole } from "./roles";
 import { getDirectoryRole, getProfileIdByEmail, hasDirectoryAccess } from "./subsplash";
 import { authConfig } from "./auth.config";
 import { recordAccessEvent } from "./accessLog";
+import { consumeLoginCode } from "./loginCode";
+
+// ADR-0025: learners without a Google account sign in with an emailed
+// one-time code. authorize() does all the checking (code valid, unused, and
+// the chosen profile is an enrolled Learner), so the callbacks below just
+// trust a successful "learner-code" sign-in.
+const LEARNER_CODE_PROVIDER = "learner-code";
 
 const WORKSPACE_DOMAIN = process.env.CHURCH_GOOGLE_WORKSPACE_DOMAIN;
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
-  providers: [Google],
+  providers: [
+    Google,
+    Credentials({
+      id: LEARNER_CODE_PROVIDER,
+      credentials: { email: {}, code: {}, profileId: {} },
+      async authorize(credentials) {
+        const { email, code, profileId } = credentials as Record<string, string | undefined>;
+        if (!email || !code || !profileId) return null;
+        return consumeLoginCode(email, code, profileId);
+      },
+    }),
+  ],
   // ADR-0010: 24h so a volunteer whose Subsplash access is revoked loses it
   // within a day. The access check only runs at sign-in (JWT sessions aren't
   // re-checked per request), so a long-lived session would keep stale access.
   session: { strategy: "jwt", maxAge: 60 * 60 * 24 },
   callbacks: {
-    async signIn({ profile }) {
+    async signIn({ profile, account, user }) {
+      if (account?.provider === LEARNER_CODE_PROVIDER) {
+        await recordAccessEvent({
+          email: user.email ?? "",
+          name: user.name ?? null,
+          role: "learner",
+          eventType: "sign_in",
+        });
+        return true;
+      }
       if (!WORKSPACE_DOMAIN) {
         throw new Error("CHURCH_GOOGLE_WORKSPACE_DOMAIN is not configured");
       }
@@ -73,8 +101,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       await recordAccessEvent({ email, name, role, eventType: granted ? "sign_in" : "sign_in_denied" });
       return granted;
     },
-    async jwt({ token, account }) {
+    async jwt({ token, account, user }) {
       if (!token.email) return token;
+
+      // ADR-0025: code sign-in already identified the exact profile, so skip
+      // the email+name Subsplash lookups below (there's no Google name here).
+      if (account?.provider === LEARNER_CODE_PROVIDER) {
+        token.profileId = user?.id;
+        token.role = "learner";
+        token.canEmailChildren = false;
+        return token;
+      }
 
       // Only re-derive on a fresh sign-in (account present) — a token
       // refresh shouldn't re-hit Subsplash on every request; the 24h
