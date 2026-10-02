@@ -5,6 +5,7 @@ import {
   gradeQuiz,
   isAnswerCorrect,
   isLessonComplete,
+  isReminderDue,
   lessonSlugs,
 } from "./trainingLogic";
 import { extractYoutubeVideoId } from "./youtube";
@@ -97,5 +98,24 @@ describe("lessonSlugs", () => {
     ]);
     expect(lessonSlugs(["Intro", "Intro", "Intro"])).toEqual(["intro", "intro-2", "intro-3"]);
     expect(lessonSlugs(["???"])).toEqual(["lesson-1"]);
+  });
+});
+
+describe("isReminderDue", () => {
+  const invitedAt = new Date("2026-10-01T14:00:00Z");
+  const at = (days: number) => new Date(invitedAt.getTime() + days * 24 * 60 * 60 * 1000);
+  it("never fires when reminders are off", () => {
+    expect(isReminderDue({ frequency: "off", invitedAt, lastRemindedAt: null, now: at(400) })).toBe(false);
+  });
+  it("counts from the invite, then from the last reminder", () => {
+    expect(isReminderDue({ frequency: "weekly", invitedAt, lastRemindedAt: null, now: at(6) })).toBe(false);
+    expect(isReminderDue({ frequency: "weekly", invitedAt, lastRemindedAt: null, now: at(7) })).toBe(true);
+    expect(isReminderDue({ frequency: "weekly", invitedAt, lastRemindedAt: at(7), now: at(10) })).toBe(false);
+    expect(isReminderDue({ frequency: "weekly", invitedAt, lastRemindedAt: at(7), now: at(14) })).toBe(true);
+  });
+  it("tolerates a daily cron running a few hours early", () => {
+    expect(isReminderDue({ frequency: "biweekly", invitedAt, lastRemindedAt: null, now: at(13.6) })).toBe(true);
+    expect(isReminderDue({ frequency: "biweekly", invitedAt, lastRemindedAt: null, now: at(13) })).toBe(false);
+    expect(isReminderDue({ frequency: "monthly", invitedAt, lastRemindedAt: null, now: at(30) })).toBe(true);
   });
 });

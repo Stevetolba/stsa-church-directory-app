@@ -4,7 +4,7 @@
 // so `npm run dev` works with zero setup. Pure rules live in
 // lib/trainingLogic.ts.
 
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { getDb, isDbConfigured } from "./db";
 import {
   trainingCourses,
@@ -24,8 +24,10 @@ import {
   computeCourseStatus,
   computeLessonStates,
   gradeQuiz as gradeQuizPure,
+  REMINDER_FREQUENCIES,
   type CourseStatusValue,
   type QuizOption,
+  type ReminderFrequency,
   type QuestionKind,
 } from "./trainingLogic";
 
@@ -42,6 +44,7 @@ export interface Course {
   sortOrder: number;
   subsplashFieldName: string | null;
   passThreshold: number;
+  reminderFrequency: ReminderFrequency;
 }
 
 export interface Lesson {
@@ -89,6 +92,8 @@ export interface Enrollment {
   invitedBy: string;
   invitedAt: Date;
   removedAt: Date | null;
+  lastRemindedAt: Date | null;
+  reminderCount: number;
 }
 
 export interface CourseStatusRow {
@@ -151,6 +156,9 @@ function courseFromRow(r: typeof trainingCourses.$inferSelect): Course {
     sortOrder: r.sortOrder,
     subsplashFieldName: r.subsplashFieldName,
     passThreshold: r.passThreshold,
+    reminderFrequency: (REMINDER_FREQUENCIES as readonly string[]).includes(r.reminderFrequency)
+      ? (r.reminderFrequency as ReminderFrequency)
+      : "off",
   };
 }
 
@@ -416,7 +424,7 @@ export async function listEnrollmentsForCourse(courseId: string): Promise<Enroll
   return mem().enrollments.filter((e) => e.courseId === courseId && !e.removedAt);
 }
 
-async function upsertEnrollment(e: Omit<Enrollment, "invitedAt" | "removedAt">): Promise<void> {
+async function upsertEnrollment(e: Omit<Enrollment, "invitedAt" | "removedAt" | "lastRemindedAt" | "reminderCount">): Promise<void> {
   if (isDbConfigured()) {
     await getDb()
       .insert(trainingEnrollments)
@@ -434,7 +442,27 @@ async function upsertEnrollment(e: Omit<Enrollment, "invitedAt" | "removedAt">):
     existing.email = e.email;
     existing.displayName = e.displayName;
   } else {
-    s.enrollments.push({ ...e, invitedAt: now(), removedAt: null });
+    s.enrollments.push({ ...e, invitedAt: now(), removedAt: null, lastRemindedAt: null, reminderCount: 0 });
+  }
+}
+
+// Stamps a reminder as sent (ADR-0026) — restarts each person's reminder
+// clock for this course.
+export async function markReminded(courseId: string, profileIds: string[], at: Date = now()): Promise<void> {
+  if (profileIds.length === 0) return;
+  if (isDbConfigured()) {
+    await getDb()
+      .update(trainingEnrollments)
+      .set({ lastRemindedAt: at, reminderCount: sql`${trainingEnrollments.reminderCount} + 1` })
+      .where(and(eq(trainingEnrollments.courseId, courseId), inArray(trainingEnrollments.profileId, profileIds)));
+    return;
+  }
+  const ids = new Set(profileIds);
+  for (const e of mem().enrollments) {
+    if (e.courseId === courseId && ids.has(e.profileId)) {
+      e.lastRemindedAt = at;
+      e.reminderCount += 1;
+    }
   }
 }
 
@@ -983,6 +1011,10 @@ export interface RosterRow {
   completedAt: Date | null;
   subsplashSynced: boolean;
   subsplashSyncError: string | null;
+  // False for someone with progress but no active enrollment (e.g. a
+  // volunteer who took the course on their own) — they never get reminders.
+  enrolled: boolean;
+  lastRemindedAt: Date | null;
 }
 
 export async function getRoster(courseId: string): Promise<RosterRow[]> {
@@ -997,9 +1029,12 @@ export async function getRoster(courseId: string): Promise<RosterRow[]> {
       completedAt: null,
       subsplashSynced: true,
       subsplashSyncError: null,
+      enrolled: true,
+      lastRemindedAt: e.lastRemindedAt,
     });
   }
   for (const s of statuses) {
+    const enrolled = byProfile.get(s.profileId);
     byProfile.set(s.profileId, {
       profileId: s.profileId,
       email: s.email,
@@ -1008,6 +1043,8 @@ export async function getRoster(courseId: string): Promise<RosterRow[]> {
       completedAt: s.completedAt,
       subsplashSynced: s.subsplashSyncedStatus === s.status,
       subsplashSyncError: s.subsplashSyncError,
+      enrolled: !!enrolled,
+      lastRemindedAt: enrolled?.lastRemindedAt ?? null,
     });
   }
   return Array.from(byProfile.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));

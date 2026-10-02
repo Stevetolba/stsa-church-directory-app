@@ -207,6 +207,9 @@ export const trainingCourses = pgTable("training_courses", {
   // lib/subsplash.ts's resolveChoiceFieldMeta/setCourseStatusField.
   subsplashFieldName: text("subsplash_field_name"),
   passThreshold: integer("pass_threshold").notNull().default(80),
+  // 'off' | 'weekly' | 'biweekly' | 'monthly' — how often unfinished
+  // enrollees get a reminder email (lib/trainingReminders.ts, ADR-0026).
+  reminderFrequency: text("reminder_frequency").notNull().default("off"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -315,6 +318,10 @@ export const trainingEnrollments = pgTable(
     invitedBy: text("invited_by").notNull(),
     invitedAt: timestamp("invited_at", { withTimezone: true }).notNull().defaultNow(),
     removedAt: timestamp("removed_at", { withTimezone: true }),
+    // Reminder clock: the next reminder is due one interval after this (or
+    // after invitedAt if they've never been reminded).
+    lastRemindedAt: timestamp("last_reminded_at", { withTimezone: true }),
+    reminderCount: integer("reminder_count").notNull().default(0),
   },
   (t) => ({
     uniquePerCourse: unique("training_enrollments_unique").on(t.profileId, t.courseId),

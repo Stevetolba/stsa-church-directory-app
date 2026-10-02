@@ -79,3 +79,50 @@ export function buildLoginCodeEmail(params: { code: string; minutesValid: number
 </div>`.trim();
   return { subject, html };
 }
+
+export function buildReminderEmail(params: {
+  firstName: string;
+  courseTitle: string;
+  completedLessons: number;
+  lessonCount: number;
+  courseUrl: string;
+  logoUrl: string;
+}): { subject: string; html: string } {
+  const { firstName, courseTitle, completedLessons, lessonCount, courseUrl, logoUrl } = params;
+  const started = completedLessons > 0;
+  const subject = started
+    ? `Reminder: continue ${courseTitle}`
+    : `Reminder: start ${courseTitle}`;
+  const progress = started
+    ? `You've finished ${completedLessons} of ${lessonCount} lesson${lessonCount === 1 ? "" : "s"} so far — pick up where you left off.`
+    : `You haven't started yet. It's ${lessonCount} lesson${lessonCount === 1 ? "" : "s"}, and you can go at your own pace.`;
+  const html = `
+<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1f2d3a;line-height:1.5">
+  <div style="background:#14304a;color:#f6f0e2;padding:18px 24px;border-radius:10px 10px 0 0">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="padding-right:14px;vertical-align:middle">
+        <img src="${escapeHtml(logoUrl)}" width="48" height="48" alt="${escapeHtml(CHURCH_NAME)} logo" style="display:block;border-radius:50%;background:#ffffff" />
+      </td>
+      <td style="vertical-align:middle">
+        <div style="font-size:20px;font-weight:700;color:#f6f0e2">${escapeHtml(CHURCH_NAME)}</div>
+        <div style="font-size:13px;opacity:.85;font-style:italic;color:#f6f0e2">${escapeHtml(TAGLINE)}</div>
+      </td>
+    </tr></table>
+  </div>
+  <div style="border:1px solid #e5dcc8;border-top:0;padding:24px;border-radius:0 0 10px 10px">
+    <p style="margin-top:0">Hi ${escapeHtml(firstName)},</p>
+    <p>This is a reminder about your ${escapeHtml(CHURCH_NAME)} training course, <strong>${escapeHtml(courseTitle)}</strong>.</p>
+    <p>${progress}</p>
+    <p style="margin:24px 0">
+      <a href="${escapeHtml(courseUrl)}" style="background:#14304a;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;display:inline-block">Continue your training</a>
+    </p>
+    <p style="font-size:14px">Sign in with Google using the email address this message was sent to. No Google account? On the sign-in page choose “Sign in with an email code” and we'll email you a code.</p>
+    <hr style="border:0;border-top:1px solid #eee;margin:24px 0" />
+    <p style="font-size:12px;color:#6b7a88;margin:0">
+      Questions? Reply to this email.
+      <a href="${WEBSITE.href}" style="color:#6b7a88">${WEBSITE.label}</a>
+    </p>
+  </div>
+</div>`.trim();
+  return { subject, html };
+}

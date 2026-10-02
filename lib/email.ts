@@ -130,3 +130,43 @@ export async function sendEmail({
   const { error } = await resend.emails.send({ from, to, subject, html });
   if (error) throw new Error(error.message);
 }
+
+export interface BatchMessage {
+  to: string;
+  subject: string;
+  html: string;
+}
+
+// Resend's batch endpoint takes at most 100 messages per call.
+const MAX_BATCH = 100;
+
+// Many personal, single-recipient messages in as few API calls as possible
+// (training reminders, ADR-0026) — one request per 100 rather than one per
+// person, which stays inside Resend's per-second rate limit. "permissive"
+// validation reports a bad address on its own instead of failing the whole
+// batch. Returns the indexes (into `messages`) that failed, with why.
+export async function sendEmailBatch(
+  messages: BatchMessage[],
+  opts: { fromName: string; replyTo: string }
+): Promise<{ failed: { index: number; message: string }[] }> {
+  const from = `${opts.fromName} <${getFromAddress()}>`;
+  if (!resend) {
+    for (const m of messages) console.log("[email:mock] would send", { from, to: m.to, replyTo: opts.replyTo, subject: m.subject, html: m.html });
+    return { failed: [] };
+  }
+  const failed: { index: number; message: string }[] = [];
+  const batches = chunk(messages, MAX_BATCH);
+  for (let b = 0; b < batches.length; b++) {
+    const offset = b * MAX_BATCH;
+    const { data, error } = await resend.batch.send(
+      batches[b].map((m) => ({ from, to: m.to, replyTo: opts.replyTo, subject: m.subject, html: m.html })),
+      { batchValidation: "permissive" }
+    );
+    if (error) {
+      batches[b].forEach((_, i) => failed.push({ index: offset + i, message: error.message }));
+      continue;
+    }
+    for (const e of data?.errors ?? []) failed.push({ index: offset + e.index, message: e.message });
+  }
+  return { failed };
+}
