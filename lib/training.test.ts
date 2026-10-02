@@ -38,7 +38,7 @@ async function seed() {
     published: true,
     sortOrder: 0,
     subsplashFieldName: FIELD,
-    passThreshold: 80,
+    passThreshold: 80, reminderFrequency: "off",
   });
   const l1 = await createLesson(course.id, {
     sortOrder: 0, title: "Gospel", type: "video", description: null, youtubeVideoId: "dQw4w9WgXcQ", minWatchPct: 90, handoutUrl: null, published: true,
@@ -158,7 +158,7 @@ describe("training flow (mock mode)", () => {
   it("walks a learner through a reading lesson via markContentRead", async () => {
     const course = await createCourse({
       slug: "reading-course", title: "Reading Course", description: null, coverImageUrl: null,
-      audience: "all", published: true, sortOrder: 0, subsplashFieldName: FIELD, passThreshold: 80,
+      audience: "all", published: true, sortOrder: 0, subsplashFieldName: FIELD, passThreshold: 80, reminderFrequency: "off",
     });
     const video = await createLesson(course.id, {
       sortOrder: 0, title: "Intro video", type: "video", description: null, youtubeVideoId: "dQw4w9WgXcQ", minWatchPct: 90, handoutUrl: null, published: true,

@@ -126,3 +126,31 @@ export function lessonSlugs(titles: string[]): string[] {
     return n === 1 ? base : `${base}-${n}`;
   });
 }
+
+// --- Reminder emails (ADR-0026) ---
+
+export const REMINDER_FREQUENCIES = ["off", "weekly", "biweekly", "monthly"] as const;
+export type ReminderFrequency = (typeof REMINDER_FREQUENCIES)[number];
+
+export const REMINDER_INTERVAL_DAYS: Record<Exclude<ReminderFrequency, "off">, number> = {
+  weekly: 7,
+  biweekly: 14,
+  monthly: 30,
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Due once a full interval has passed since the last reminder, or since the
+// invite if there hasn't been one. The cron runs daily, so a half-day of
+// slack keeps a 9:59 invite from slipping a whole extra day.
+export function isReminderDue(params: {
+  frequency: ReminderFrequency;
+  invitedAt: Date;
+  lastRemindedAt: Date | null;
+  now: Date;
+}): boolean {
+  if (params.frequency === "off") return false;
+  const since = (params.lastRemindedAt ?? params.invitedAt).getTime();
+  const interval = REMINDER_INTERVAL_DAYS[params.frequency] * DAY_MS;
+  return params.now.getTime() - since >= interval - DAY_MS / 2;
+}

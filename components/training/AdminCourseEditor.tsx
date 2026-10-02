@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowDown, ArrowLeft, ArrowUp, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Mail, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { UpdateSubsplashButton } from "@/components/training/UpdateSubsplashButton";
@@ -33,6 +33,7 @@ function CourseSettings({ course, onSaved }: { course: Course; onSaved: () => vo
         published: f.published,
         subsplashFieldName: f.subsplashFieldName ?? "",
         passThreshold: f.passThreshold,
+        reminderFrequency: f.reminderFrequency,
       });
       toast.success("Course saved");
       onSaved();
@@ -95,6 +96,22 @@ function CourseSettings({ course, onSaved }: { course: Course; onSaved: () => vo
             <option value="volunteer">Volunteers only (hidden from learners)</option>
             <option value="invite_only">By invitation only (hidden from everyone but admins until enrolled)</option>
           </select>
+        </div>
+        <div>
+          <span className={label}>Automatic reminders</span>
+          <select
+            className="h-8 w-full rounded-lg border bg-background px-2 text-sm"
+            value={f.reminderFrequency}
+            onChange={(e) => setF({ ...f, reminderFrequency: e.target.value as Course["reminderFrequency"] })}
+          >
+            <option value="off">Off</option>
+            <option value="weekly">Weekly</option>
+            <option value="biweekly">Every 2 weeks</option>
+            <option value="monthly">Monthly</option>
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Emails everyone who hasn&apos;t finished, counting from their invite or last reminder. Only while the course is published.
+          </p>
         </div>
         <div>
           <span className={label}>Subsplash status field name</span>
@@ -372,9 +389,26 @@ function LessonEditor({
   );
 }
 
-function Roster({ courseId, courseTitle }: { courseId: string; courseTitle: string }) {
+function Roster({ courseId, courseTitle, published }: { courseId: string; courseTitle: string; published: boolean }) {
   const { data, mutate } = useRoster(courseId);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [reminding, setReminding] = useState<string | null>(null);
+  const unfinished = data?.roster.filter((r) => r.enrolled && r.status !== "completed" && r.email) ?? [];
+
+  async function remind(profileId?: string) {
+    if (!profileId && !confirm(`Email a reminder to ${unfinished.length} ${unfinished.length === 1 ? "person" : "people"} who haven't finished?`)) return;
+    setReminding(profileId ?? "all");
+    try {
+      const r = await sendJson(`/api/admin/training/courses/${courseId}/remind`, "POST", profileId ? { profileId } : {});
+      if (r.failed > 0) toast.error(`Sent ${r.sent}, ${r.failed} failed: ${r.errors.join("; ")}`);
+      else toast.success(`Reminder sent to ${r.sent} ${r.sent === 1 ? "person" : "people"}`);
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not send reminders");
+    } finally {
+      setReminding(null);
+    }
+  }
   async function resync() {
     const r = await sendJson(`/api/admin/training/courses/${courseId}/resync`, "POST");
     toast.success(`Retried ${r.attempted}, ${r.failed} still failing`);
@@ -393,6 +427,15 @@ function Roster({ courseId, courseTitle }: { courseId: string; courseTitle: stri
         <div className="flex gap-2">
           <Button size="sm" onClick={() => setInviteOpen(true)}>
             <Plus /> Invite people
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => remind()}
+            disabled={!published || unfinished.length === 0 || reminding !== null}
+            title={published ? undefined : "Publish the course to send reminders"}
+          >
+            <Mail /> {reminding === "all" ? "Sending…" : "Send reminder now"}
           </Button>
           <Button variant="outline" size="sm" onClick={resync}>
             Retry Subsplash sync
@@ -414,7 +457,10 @@ function Roster({ courseId, courseTitle }: { courseId: string; courseTitle: stri
           <li key={r.profileId} className="flex items-center justify-between gap-3 py-2">
             <div className="min-w-0">
               <div className="font-medium">{r.displayName}</div>
-              <div className="truncate text-xs text-muted-foreground">{r.email}</div>
+              <div className="truncate text-xs text-muted-foreground">
+                {r.email}
+                {r.lastRemindedAt && ` · Last reminded ${new Date(r.lastRemindedAt).toLocaleDateString()}`}
+              </div>
             </div>
             <div className="flex items-center gap-3">
               {!r.subsplashSynced && (
@@ -426,6 +472,11 @@ function Roster({ courseId, courseTitle }: { courseId: string; courseTitle: stri
                 </span>
               )}
               <span className="text-xs capitalize">{r.status.replace("_", " ")}</span>
+              {published && r.enrolled && r.status !== "completed" && r.email && (
+                <Button variant="ghost" size="xs" onClick={() => remind(r.profileId)} disabled={reminding !== null}>
+                  {reminding === r.profileId ? "Sending…" : "Remind"}
+                </Button>
+              )}
               <Button variant="ghost" size="icon-sm" onClick={() => remove(r.profileId)} aria-label="Remove">
                 <Trash2 />
               </Button>
@@ -531,7 +582,7 @@ export function AdminCourseEditor({ id }: { id: string }) {
           </div>
         )}
       </section>
-      <Roster courseId={id} courseTitle={course.title} />
+      <Roster courseId={id} courseTitle={course.title} published={course.published} />
       <ProgressReportSection courseId={id} />
       <Button variant="destructive" onClick={removeCourse}>
         Delete course

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { extractYoutubeVideoId } from "../youtube";
+import { REMINDER_FREQUENCIES } from "../trainingLogic";
 
 const slugSchema = z
   .string()
@@ -19,6 +20,7 @@ export const courseInputSchema = z.object({
   // A Subsplash custom-field name — the per-course choice field the status is written to.
   subsplashFieldName: z.string().trim().max(100).nullable().optional().transform((v) => v || null),
   passThreshold: z.number().int().min(0).max(100).default(80),
+  reminderFrequency: z.enum(REMINDER_FREQUENCIES).default("off"),
 });
 export type CourseInputValues = z.infer<typeof courseInputSchema>;
 
@@ -78,3 +80,5 @@ export const invitationSchema = z.object({
   courseIds: z.array(z.string().min(1)).min(1).max(20),
   sendEmail: z.boolean().default(true),
 });
+
+export const remindSchema = z.object({ profileId: z.string().min(1).optional() });

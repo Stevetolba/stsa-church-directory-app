@@ -26,7 +26,7 @@ const DANIEL = "profile-daniel-okafor";
 async function invite(profileIds: string[]) {
   const course = await createCourse({
     slug: `c-${Math.random().toString(36).slice(2)}`, title: "C", description: null, coverImageUrl: null,
-    audience: "all", published: true, sortOrder: 0, subsplashFieldName: null, passThreshold: 80,
+    audience: "all", published: true, sortOrder: 0, subsplashFieldName: null, passThreshold: 80, reminderFrequency: "off",
   });
   const people = [];
   for (const id of profileIds) {
