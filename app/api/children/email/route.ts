@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid request", issues: parsed.error.issues }, { status: 400 });
   }
-  const { subject, bodyHtml, attachments, search, status, campus, gradeFrom, gradeTo, ageFrom, ageTo, memberType } =
+  const { subject, bodyHtml, attachments, search, status, campus, gradeFrom, gradeTo, ageFrom, ageTo, memberType, additionalRecipients } =
     parsed.data;
 
   // Requires at least one real filter, same gate the CSV export button uses
@@ -68,10 +68,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // The sender is always an admin/staff/Team Lead (requireCanEmailChildren),
+  // so BCC-ing them satisfies "copy the Admin or Team Lead". Manually-added
+  // recipients ride along in BCC too. Deduped case-insensitively.
+  const bcc = new Map<string, string>();
+  for (const email of [...Array.from(emails), session.user.email, ...(additionalRecipients ?? [])]) {
+    const key = email.toLowerCase();
+    if (!bcc.has(key)) bcc.set(key, email);
+  }
+
   const fromName = session.user.name ?? session.user.email;
   try {
     const { batches } = await sendBulkEmail({
-      bcc: Array.from(emails),
+      bcc: Array.from(bcc.values()),
       fromName,
       replyTo: session.user.email,
       subject,

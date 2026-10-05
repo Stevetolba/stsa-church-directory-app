@@ -45,6 +45,9 @@ export const emailParentsSchema = z
     ageFrom: z.number().int().optional(),
     ageTo: z.number().int().optional(),
     memberType: z.enum(["Child", "Adult", "All"]).optional(),
+    // Manually-entered extra recipients (the compose box's comma-separated
+    // field, already split client-side). Added to BCC alongside the parents.
+    additionalRecipients: z.array(z.string().trim().email("Invalid email address")).max(50, "Too many addresses").optional(),
   })
   .refine(attachmentsWithinLimit, ATTACHMENTS_REFINE_OPTIONS);
 

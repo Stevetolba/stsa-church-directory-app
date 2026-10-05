@@ -17,6 +17,23 @@ const composeSchema = z.object({
 });
 type ComposeValues = z.infer<typeof composeSchema>;
 
+// Splits the comma/semicolon/whitespace-separated "additional recipients"
+// input into trimmed, de-duplicated addresses; invalid ones are reported back.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function parseExtraRecipients(raw: string): { valid: string[]; invalid: string[] } {
+  const seen = new Set<string>();
+  const valid: string[] = [];
+  const invalid: string[] = [];
+  for (const part of raw.split(/[,;\s]+/).map((p) => p.trim()).filter(Boolean)) {
+    if (!EMAIL_PATTERN.test(part)) invalid.push(part);
+    else if (!seen.has(part.toLowerCase())) {
+      seen.add(part.toLowerCase());
+      valid.push(part);
+    }
+  }
+  return { valid, invalid };
+}
+
 type Step = "compose" | "preview";
 
 interface Attachment {
@@ -92,6 +109,8 @@ export function EmailParentsDialog({
   const [recipients, setRecipients] = useState<string[] | null>(null);
   const [isLoadingRecipients, setIsLoadingRecipients] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [extraRecipientsRaw, setExtraRecipientsRaw] = useState("");
+  const [extraRecipients, setExtraRecipients] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -106,6 +125,8 @@ export function EmailParentsDialog({
     setStep("compose");
     setBodyHtml("");
     setAttachments([]);
+    setExtraRecipientsRaw("");
+    setExtraRecipients([]);
     reset({ subject: "" });
     setIsLoadingRecipients(true);
     setRecipients(null);
@@ -183,6 +204,16 @@ export function EmailParentsDialog({
       toast.error("Write a message before continuing.");
       return;
     }
+    const { valid, invalid } = parseExtraRecipients(extraRecipientsRaw);
+    if (invalid.length > 0) {
+      toast.error(`Invalid email address: ${invalid.join(", ")}`);
+      return;
+    }
+    if (valid.length > 50) {
+      toast.error("You can add up to 50 additional recipients.");
+      return;
+    }
+    setExtraRecipients(valid);
     setReviewSubject(values.subject);
     setStep("preview");
   }
@@ -205,6 +236,7 @@ export function EmailParentsDialog({
           ageFrom: filters.ageFrom,
           ageTo: filters.ageTo,
           memberType: filters.memberType,
+          additionalRecipients: extraRecipients,
         }),
       });
       if (!res.ok) {
@@ -265,6 +297,22 @@ export function EmailParentsDialog({
               <div className="rounded-[10px] border border-[#E5DCC8] bg-brand-cream/40 px-3.5 py-2.5 text-[14px] text-brand-navy">
                 {recipientSummary}
               </div>
+            </div>
+
+            <div>
+              <label htmlFor="additionalRecipients" className="mb-1.5 block text-[12.5px] font-semibold text-[#5B7185]">
+                Additional recipients (optional)
+              </label>
+              <input
+                id="additionalRecipients"
+                value={extraRecipientsRaw}
+                onChange={(e) => setExtraRecipientsRaw(e.target.value)}
+                placeholder="name@example.com, other@example.com"
+                className="w-full rounded-[10px] border border-[#E5DCC8] bg-white px-3.5 py-2.5 text-[14px] text-brand-navy outline-none focus:border-brand-sky"
+              />
+              <p className="mt-1 text-[12px] text-[#8A94A0]">
+                Separate addresses with commas. A copy is always sent to you ({user.email}).
+              </p>
             </div>
 
             <div>
@@ -356,6 +404,15 @@ export function EmailParentsDialog({
               </span>
               <div className="max-h-32 overflow-y-auto rounded-[10px] border border-[#E5DCC8] bg-brand-cream/40 px-3.5 py-2.5 text-[13px] leading-relaxed text-brand-navy">
                 {recipients && recipients.length > 0 ? recipients.join(", ") : "—"}
+              </div>
+            </div>
+
+            <div>
+              <span className="mb-1.5 block text-[12.5px] font-semibold text-[#5B7185]">
+                Also sending to
+              </span>
+              <div className="rounded-[10px] border border-[#E5DCC8] bg-brand-cream/40 px-3.5 py-2.5 text-[13px] leading-relaxed text-brand-navy">
+                {[`${user.email} (your copy)`, ...extraRecipients].join(", ")}
               </div>
             </div>
 
