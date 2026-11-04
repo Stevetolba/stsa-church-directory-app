@@ -16,7 +16,6 @@ import { formatAddressParts, householdCampus, householdMemberType, parseAddressS
 import { MAX_GRADE_VALUE, MIN_GRADE_VALUE } from "./grades";
 import { calculateAge } from "./age";
 import { eq } from "drizzle-orm";
-import { profileMatchesName } from "./profileMatch";
 import { getDb, isDbConfigured } from "./db";
 import { customFieldMetaCache } from "./db/schema";
 
@@ -1089,106 +1088,100 @@ function extractCareNotes(customFields: RawCustomFieldValue[] | undefined): stri
   return field ? extractCustomFieldValue(field) : undefined;
 }
 
+// ADR-0027: sign-in resolves a person by verified email alone. Several active
+// profiles can share one email (a child using a parent's address, or a test
+// profile), and Google display names are too unreliable to disambiguate them
+// (nicknames, non-Latin names), so we look at all of them and use the one that
+// actually grants access.
+export type EmailProfileResolution = {
+  id?: string;
+  hasAccess: boolean;
+  role?: DirectoryRole;
+};
+
+const DIRECTORY_ROLE_PRIORITY: DirectoryRole[] = ["Admin", "Team Lead", "Learner", "Volunteer"];
+
+function directoryRoleRank(role: DirectoryRole | undefined): number {
+  const i = role ? DIRECTORY_ROLE_PRIORITY.indexOf(role) : -1;
+  return i === -1 ? DIRECTORY_ROLE_PRIORITY.length : i;
+}
+
+// Pure so it can be tested without Subsplash: picks the profile to sign in as.
+// Preference: has DirectoryAccess (highest DirectoryRole among those); else
+// highest DirectoryRole; else the first candidate (id only, no access).
+export function pickProfileForEmail(
+  candidates: { id: string; hasAccess: boolean; role?: DirectoryRole }[]
+): EmailProfileResolution {
+  if (candidates.length === 0) return { hasAccess: false };
+  const sorted = [...candidates].sort((a, b) => {
+    if (a.hasAccess !== b.hasAccess) return a.hasAccess ? -1 : 1;
+    return directoryRoleRank(a.role) - directoryRoleRank(b.role);
+  });
+  const best = sorted[0];
+  // No access and no role on any profile: still return an id for training
+  // progress keying, but nothing that grants sign-in.
+  return { id: best.id, hasAccess: best.hasAccess, role: best.role };
+}
+
+// One Subsplash lookup per call. Fails closed (no access, no role, no id) on
+// any lookup error, since this decides who can see member PII.
+export async function resolveProfileByEmail(email: string): Promise<EmailProfileResolution> {
+  const needle = email.trim().toLowerCase();
+  if (!needle) return { hasAccess: false };
+
+  if (USE_MOCK_DATA) {
+    return pickProfileForEmail(
+      mockProfiles
+        .filter((p) => p.email?.toLowerCase() === needle)
+        .map((p) => ({
+          id: p.id,
+          hasAccess: !!p.custom_fields?.some(
+            (f) => f.label.trim().toLowerCase() === ACCESS_FIELD_NAME && isAccessValueGranted(f.value)
+          ),
+          role: normalizeDirectoryRole(
+            p.custom_fields?.find((f) => f.label.trim().toLowerCase() === ROLE_FIELD_NAME)?.value
+          ),
+        }))
+    );
+  }
+
+  try {
+    // filter[email] is exact-match (openapi.yaml: "Wildcards not supported");
+    // filter[org_key] is added by subsplashFetch. custom_fields come back on
+    // this list response.
+    const data = await subsplashFetch<HalCollection<RawProfile>>(
+      `/people/v1/profiles?filter[email]=${encodeURIComponent(needle)}`
+    );
+    return pickProfileForEmail(
+      data._embedded.profiles
+        .filter((raw) => !raw.status || raw.status.toLowerCase() === "active")
+        .map((raw) => ({
+          id: raw.id,
+          hasAccess: extractDirectoryAccess(raw.custom_fields),
+          role: extractDirectoryRole(raw.custom_fields),
+        }))
+    );
+  } catch {
+    return { hasAccess: false };
+  }
+}
+
 // ADR-0010: does this email belong to someone granted read-only directory
-// access via Subsplash? Used by the sign-in gate (lib/auth.ts) to admit
-// personal-email volunteers. Returns false (deny) on any lookup error —
-// fail closed, since this decides who can see member PII.
-export async function hasDirectoryAccess(email: string, name?: string | null): Promise<boolean> {
-  const needle = email.trim().toLowerCase();
-  if (!needle) return false;
-
-  if (USE_MOCK_DATA) {
-    return mockProfiles.some(
-      (p) =>
-        p.email?.toLowerCase() === needle &&
-        profileMatchesName(p, name) &&
-        p.custom_fields?.some(
-          (f) => f.label.trim().toLowerCase() === ACCESS_FIELD_NAME && isAccessValueGranted(f.value)
-        )
-    );
-  }
-
-  try {
-    // filter[email] is exact-match (openapi.yaml: "Wildcards not supported"),
-    // which is exactly what we want here; filter[org_key] is added by
-    // subsplashFetch. custom_fields come back on this list response.
-    const data = await subsplashFetch<HalCollection<RawProfile>>(
-      `/people/v1/profiles?filter[email]=${encodeURIComponent(needle)}`
-    );
-    return data._embedded.profiles.some((raw) => {
-      const active = !raw.status || raw.status.toLowerCase() === "active";
-      // Children often carry a parent's email — only the profile whose name
-      // matches the signed-in person counts.
-      if (!profileMatchesName(raw, name)) return false;
-      const granted = raw.custom_fields?.some(
-        (f) =>
-          f.custom_field_definition.name.trim().toLowerCase() === ACCESS_FIELD_NAME &&
-          isAccessValueGranted(extractCustomFieldValue(f))
-      );
-      return active && !!granted;
-    });
-  } catch {
-    return false;
-  }
+// access via Subsplash? (Name is no longer part of the match — ADR-0027.)
+export async function hasDirectoryAccess(email: string): Promise<boolean> {
+  return (await resolveProfileByEmail(email)).hasAccess;
 }
 
-// ADR-0017: does this email's Subsplash profile have a DirectoryRole custom
-// field set to Admin or Team Lead? Used by the sign-in gate and role
-// resolution (lib/auth.ts) to admit/elevate a personal-email person beyond
-// the default volunteer tier. Returns undefined (no elevation) on any
-// lookup error or if unset — fails closed, same as hasDirectoryAccess.
-export async function getDirectoryRole(email: string, name?: string | null): Promise<DirectoryRole | undefined> {
-  const needle = email.trim().toLowerCase();
-  if (!needle) return undefined;
-
-  if (USE_MOCK_DATA) {
-    const match = mockProfiles.find((p) => p.email?.toLowerCase() === needle && profileMatchesName(p, name));
-    const field = match?.custom_fields?.find((f) => f.label.trim().toLowerCase() === ROLE_FIELD_NAME);
-    return normalizeDirectoryRole(field?.value);
-  }
-
-  try {
-    const data = await subsplashFetch<HalCollection<RawProfile>>(
-      `/people/v1/profiles?filter[email]=${encodeURIComponent(needle)}`
-    );
-    for (const raw of data._embedded.profiles) {
-      const active = !raw.status || raw.status.toLowerCase() === "active";
-      if (!active || !profileMatchesName(raw, name)) continue;
-      const role = extractDirectoryRole(raw.custom_fields);
-      if (role) return role;
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
+// ADR-0017: the DirectoryRole (Admin / Team Lead / Learner / Volunteer) on
+// the profile this email resolves to, or undefined if unset or on error.
+export async function getDirectoryRole(email: string): Promise<DirectoryRole | undefined> {
+  return (await resolveProfileByEmail(email)).role;
 }
 
-// ADR-0023: resolves an email to its Subsplash profile id, for the training
-// feature — training_progress/enrollments are keyed on profile id (like
-// checkIns), and the jwt callback stores it on the session so client code
-// never has to look it up. Returns undefined (not an error) on any lookup
-// failure or no match, same fail-open-to-"no id" posture as the other
-// email lookups here — callers that need identity to gate access (auth.ts)
-// already separately require hasDirectoryAccess/getDirectoryRole to pass.
-export async function getProfileIdByEmail(email: string, name?: string | null): Promise<string | undefined> {
-  const needle = email.trim().toLowerCase();
-  if (!needle) return undefined;
-
-  if (USE_MOCK_DATA) {
-    return mockProfiles.find((p) => p.email?.toLowerCase() === needle && profileMatchesName(p, name))?.id;
-  }
-
-  try {
-    const data = await subsplashFetch<HalCollection<RawProfile>>(
-      `/people/v1/profiles?filter[email]=${encodeURIComponent(needle)}`
-    );
-    const active = data._embedded.profiles.find(
-      (raw) => (!raw.status || raw.status.toLowerCase() === "active") && profileMatchesName(raw, name)
-    );
-    return active?.id;
-  } catch {
-    return undefined;
-  }
+// ADR-0023: the Subsplash profile id this email resolves to, for the training
+// feature. undefined on no match or lookup failure.
+export async function getProfileIdByEmail(email: string): Promise<string | undefined> {
+  return (await resolveProfileByEmail(email)).id;
 }
 
 // Email-code sign-in for learners (ADR-0025): every active profile with this
