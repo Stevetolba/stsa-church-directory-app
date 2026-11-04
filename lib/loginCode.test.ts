@@ -13,8 +13,11 @@ import { createCourse, inviteToTraining } from "./training";
 import {
   MAX_CODES_PER_HOUR,
   MAX_WRONG_GUESSES,
+  checkHouseholdLoginCode,
   checkLoginCode,
+  consumeHouseholdLoginCode,
   consumeLoginCode,
+  requestHouseholdLoginCode,
   requestLoginCode,
 } from "./loginCode";
 
@@ -145,5 +148,55 @@ describe("checkLoginCode / consumeLoginCode", () => {
     } finally {
       mockProfiles.splice(mockProfiles.indexOf(child), 1);
     }
+  });
+});
+
+
+describe("household sign-in codes", () => {
+  const MARGARET = "margaret.whitfield@gracechapel.org"; // parent in household-whitfield
+  const LILY = "lily.whitfield@gracechapel.org"; // child: not eligible
+
+  it("emails a code only to a parent or guardian in a household", async () => {
+    await requestHouseholdLoginCode("nobody@example.org", opts);
+    await requestHouseholdLoginCode(LILY, opts);
+    expect(sent).not.toHaveBeenCalled();
+    await requestHouseholdLoginCode(MARGARET, opts);
+    expect(sent).toHaveBeenCalledTimes(1);
+    expect(sent.mock.calls[0][0].subject).toContain("household update code");
+  });
+
+  it("signs in the guardian and returns the household from Subsplash", async () => {
+    await requestHouseholdLoginCode(MARGARET, opts);
+    const code = lastCode();
+    const checked = await checkHouseholdLoginCode(MARGARET, code);
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    expect(checked.candidates).toHaveLength(1);
+    const user = await consumeHouseholdLoginCode(MARGARET, code, checked.candidates[0].profileId);
+    expect(user).toMatchObject({ email: MARGARET, householdId: "household-whitfield" });
+    // single use
+    expect(await consumeHouseholdLoginCode(MARGARET, code, checked.candidates[0].profileId)).toBeNull();
+  });
+
+  it("refuses a profile that isn't one of the email's guardians", async () => {
+    await requestHouseholdLoginCode(MARGARET, opts);
+    expect(await consumeHouseholdLoginCode(MARGARET, lastCode(), "profile-lily-whitfield")).toBeNull();
+  });
+
+  it("keeps training and household codes separate", async () => {
+    await requestHouseholdLoginCode(MARGARET, opts);
+    const code = lastCode();
+    // A household code is not a training code...
+    expect((await checkLoginCode(MARGARET, code)).ok).toBe(false);
+    // ...and a training code is not a household code.
+    await invite(["profile-daniel-okafor"]);
+    await requestLoginCode(EMAIL, opts);
+    const trainingCode = lastCode();
+    expect((await checkHouseholdLoginCode(EMAIL, trainingCode)).ok).toBe(false);
+  });
+
+  it("rate-limits household codes without touching the training allowance", async () => {
+    for (let i = 0; i < MAX_CODES_PER_HOUR + 2; i++) await requestHouseholdLoginCode(MARGARET, opts);
+    expect(sent).toHaveBeenCalledTimes(MAX_CODES_PER_HOUR);
   });
 });

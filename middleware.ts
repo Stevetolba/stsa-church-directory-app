@@ -33,7 +33,14 @@ const VOLUNTEER_BLOCKED_PATHS = new Set(["/people", "/households", "/birthdays"]
 // read access, which a learner doesn't have.
 const LEARNER_ALLOWED_PREFIXES = ["/training", "/login"];
 
+// Household self-update pages have their own cookie session
+// (lib/householdSession.ts) that NextAuth knows nothing about, so they're
+// exempt from the staff sign-in redirect; each page checks that cookie itself.
+const HOUSEHOLD_PREFIX = "/household-update";
+
 export default auth((req) => {
+  if (req.nextUrl.pathname.startsWith(HOUSEHOLD_PREFIX)) return NextResponse.next();
+
   const isLoggedIn = !!req.auth;
   const isLoginPage = req.nextUrl.pathname.startsWith("/login");
 

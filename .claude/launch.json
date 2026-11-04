@@ -4,14 +4,38 @@
     {
       "name": "dev",
       "runtimeExecutable": "/Users/tolbas/.nvm/versions/node/v24.18.0/bin/node",
-      "runtimeArgs": ["node_modules/.bin/next", "dev"],
+      "runtimeArgs": [
+        "node_modules/.bin/next",
+        "dev"
+      ],
       "port": 3000
     },
     {
       "name": "prod",
       "runtimeExecutable": "/Users/tolbas/.nvm/versions/node/v24.18.0/bin/node",
-      "runtimeArgs": ["node_modules/.bin/next", "start", "-p", "3001"],
+      "runtimeArgs": [
+        "node_modules/.bin/next",
+        "start",
+        "-p",
+        "3001"
+      ],
       "port": 3001
+    },
+    {
+      "name": "dev-isolated",
+      "runtimeExecutable": "/usr/bin/env",
+      "runtimeArgs": [
+        "SUBSPLASH_USE_MOCK=true",
+        "DATABASE_URL=",
+        "RESEND_API_KEY=",
+        "AUTH_SECRET=local-test-secret",
+        "/Users/tolbas/.nvm/versions/node/v24.18.0/bin/node",
+        "node_modules/.bin/next",
+        "dev",
+        "-p",
+        "3002"
+      ],
+      "port": 3002
     }
   ]
 }
