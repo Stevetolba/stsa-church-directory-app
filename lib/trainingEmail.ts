@@ -80,6 +80,34 @@ export function buildLoginCodeEmail(params: { code: string; minutesValid: number
   return { subject, html };
 }
 
+export function buildHouseholdLoginCodeEmail(params: { code: string; minutesValid: number; logoUrl: string }): {
+  subject: string;
+  html: string;
+} {
+  const { code, minutesValid, logoUrl } = params;
+  const subject = `Your ${CHURCH_NAME} household update code: ${code}`;
+  const html = `
+<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1f2d3a;line-height:1.5">
+  <div style="background:#14304a;color:#f6f0e2;padding:18px 24px;border-radius:10px 10px 0 0">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="padding-right:14px;vertical-align:middle">
+        <img src="${escapeHtml(logoUrl)}" width="48" height="48" alt="${escapeHtml(CHURCH_NAME)} logo" style="display:block;border-radius:50%;background:#ffffff" />
+      </td>
+      <td style="vertical-align:middle">
+        <div style="font-size:20px;font-weight:700;color:#f6f0e2">${escapeHtml(CHURCH_NAME)}</div>
+        <div style="font-size:13px;opacity:.85;font-style:italic;color:#f6f0e2">${escapeHtml(TAGLINE)}</div>
+      </td>
+    </tr></table>
+  </div>
+  <div style="border:1px solid #e5dcc8;border-top:0;padding:24px;border-radius:0 0 10px 10px">
+    <p style="margin-top:0">Enter this code to review and update your household's information:</p>
+    <p style="font-size:32px;font-weight:700;letter-spacing:6px;margin:16px 0">${escapeHtml(code)}</p>
+    <p style="font-size:14px">It works once and expires in ${minutesValid} minutes. Nothing changes in our directory until a church admin reviews your update. If you didn't ask for this code, you can ignore this message.</p>
+  </div>
+</div>`.trim();
+  return { subject, html };
+}
+
 export function buildReminderEmail(params: {
   firstName: string;
   courseTitle: string;

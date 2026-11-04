@@ -9,6 +9,7 @@ import {
   BarChart3,
   Cake,
   CalendarCheck,
+  ClipboardCheck,
   GraduationCap,
   History,
   Home,
@@ -50,6 +51,7 @@ const NAV_ITEMS: Array<{ href: string; label: string; icon: typeof Users; roles:
     roles: ["admin", "staff", "volunteer", "learner"],
   },
   { href: "/settings/training", label: "Manage Training", icon: Settings2, roles: ["admin"] },
+  { href: "/settings/household-updates", label: "Household Updates", icon: ClipboardCheck, roles: ["admin"] },
   { href: "/settings/activity", label: "Activity Log", icon: History, roles: ["admin"] },
 ];
 

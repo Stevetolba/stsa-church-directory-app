@@ -24,6 +24,7 @@ import {
   timestamp,
   uuid,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const checkIns = pgTable(
@@ -154,10 +155,10 @@ export const accessEvents = pgTable(
   (t) => ({
     occurredAtIdx: index("access_events_occurred_at_idx").on(t.occurredAt),
     emailIdx: index("access_events_email_idx").on(t.email),
-    roleCheck: check("access_events_role_check", sql`${t.role} in ('admin','staff','volunteer','learner')`),
+    roleCheck: check("access_events_role_check", sql`${t.role} in ('admin','staff','volunteer','learner','household')`),
     eventTypeCheck: check(
       "access_events_event_type_check",
-      sql`${t.eventType} in ('sign_in','sign_in_denied','directory_read')`
+      sql`${t.eventType} in ('sign_in','sign_in_denied','directory_read','household_update_view','household_update_submit','household_update_apply')`
     ),
   })
 );
@@ -175,11 +176,90 @@ export const loginCodes = pgTable(
     attempts: integer("attempts").notNull().default(0),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // Which sign-in a code belongs to, so a training code can never open the
+    // household-update pages (or the reverse). 'training' | 'household'.
+    purpose: text("purpose").notNull().default("training"),
   },
   (t) => ({
     emailIdx: index("login_codes_email_idx").on(t.email),
+    purposeCheck: check("login_codes_purpose_check", sql`${t.purpose} in ('training','household')`),
   })
 );
+
+// Household self-update requests. Parents propose edits through the
+// /household-update pages; nothing is written to Subsplash until an admin
+// accepts individual changes (lib/householdUpdates.ts). One open
+// (draft/pending) request per household, enforced by the partial unique
+// index below.
+export const householdUpdateRequests = pgTable(
+  "household_update_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: text("household_id").notNull(),
+    householdName: text("household_name"),
+    submittedByProfileId: text("submitted_by_profile_id").notNull(),
+    submittedByEmail: text("submitted_by_email").notNull(),
+    note: text("note"),
+    // 'draft' | 'pending' | 'applied' | 'partially_applied' | 'rejected'
+    status: text("status").notNull().default("draft"),
+    rejectionReason: text("rejection_reason"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    reviewedByEmail: text("reviewed_by_email"),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    householdIdx: index("household_update_requests_household_idx").on(t.householdId),
+    statusIdx: index("household_update_requests_status_idx").on(t.status),
+    oneOpenPerHousehold: uniqueIndex("household_update_requests_one_open_idx")
+      .on(t.householdId)
+      .where(sql`${t.status} in ('draft','pending')`),
+    statusCheck: check(
+      "household_update_requests_status_check",
+      sql`${t.status} in ('draft','pending','applied','partially_applied','rejected')`
+    ),
+  })
+);
+
+// One row per proposed field change. old_value is the snapshot taken when
+// the household saved the change, so the admin can see drift if Subsplash
+// changed in the meantime.
+export const householdUpdateChanges = pgTable(
+  "household_update_changes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => householdUpdateRequests.id, { onDelete: "cascade" }),
+    // 'profile' | 'household' | 'new_member'
+    subjectType: text("subject_type").notNull(),
+    // Profile id, household id, or a temporary key ("new-1") grouping the
+    // fields of one proposed new member.
+    subjectId: text("subject_id").notNull(),
+    subjectLabel: text("subject_label"),
+    field: text("field").notNull(),
+    oldValue: text("old_value"),
+    newValue: text("new_value"),
+    // 'pending' | 'accepted' | 'rejected'
+    decision: text("decision").notNull().default("pending"),
+    appliedAt: timestamp("applied_at", { withTimezone: true }),
+    applyError: text("apply_error"),
+    createdProfileId: text("created_profile_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    requestIdx: index("household_update_changes_request_idx").on(t.requestId),
+    uniqueField: unique("household_update_changes_unique_field").on(t.requestId, t.subjectType, t.subjectId, t.field),
+    decisionCheck: check(
+      "household_update_changes_decision_check",
+      sql`${t.decision} in ('pending','accepted','rejected')`
+    ),
+  })
+);
+
+export type HouseholdUpdateRequestRow = typeof householdUpdateRequests.$inferSelect;
+export type HouseholdUpdateChangeRow = typeof householdUpdateChanges.$inferSelect;
 
 // Training courses (video lessons + quizzes). Content and per-person
 // progress live here in Postgres — Subsplash only gets a one-field summary

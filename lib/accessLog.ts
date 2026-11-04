@@ -12,14 +12,24 @@ import { getDb, isDbConfigured } from "./db";
 import { accessEvents, type AccessEventRow } from "./db/schema";
 import type { Role } from "@/types/auth";
 
-export type AccessEventType = "sign_in" | "sign_in_denied" | "directory_read";
+export type AccessEventType =
+  | "sign_in"
+  | "sign_in_denied"
+  | "directory_read"
+  | "household_update_view"
+  | "household_update_submit"
+  | "household_update_apply";
+
+// Household visitors aren't NextAuth users (lib/householdSession.ts), so
+// "household" exists only as an audit-log role.
+export type AccessRole = Role | "household";
 
 export interface AccessEvent {
   id: string;
   occurredAt: string; // ISO 8601
   email: string;
   name: string | null;
-  role: Role;
+  role: AccessRole;
   eventType: AccessEventType;
   resource: string | null;
 }
@@ -30,7 +40,7 @@ function fromRow(row: AccessEventRow): AccessEvent {
     occurredAt: row.occurredAt.toISOString(),
     email: row.email,
     name: row.name,
-    role: row.role as Role,
+    role: row.role as AccessRole,
     eventType: row.eventType as AccessEventType,
     resource: row.resource,
   };
@@ -48,7 +58,7 @@ function mockStore(): AccessEvent[] {
 export interface RecordAccessEventInput {
   email: string;
   name?: string | null;
-  role: Role;
+  role: AccessRole;
   eventType: AccessEventType;
   // What was read — omitted for sign_in/sign_in_denied.
   resource?: string;

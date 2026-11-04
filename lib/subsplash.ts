@@ -8,12 +8,12 @@
 // cost; caching the walk is what makes that approach viable at real scale.
 
 import { revalidateTag, unstable_cache } from "next/cache";
-import type { Campus, DirectoryRole, MemberStatus, Profile } from "@/types/profile";
+import type { Campus, DirectoryRole, HouseholdRole, MemberStatus, Profile } from "@/types/profile";
 import type { Household, HouseholdAddress } from "@/types/household";
 import { getServiceToken } from "./subsplashToken";
 import { mockHouseholds, mockProfiles } from "./mockData";
 import { formatAddressParts, householdCampus, householdMemberType, parseAddressString } from "./household";
-import { MAX_GRADE_VALUE, MIN_GRADE_VALUE } from "./grades";
+import { MAX_GRADE_VALUE, MIN_GRADE_VALUE, gradeLabelForValue, gradeValueForGraduationYear } from "./grades";
 import { calculateAge } from "./age";
 import { eq } from "drizzle-orm";
 import { getDb, isDbConfigured } from "./db";
@@ -1225,6 +1225,64 @@ export async function listLearnerProfilesByEmail(email: string): Promise<{ id: s
   }
 }
 
+// Household self-update sign-in: every active profile on this email that is a
+// parent/guardian in a household. Children and "other"/"unknown" members are
+// deliberately excluded — only a parent or guardian may propose edits for the
+// whole household. Fails closed (empty list) on any lookup error.
+export interface HouseholdGuardian {
+  id: string;
+  name: string;
+  householdId: string;
+  householdName?: string;
+}
+
+export function isHouseholdGuardianRole(role: HouseholdRole | undefined): boolean {
+  return role === "guardian" || role === "parent";
+}
+
+export async function listHouseholdGuardiansByEmail(email: string): Promise<HouseholdGuardian[]> {
+  const needle = email.trim().toLowerCase();
+  if (!needle) return [];
+
+  if (USE_MOCK_DATA) {
+    return mockProfiles
+      .filter(
+        (p) =>
+          p.email?.toLowerCase() === needle &&
+          !!p.household_id &&
+          isHouseholdGuardianRole(p.household_role) &&
+          (!p.status || (p.status as string).toLowerCase() !== "former attender")
+      )
+      .map((p) => ({
+        id: p.id,
+        name: `${p.first_name} ${p.last_name}`.trim(),
+        householdId: p.household_id as string,
+        householdName: p.household_name,
+      }));
+  }
+
+  try {
+    const data = await subsplashFetch<HalCollection<RawProfile>>(
+      `/people/v1/profiles?filter[email]=${encodeURIComponent(needle)}`
+    );
+    return data._embedded.profiles
+      .filter(
+        (raw) =>
+          (!raw.status || raw.status.toLowerCase() === "active") &&
+          isHouseholdGuardianRole(raw.household_role) &&
+          !!raw._embedded?.household?.id
+      )
+      .map((raw) => ({
+        id: raw.id,
+        name: `${raw.first_name} ${raw.last_name}`.trim(),
+        householdId: raw._embedded!.household!.id,
+        householdName: raw._embedded?.household?.name,
+      }));
+  } catch {
+    return [];
+  }
+}
+
 // Only the fields actually editable via PATCH /people/v1/profiles/{id} at
 // the top level, plus campus and address_parts (handled separately below —
 // campus lives in custom_fields, address_parts under _embedded.address, not
@@ -1244,6 +1302,7 @@ export type UpdateProfileInput = Partial<
     | "care_notes"
     | "date_of_birth"
     | "address_parts"
+    | "graduation_year"
   >
 >;
 
@@ -1751,6 +1810,12 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
     if (date_of_birth !== undefined) {
       existing.date_of_birth = date_of_birth || undefined;
     }
+    if (topLevelPatch.graduation_year !== undefined) {
+      // Subsplash computes the grade from the graduation year; mirror that.
+      const value = gradeValueForGraduationYear(topLevelPatch.graduation_year);
+      existing.academic_grade_value = value;
+      existing.academic_grade = gradeLabelForValue(value);
+    }
     if (campus !== undefined) {
       existing.campus = campus;
       const campusField = existing.custom_fields?.find((f) => f.label.toLowerCase() === "campus");
@@ -1871,6 +1936,82 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
   // Otherwise the People list would show stale data for up to
   // CACHE_REVALIDATE_SECONDS after a save (ADR-0009).
   revalidateTag("subsplash-profiles");
+  return mapProfile((await res.json()) as RawProfile);
+}
+
+// Adds a person to an existing household. Used only by the household
+// self-update review (lib/householdUpdates.ts) after an admin accepts a
+// proposed new member. Subsplash requires household_role and
+// _embedded.household.id when a profile joins a household, and finds or
+// creates the underlying end user from the properties we send (openapi.yaml,
+// POST /people/v1/profiles). Subsplash rejects duplicates per end user, so the
+// admin screen checks for likely duplicates before this is called.
+export interface CreateProfileInput {
+  first_name: string;
+  last_name: string;
+  household_id: string;
+  household_role: "guardian" | "parent" | "child";
+  date_of_birth?: string;
+  graduation_year?: number;
+}
+
+export async function createProfile(input: CreateProfileInput): Promise<Profile> {
+  if (USE_MOCK_DATA) {
+    const nowIso = new Date().toISOString();
+    const household = mockHouseholds.find((h) => h.id === input.household_id);
+    if (!household) throw new Error(`Household not found: ${input.household_id}`);
+    const gradeValue =
+      input.graduation_year !== undefined ? gradeValueForGraduationYear(input.graduation_year) : undefined;
+    const created: Profile = {
+      id: `profile-${crypto.randomUUID()}`,
+      first_name: input.first_name,
+      last_name: input.last_name,
+      email: "",
+      date_of_birth: input.date_of_birth,
+      household_id: household.id,
+      household_name: household.name,
+      household_role: input.household_role,
+      graduation_year: input.graduation_year,
+      academic_grade_value: gradeValue,
+      academic_grade: gradeLabelForValue(gradeValue),
+      status: "Visitor",
+      created_at: nowIso,
+      updated_at: nowIso,
+    };
+    mockProfiles.push(created);
+    return created;
+  }
+
+  if (!ORG_KEY) {
+    throw new Error("Missing SUBSPLASH_ORG_KEY — required as filter[org_key] on every request.");
+  }
+  const body: Record<string, unknown> = {
+    first_name: input.first_name,
+    last_name: input.last_name,
+    household_role: input.household_role,
+    _embedded: {
+      // No id: Subsplash finds or creates the end user from the properties.
+      "end-user": {},
+      household: { id: input.household_id },
+    },
+  };
+  if (input.date_of_birth) body.date_of_birth = input.date_of_birth;
+  if (input.graduation_year !== undefined) body.graduation_year = input.graduation_year;
+
+  const token = await getServiceToken();
+  const res = await fetch(`${BASE_URL}/people/v1/profiles?filter[org_key]=${ORG_KEY}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`Subsplash API error: ${res.status} POST /people/v1/profiles`);
+  }
+  revalidateTag("subsplash-profiles");
+  revalidateTag("subsplash-households");
   return mapProfile((await res.json()) as RawProfile);
 }
 
