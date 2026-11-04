@@ -2,10 +2,10 @@
 // can be unit-tested; lib/training.ts's inviteToTraining sends it.
 
 export const CHURCH_NAME = "STSA Church";
-const TAGLINE = "an ancient faith in a modern world";
-const WEBSITE = { label: "www.stsa.church", href: "https://www.stsa.church" };
+export const TAGLINE = "an ancient faith in a modern world";
+export const WEBSITE = { label: "www.stsa.church", href: "https://www.stsa.church" };
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 

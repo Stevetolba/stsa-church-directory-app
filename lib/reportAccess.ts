@@ -17,3 +17,8 @@ export const SUNDAY_SCHOOL_SERIES_IDS: readonly string[] = [
 export function isSundaySchoolSeriesId(seriesId: string): boolean {
   return SUNDAY_SCHOOL_SERIES_IDS.includes(seriesId);
 }
+
+export const SUNDAY_SCHOOL_SERIES_BY_CAMPUS: Record<"Arlington" | "Leesburg", string> = {
+  Arlington: SUNDAY_SCHOOL_SERIES_IDS[0],
+  Leesburg: SUNDAY_SCHOOL_SERIES_IDS[1],
+};
