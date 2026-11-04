@@ -3,8 +3,8 @@ import { cronSecretMatches } from "@/lib/cronAuth";
 import { runWeeklyAttendanceReports } from "@/lib/weeklyAttendanceReport";
 
 // ADR-0028. Vercel Cron target (vercel.json `crons`) for the weekly Sunday
-// School attendance email to Team Leads. Runs Wed–Sat at 16:00 and 17:00 UTC;
-// the job only acts from Wednesday 12:00 America/New_York and sends each
+// School attendance email to Team Leads. Runs Wed–Sat once a day at 17:00 UTC
+// (Vercel Hobby allows only daily crons: 12:00 EST / 13:00 EDT); the job only acts from Wednesday 12:00 America/New_York and sends each
 // campus at most once per Sunday, retrying daily until the import has landed.
 export async function GET(request: NextRequest) {
   if (!cronSecretMatches(request.headers.get("authorization"))) {

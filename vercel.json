@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/attendance-report",
-      "schedule": "0 16,17 * * 3-6"
+      "schedule": "0 17 * * 3-6"
     }
   ]
 }
