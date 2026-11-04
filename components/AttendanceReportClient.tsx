@@ -20,13 +20,14 @@ import { EmptyState } from "@/components/EmptyState";
 import { EmailAbsenteesDialog } from "@/components/EmailAbsenteesDialog";
 import { FilterPill } from "@/components/FilterPill";
 import { AddFilterMenu } from "@/components/AddFilterMenu";
-import { SuggestedFilters, type SuggestedFilter } from "@/components/SuggestedFilters";
+import { SuggestedFilters } from "@/components/SuggestedFilters";
 import { avatarTintForId, initialsOf } from "@/lib/avatar";
 import { formatDate } from "@/lib/utils";
 import { timeLabelInTz } from "@/lib/eventTime";
 import { eventAutoSessionType } from "@/lib/sessionMapping";
 import { campusGroupFor, type SeriesOccurrence } from "@/lib/events";
 import { isSundaySchoolSeriesId } from "@/lib/reportAccess";
+import { SUNDAY_SCHOOL_PRESETS_BY_CAMPUS, type ReportPreset } from "@/lib/sundaySchoolGroups";
 import { GRADE_LEVELS } from "@/lib/grades";
 import {
   OCCURRENCE_REPORT_COLUMNS,
@@ -348,31 +349,6 @@ function ReportFilterBar({
 // "Sunday School [Arlington]"), so campus doesn't need to be part of the
 // preset here. Keep these bands in sync with ChildrenPageClient.tsx if the
 // ministry's groupings change.
-interface ReportPreset {
-  gradeFrom?: number;
-  gradeTo?: number;
-  ageFrom?: number;
-  ageTo?: number;
-}
-
-const SUNDAY_SCHOOL_PRESETS_BY_CAMPUS: Record<"Arlington" | "Leesburg", SuggestedFilter<ReportPreset>[]> = {
-  Arlington: [
-    { label: "Tim's Tots (3–5 years)", preset: { ageFrom: 3, ageTo: 5 } },
-    { label: "KATW (K–1st)", preset: { gradeFrom: 2, gradeTo: 3 } },
-    { label: "KATW (2nd–3rd)", preset: { gradeFrom: 4, gradeTo: 5 } },
-    { label: "KATW (4th–5th)", preset: { gradeFrom: 6, gradeTo: 7 } },
-    { label: "Middle School (6th–8th)", preset: { gradeFrom: 8, gradeTo: 10 } },
-    { label: "High School (9th–12th)", preset: { gradeFrom: 11, gradeTo: 14 } },
-  ],
-  Leesburg: [
-    { label: "Tim's Tots (3–5 years)", preset: { ageFrom: 3, ageTo: 5 } },
-    { label: "KATW (K–2nd)", preset: { gradeFrom: 2, gradeTo: 4 } },
-    { label: "KATW (3rd–5th)", preset: { gradeFrom: 5, gradeTo: 7 } },
-    { label: "Middle School (6th–8th)", preset: { gradeFrom: 8, gradeTo: 10 } },
-    { label: "High School (9th–12th)", preset: { gradeFrom: 11, gradeTo: 14 } },
-  ],
-};
-
 // A preset fully sets Grade or Age to its exact values, clearing the other
 // dimension — same "jump to this ministry group" behavior as the Children
 // page's applyPreset, so picking an age-based preset after a grade-based

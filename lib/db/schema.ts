@@ -410,3 +410,20 @@ export type CalendarSyncRow = typeof calendarSyncs.$inferSelect;
 export type NewCalendarSyncRow = typeof calendarSyncs.$inferInsert;
 export type AccessEventRow = typeof accessEvents.$inferSelect;
 export type NewAccessEventRow = typeof accessEvents.$inferInsert;
+
+// One row per (campus, Sunday) weekly Sunday School attendance email sent to
+// Team Leads (ADR-0028). The unique key is what keeps the retrying cron from
+// emailing the same week twice.
+export const attendanceReportSends = pgTable(
+  "attendance_report_sends",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    campus: text("campus").notNull(),
+    sundayDate: date("sunday_date").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+    recipients: integer("recipients").notNull().default(0),
+  },
+  (t) => [unique("attendance_report_sends_campus_sunday_unique").on(t.campus, t.sundayDate)]
+);
+
+export type AttendanceReportSendRow = typeof attendanceReportSends.$inferSelect;
