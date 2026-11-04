@@ -12,7 +12,7 @@ import Credentials from "next-auth/providers/credentials";
 import type { GoogleProfile } from "next-auth/providers/google";
 import type { Role } from "@/types/auth";
 import { isAdminEmail, resolveRole } from "./roles";
-import { getDirectoryRole, getProfileIdByEmail, hasDirectoryAccess } from "./subsplash";
+import { resolveProfileByEmail } from "./subsplash";
 import { authConfig } from "./auth.config";
 import { recordAccessEvent } from "./accessLog";
 import { consumeLoginCode } from "./loginCode";
@@ -93,11 +93,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // training" action on someone with no other access) — any of these
       // is enough to sign in; the jwt callback below works out which role
       // to grant. Fails closed on any lookup error.
-      // Match on name as well as email: kids often have a parent's email (ADR-0023).
-      const directoryRole = await getDirectoryRole(email, name);
+      // ADR-0027: resolved by email alone — several profiles can share an
+      // email, and the one carrying DirectoryAccess/DirectoryRole is used.
+      const resolved = await resolveProfileByEmail(email);
       const grantedByRole =
-        directoryRole === "Admin" || directoryRole === "Team Lead" || directoryRole === "Learner";
-      const granted = grantedByRole || (await hasDirectoryAccess(email, name));
+        resolved.role === "Admin" || resolved.role === "Team Lead" || resolved.role === "Learner";
+      const granted = grantedByRole || resolved.hasAccess;
       await recordAccessEvent({ email, name, role, eventType: granted ? "sign_in" : "sign_in_denied" });
       return granted;
     },
@@ -122,7 +123,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // training feature (progress/enrollment are keyed on it, like
       // checkIns.profileId). Best-effort — a lookup failure shouldn't block
       // sign-in for roles that don't need it.
-      token.profileId = await getProfileIdByEmail(token.email, token.name ?? null);
+      const resolved = await resolveProfileByEmail(token.email);
+      token.profileId = resolved.id;
 
       const baseRole = resolveRole(token.email);
       if (baseRole !== "volunteer") {
@@ -140,10 +142,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // hasDirectoryAccess already granted them a full "volunteer" session
       // otherwise, and that always wins (ADR-0023 never restricts someone
       // who already has broader access).
-      const directoryRole = await getDirectoryRole(token.email, token.name ?? null);
+      const directoryRole = resolved.role;
       if (directoryRole === "Admin") {
         token.role = "admin";
-      } else if (directoryRole === "Learner" && !(await hasDirectoryAccess(token.email, token.name ?? null))) {
+      } else if (directoryRole === "Learner" && !resolved.hasAccess) {
         token.role = "learner";
       } else {
         token.role = "volunteer";

@@ -7,7 +7,7 @@ vi.mock("./email", () => ({
 }));
 
 import { sendBulkEmail } from "./email";
-import { getProfile, getProfileIdByEmail, getDirectoryRole, hasDirectoryAccess } from "./subsplash";
+import { getProfile, getProfileIdByEmail, getDirectoryRole, hasDirectoryAccess, pickProfileForEmail } from "./subsplash";
 import { mockProfiles } from "./mockData";
 import {
   canAccessCourse,
@@ -251,22 +251,47 @@ describe("training flow (mock mode)", () => {
   });
 });
 
-describe("profile lookups match on name as well as email", () => {
-  it("does not confuse a child who shares a parent's email", async () => {
+describe("profile lookups resolve by email alone (ADR-0027)", () => {
+  it("uses the access-holding profile when several share an email", async () => {
     const parent = (await getProfile("profile-margaret-whitfield"))!; // DirectoryAccess=Yes
     const child = { ...parent, id: "profile-test-child", first_name: "Tiny", last_name: "Whitfield", custom_fields: [], directory_access: false };
     mockProfiles.push(child);
     try {
       const email = parent.email;
-      expect(await getProfileIdByEmail(email, "Margaret Whitfield")).toBe(parent.id);
-      expect(await getProfileIdByEmail(email, "Tiny Whitfield")).toBe(child.id);
-      expect(await getProfileIdByEmail(email, "Someone Else")).toBeUndefined();
-      // Access/role belong to the matching person only.
-      expect(await hasDirectoryAccess(email, "Margaret Whitfield")).toBe(true);
-      expect(await hasDirectoryAccess(email, "Tiny Whitfield")).toBe(false);
-      expect(await getDirectoryRole(email, "Tiny Whitfield")).toBeUndefined();
+      expect(await hasDirectoryAccess(email)).toBe(true);
+      expect(await getProfileIdByEmail(email)).toBe(parent.id);
     } finally {
       mockProfiles.splice(mockProfiles.indexOf(child), 1);
     }
+  });
+
+  it("denies an email whose profiles have no access or role", async () => {
+    const parent = (await getProfile("profile-margaret-whitfield"))!;
+    const noAccess = { ...parent, id: "profile-test-noaccess", email: "nobody-access@example.org", custom_fields: [], directory_access: false };
+    mockProfiles.push(noAccess);
+    try {
+      expect(await hasDirectoryAccess(noAccess.email)).toBe(false);
+      expect(await getDirectoryRole(noAccess.email)).toBeUndefined();
+    } finally {
+      mockProfiles.splice(mockProfiles.indexOf(noAccess), 1);
+    }
+  });
+});
+
+describe("pickProfileForEmail", () => {
+  it("prefers the access holder, then the highest role", () => {
+    expect(
+      pickProfileForEmail([
+        { id: "a", hasAccess: false },
+        { id: "b", hasAccess: true, role: "Team Lead" },
+      ])
+    ).toEqual({ id: "b", hasAccess: true, role: "Team Lead" });
+    expect(
+      pickProfileForEmail([
+        { id: "a", hasAccess: false, role: "Learner" },
+        { id: "b", hasAccess: false, role: "Admin" },
+      ]).id
+    ).toBe("b");
+    expect(pickProfileForEmail([]).hasAccess).toBe(false);
   });
 });
