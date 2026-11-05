@@ -164,6 +164,29 @@ export async function subsplashFetch<T>(
   return res.json() as Promise<T>;
 }
 
+// Subsplash explains a 400/403/422 in the response body; keep a short, secret-free
+// version of it so an admin sees why a write was refused, not just the status.
+async function apiErrorDetail(res: Response): Promise<string> {
+  try {
+    const text = (await res.text()).trim();
+    if (!text) return "";
+    let detail = text;
+    try {
+      const json = JSON.parse(text) as Record<string, unknown>;
+      const first = Array.isArray(json.errors) ? (json.errors[0] as Record<string, unknown> | undefined) : undefined;
+      const pick = (o: Record<string, unknown> | undefined) =>
+        o && (o.detail ?? o.message ?? o.title ?? o.error ?? o.description);
+      const msg = pick(first) ?? pick(json);
+      if (typeof msg === "string") detail = msg;
+    } catch {
+      /* not JSON: use the raw text */
+    }
+    return ` — ${detail.replace(/\s+/g, " ").slice(0, 300)}`;
+  } catch {
+    return "";
+  }
+}
+
 // For following a HAL `_links.next.href` returned by a collection response
 // (e.g. ListEventsV2, which — unlike ListProfiles — declares no page[]/filter[]
 // query parameters at all, so pagination must be done by following `next`
@@ -600,13 +623,18 @@ const getRoleFieldMetaCached = unstable_cache(
 // field's write metadata (ADR-0020).
 const getNotesFieldMetaCached = unstable_cache(
   async (): Promise<NotesFieldMeta | null> => {
-    const data = await subsplashFetch<HalCollection<RawProfile>>(
-      `/people/v1/profiles?page[number]=1&page[size]=${MAX_SUBSPLASH_PAGE_SIZE}`
-    );
+    // The first page alone often has no profile with notes filled in, which
+    // left the field "unresolvable". Walk on until one is found.
     let meta: NotesFieldMeta | null = null;
-    for (const raw of data._embedded.profiles) {
-      const field = findNotesField(raw.custom_fields);
-      if (field) meta = mergeNotesFieldMeta(meta, field);
+    for (let page = 1; page <= MAX_SUBSPLASH_PAGES && !meta?.revisionId; page++) {
+      const data = await subsplashFetch<HalCollection<RawProfile>>(
+        `/people/v1/profiles?page[number]=${page}&page[size]=${MAX_SUBSPLASH_PAGE_SIZE}`
+      );
+      for (const raw of data._embedded.profiles) {
+        const field = findNotesField(raw.custom_fields);
+        if (field) meta = mergeNotesFieldMeta(meta, field);
+      }
+      if (data._embedded.profiles.length < MAX_SUBSPLASH_PAGE_SIZE) break;
     }
     return meta;
   },
@@ -1931,7 +1959,7 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new Error(`Subsplash API error: ${res.status} PATCH /people/v1/profiles/${id}`);
+    throw new Error(`Subsplash API error: ${res.status} PATCH /people/v1/profiles/${id}${await apiErrorDetail(res)}`);
   }
   // Otherwise the People list would show stale data for up to
   // CACHE_REVALIDATE_SECONDS after a save (ADR-0009).
@@ -2008,7 +2036,7 @@ export async function createProfile(input: CreateProfileInput): Promise<Profile>
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new Error(`Subsplash API error: ${res.status} POST /people/v1/profiles`);
+    throw new Error(`Subsplash API error: ${res.status} POST /people/v1/profiles${await apiErrorDetail(res)}`);
   }
   revalidateTag("subsplash-profiles");
   revalidateTag("subsplash-households");
@@ -2098,7 +2126,7 @@ export async function updateHousehold(id: string, patch: UpdateHouseholdInput): 
     body: JSON.stringify(Object.keys(patch).length > 0 ? { _embedded: { address: patch } } : {}),
   });
   if (!res.ok) {
-    throw new Error(`Subsplash API error: ${res.status} PATCH /people/v1/households/${id}`);
+    throw new Error(`Subsplash API error: ${res.status} PATCH /people/v1/households/${id}${await apiErrorDetail(res)}`);
   }
   revalidateTag("subsplash-households");
   return mapHousehold((await res.json()) as RawHousehold);

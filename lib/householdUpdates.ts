@@ -262,6 +262,13 @@ export interface ApplyDeps {
   getProfileAddress?: (id: string) => Promise<Record<string, string | undefined> | undefined>;
 }
 
+function splitProfileWrites(cs: UpdateChange[]): UpdateChange[][] {
+  const home = cs.filter((c) => c.field in HOME_ADDRESS_FIELDS);
+  const notes = cs.filter((c) => c.field === "care_notes");
+  const basic = cs.filter((c) => !(c.field in HOME_ADDRESS_FIELDS) && c.field !== "care_notes");
+  return [basic, home, notes].filter((g) => g.length > 0);
+}
+
 // Turns a person's accepted change rows into one updateProfile patch. A
 // person's own address is sent as a whole: the changed parts laid over what
 // they have now.
@@ -321,12 +328,16 @@ export async function applyAcceptedChanges(requestId: string, deps?: ApplyDeps):
   };
 
   for (const [profileId, cs] of Array.from(group("profile").entries())) {
-    try {
-      const patch = await buildProfilePatch(cs, d, profileId);
-      await d.updateProfile(profileId, patch);
-      await finish(cs, null);
-    } catch (e) {
-      await finish(cs, errMessage(e));
+    // Basic details, home address and care notes are separate Subsplash
+    // writes (the notes are a custom field), so a refusal of one is reported
+    // on its own rows and doesn't stop the others.
+    for (const part of splitProfileWrites(cs)) {
+      try {
+        await d.updateProfile(profileId, await buildProfilePatch(part, d, profileId));
+        await finish(part, null);
+      } catch (e) {
+        await finish(part, errMessage(e));
+      }
     }
   }
 
@@ -378,12 +389,12 @@ export async function applyAcceptedChanges(requestId: string, deps?: ApplyDeps):
     }
 
     // Phone, home address and notes are written to the new profile afterwards.
-    if (extras.length > 0) {
+    for (const part of splitProfileWrites(extras)) {
       try {
-        await d.updateProfile(createdId, await buildProfilePatch(extras, d, null));
-        await finish(extras, null, createdId);
+        await d.updateProfile(createdId, await buildProfilePatch(part, d, null));
+        await finish(part, null, createdId);
       } catch (e) {
-        await finish(extras, errMessage(e));
+        await finish(part, errMessage(e));
       }
     }
   }
