@@ -1,7 +1,7 @@
 // Emails for the household self-update flow: a heads-up to admins when a
 // household submits, and an outcome message to the household after review.
 
-import { CHURCH_NAME } from "./trainingEmail";
+import { CHURCH_NAME, TAGLINE } from "./trainingEmail";
 
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -11,6 +11,7 @@ function shell(body: string): string {
 <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1f2d3a;line-height:1.5">
   <div style="background:#14304a;color:#f6f0e2;padding:18px 24px;border-radius:10px 10px 0 0">
     <div style="font-size:20px;font-weight:700;color:#f6f0e2">${esc(CHURCH_NAME)}</div>
+    <div style="font-size:13px;opacity:.85;font-style:italic;color:#f6f0e2">${esc(TAGLINE)}</div>
   </div>
   <div style="border:1px solid #e5dcc8;border-top:0;padding:24px;border-radius:0 0 10px 10px">${body}</div>
 </div>`.trim();

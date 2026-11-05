@@ -6,6 +6,7 @@ import { getHousehold } from "./subsplash";
 import { householdMemberType } from "./household";
 import { getOpenRequest, listChanges, type UpdateChange, type UpdateRequest } from "./householdUpdates";
 import { gradeLabelForValue, gradeValueForGraduationYear } from "./grades";
+import { formatUsPhone, HOME_ADDRESS_FIELDS, type HomeAddressField } from "./householdUpdateLogic";
 import type { Profile } from "@/types/profile";
 import type { Household } from "@/types/household";
 
@@ -19,6 +20,13 @@ export interface MemberView {
   gradeValue: number | null;
   gradeLabel: string | null;
   hasPendingChanges: boolean;
+  phone_number: string;
+  home_street: string;
+  home_city: string;
+  home_state: string;
+  home_postal_code: string;
+  allergy_notes: string;
+  care_notes: string;
 }
 
 export interface NewMemberView {
@@ -29,6 +37,13 @@ export interface NewMemberView {
   date_of_birth: string;
   gradeValue: number | null;
   gradeLabel: string | null;
+  phone_number: string;
+  home_street: string;
+  home_city: string;
+  home_state: string;
+  home_postal_code: string;
+  allergy_notes: string;
+  care_notes: string;
 }
 
 export interface AddressView {
@@ -52,10 +67,30 @@ function latest(changes: UpdateChange[], type: UpdateChange["subjectType"], id: 
   return changes.find((c) => c.subjectType === type && c.subjectId === id && c.field === field)?.newValue ?? undefined;
 }
 
+// A saved proposal wins over the live value, and a proposal that clears an
+// optional field (new value empty) must show as cleared, not fall back.
+function overlay(changes: UpdateChange[], type: UpdateChange["subjectType"], id: string, field: string, live: string): string {
+  const c = changes.find((x) => x.subjectType === type && x.subjectId === id && x.field === field);
+  return c ? (c.newValue ?? "") : live;
+}
+
 function gradeFrom(profile: Pick<Profile, "academic_grade_value">, changes: UpdateChange[], id: string): number | null {
   const year = latest(changes, "profile", id, "graduation_year");
   if (year) return gradeValueForGraduationYear(Number(year)) ?? null;
   return profile.academic_grade_value ?? null;
+}
+
+function homeAddress(
+  changes: UpdateChange[],
+  type: UpdateChange["subjectType"],
+  id: string,
+  live: Partial<Record<"street" | "city" | "state" | "postal_code", string | undefined>> | undefined
+): Record<HomeAddressField, string> {
+  const out = {} as Record<HomeAddressField, string>;
+  for (const [field, part] of Object.entries(HOME_ADDRESS_FIELDS) as [HomeAddressField, keyof NonNullable<typeof live>][]) {
+    out[field] = overlay(changes, type, id, field, live?.[part] ?? "");
+  }
+  return out;
 }
 
 export async function loadPortal(householdId: string): Promise<PortalView | null> {
@@ -78,6 +113,10 @@ export async function loadPortal(householdId: string): Promise<PortalView | null
         gradeValue,
         gradeLabel: gradeLabelForValue(gradeValue ?? undefined) ?? null,
         hasPendingChanges: changes.some((c) => c.subjectType === "profile" && c.subjectId === m.id),
+        phone_number: formatUsPhone(overlay(changes, "profile", m.id, "phone_number", m.phone_number ?? "")),
+        ...homeAddress(changes, "profile", m.id, m.address_parts),
+        allergy_notes: overlay(changes, "profile", m.id, "allergy_notes", m.allergy_notes ?? ""),
+        care_notes: overlay(changes, "profile", m.id, "care_notes", m.care_notes ?? ""),
       };
     })
     // Adults first, then children, each alphabetical by first name.
@@ -95,6 +134,10 @@ export async function loadPortal(householdId: string): Promise<PortalView | null
       date_of_birth: latest(changes, "new_member", key, "date_of_birth") ?? "",
       gradeValue,
       gradeLabel: gradeLabelForValue(gradeValue ?? undefined) ?? null,
+      phone_number: formatUsPhone(overlay(changes, "new_member", key, "phone_number", "")),
+      ...homeAddress(changes, "new_member", key, undefined),
+      allergy_notes: overlay(changes, "new_member", key, "allergy_notes", ""),
+      care_notes: overlay(changes, "new_member", key, "care_notes", ""),
     });
   }
 

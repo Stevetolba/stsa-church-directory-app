@@ -2,7 +2,16 @@
 // had when the household proposed it, what it has now, and what is proposed.
 
 import type { Household } from "@/types/household";
-import { FIELD_LABELS, displayValue, hasDrifted, type ChangeField, type SubjectType } from "./householdUpdateLogic";
+import {
+  FIELD_LABELS,
+  HOME_ADDRESS_FIELDS,
+  displayValue,
+  hasDrifted,
+  normPhone,
+  type ChangeField,
+  type HomeAddressField,
+  type SubjectType,
+} from "./householdUpdateLogic";
 import type { UpdateChange } from "./householdUpdates";
 
 export interface ReviewRow {
@@ -32,6 +41,10 @@ function liveValue(household: Household | null, c: UpdateChange): string | null 
   }
   const member = household.members?.find((m) => m.id === c.subjectId);
   if (!member) return null;
+  if (c.field === "phone_number") return normPhone(member.phone_number);
+  if (c.field in HOME_ADDRESS_FIELDS) {
+    return member.address_parts?.[HOME_ADDRESS_FIELDS[c.field as HomeAddressField]] ?? null;
+  }
   const value =
     c.field === "graduation_year"
       ? member.graduation_year

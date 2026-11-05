@@ -2,7 +2,7 @@
 // can be unit-tested; lib/training.ts's inviteToTraining sends it.
 
 export const CHURCH_NAME = "STSA Church";
-export const TAGLINE = "an ancient faith in a modern world";
+export const TAGLINE = "Bringing an ancient faith to a modern world";
 export const WEBSITE = { label: "www.stsa.church", href: "https://www.stsa.church" };
 
 export function escapeHtml(s: string): string {

@@ -27,6 +27,13 @@ export default async function NewMemberPage({ searchParams }: { searchParams: { 
           date_of_birth: existing?.date_of_birth ?? "",
           gradeValue: existing?.gradeValue ?? null,
           role: existing?.role ?? "child",
+          phone_number: existing?.phone_number ?? "",
+          home_street: existing?.home_street ?? "",
+          home_city: existing?.home_city ?? "",
+          home_state: existing?.home_state ?? "",
+          home_postal_code: existing?.home_postal_code ?? "",
+          allergy_notes: existing?.allergy_notes ?? "",
+          care_notes: existing?.care_notes ?? "",
         }}
       />
     </div>

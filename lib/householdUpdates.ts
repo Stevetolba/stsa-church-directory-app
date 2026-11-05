@@ -14,7 +14,7 @@ import {
   type HouseholdUpdateRequestRow,
 } from "./db/schema";
 import type { ChangeField, ProposedChange, SubjectType } from "./householdUpdateLogic";
-import { ADDRESS_FIELDS } from "./householdUpdateLogic";
+import { ADDRESS_FIELDS, EXTRA_MEMBER_FIELDS, HOME_ADDRESS_FIELDS, type HomeAddressField } from "./householdUpdateLogic";
 
 export type RequestStatus = "draft" | "pending" | "applied" | "partially_applied" | "rejected";
 export type Decision = "pending" | "accepted" | "rejected";
@@ -257,6 +257,31 @@ export interface ApplyDeps {
     date_of_birth?: string;
     graduation_year?: number;
   }) => Promise<{ id: string }>;
+  // Optional: the person's current own address, so a partly changed address
+  // is merged rather than sent as a fragment.
+  getProfileAddress?: (id: string) => Promise<Record<string, string | undefined> | undefined>;
+}
+
+// Turns a person's accepted change rows into one updateProfile patch. A
+// person's own address is sent as a whole: the changed parts laid over what
+// they have now.
+async function buildProfilePatch(
+  cs: UpdateChange[],
+  d: ApplyDeps,
+  profileId: string | null
+): Promise<Record<string, unknown>> {
+  const patch: Record<string, unknown> = {};
+  const addrChanges: Record<string, string> = {};
+  for (const c of cs) {
+    if (c.field === "graduation_year") patch.graduation_year = Number(c.newValue);
+    else if (c.field in HOME_ADDRESS_FIELDS) addrChanges[HOME_ADDRESS_FIELDS[c.field as HomeAddressField]] = c.newValue ?? "";
+    else patch[c.field] = c.newValue ?? "";
+  }
+  if (Object.keys(addrChanges).length > 0) {
+    const current = profileId && d.getProfileAddress ? await d.getProfileAddress(profileId) : undefined;
+    patch.address_parts = { ...(current ?? {}), ...addrChanges };
+  }
+  return patch;
 }
 
 async function defaultDeps(): Promise<ApplyDeps> {
@@ -265,6 +290,10 @@ async function defaultDeps(): Promise<ApplyDeps> {
     updateProfile: (id, patch) => sub.updateProfile(id, patch),
     updateHousehold: (id, patch) => sub.updateHousehold(id, patch),
     createProfile: (input) => sub.createProfile(input),
+    getProfileAddress: async (id) => {
+      const p = await sub.getProfile(id);
+      return p?.address_parts as Record<string, string | undefined> | undefined;
+    },
   };
 }
 
@@ -292,12 +321,8 @@ export async function applyAcceptedChanges(requestId: string, deps?: ApplyDeps):
   };
 
   for (const [profileId, cs] of Array.from(group("profile").entries())) {
-    const patch: Record<string, unknown> = {};
-    for (const c of cs) {
-      if (c.field === "graduation_year") patch.graduation_year = Number(c.newValue);
-      else patch[c.field] = c.newValue ?? "";
-    }
     try {
+      const patch = await buildProfilePatch(cs, d, profileId);
       await d.updateProfile(profileId, patch);
       await finish(cs, null);
     } catch (e) {
@@ -317,28 +342,49 @@ export async function applyAcceptedChanges(requestId: string, deps?: ApplyDeps):
     }
   }
 
-  for (const cs of Array.from(group("new_member").values())) {
+  const everything = await listChanges(requestId);
+  for (const [subjectKey, cs] of Array.from(group("new_member").entries())) {
     const v = (f: ChangeField) => cs.find((c) => c.field === f)?.newValue ?? undefined;
-    const role = v("household_role");
-    const first = v("first_name");
-    const last = v("last_name");
-    if (!first || !last || (role !== "parent" && role !== "guardian" && role !== "child")) {
-      await finish(cs, "Missing name or role");
-      continue;
+    const extras = cs.filter((c) => EXTRA_MEMBER_FIELDS.includes(c.field));
+    const core = cs.filter((c) => !EXTRA_MEMBER_FIELDS.includes(c.field));
+    // A profile created on an earlier attempt must not be created twice.
+    let createdId = everything.find((c) => c.subjectType === "new_member" && c.subjectId === subjectKey && c.createdProfileId)
+      ?.createdProfileId ?? undefined;
+
+    if (!createdId) {
+      const role = v("household_role");
+      const first = v("first_name");
+      const last = v("last_name");
+      if (!first || !last || (role !== "parent" && role !== "guardian" && role !== "child")) {
+        await finish(cs, "Missing name or role");
+        continue;
+      }
+      try {
+        const gradYear = v("graduation_year");
+        const created = await d.createProfile({
+          first_name: first,
+          last_name: last,
+          household_id: request.householdId,
+          household_role: role,
+          date_of_birth: v("date_of_birth"),
+          graduation_year: gradYear ? Number(gradYear) : undefined,
+        });
+        createdId = created.id;
+        await finish(core, null, createdId);
+      } catch (e) {
+        await finish(cs, errMessage(e));
+        continue;
+      }
     }
-    try {
-      const gradYear = v("graduation_year");
-      const created = await d.createProfile({
-        first_name: first,
-        last_name: last,
-        household_id: request.householdId,
-        household_role: role,
-        date_of_birth: v("date_of_birth"),
-        graduation_year: gradYear ? Number(gradYear) : undefined,
-      });
-      await finish(cs, null, created.id);
-    } catch (e) {
-      await finish(cs, errMessage(e));
+
+    // Phone, home address and notes are written to the new profile afterwards.
+    if (extras.length > 0) {
+      try {
+        await d.updateProfile(createdId, await buildProfilePatch(extras, d, null));
+        await finish(extras, null, createdId);
+      } catch (e) {
+        await finish(extras, errMessage(e));
+      }
     }
   }
 

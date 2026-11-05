@@ -60,6 +60,17 @@ export async function signOutHouseholdAction(): Promise<void> {
 
 // ------------------------------------------------------------------ editing
 
+// Optional extras a parent may add for anyone (children also get notes).
+type ContactInput = {
+  phone_number?: string;
+  home_street?: string;
+  home_city?: string;
+  home_state?: string;
+  home_postal_code?: string;
+  allergy_notes?: string;
+  care_notes?: string;
+};
+
 export type SaveResult = { ok: true } | { ok: false; errors: Record<string, string> };
 
 function needSession(): HouseholdSession {
@@ -80,7 +91,7 @@ async function openRequestFor(s: HouseholdSession) {
 
 export async function saveMemberAction(
   profileId: string,
-  input: { first_name: string; last_name: string; date_of_birth?: string; grade_value?: number | null }
+  input: ContactInput & { first_name: string; last_name: string; date_of_birth?: string; grade_value?: number | null }
 ): Promise<SaveResult> {
   const s = needSession();
   // The household id comes from the session; the profile must be a member of it.
@@ -120,7 +131,13 @@ export async function saveAddressAction(input: {
 
 export async function saveNewMemberAction(
   key: string | null,
-  input: { first_name: string; last_name: string; role: NewMemberRole; date_of_birth?: string; grade_value?: number | null }
+  input: ContactInput & {
+    first_name: string;
+    last_name: string;
+    role: NewMemberRole;
+    date_of_birth?: string;
+    grade_value?: number | null;
+  }
 ): Promise<SaveResult> {
   const s = needSession();
   const { changes, errors } = buildNewMemberChanges(input);
