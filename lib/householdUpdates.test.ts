@@ -171,11 +171,8 @@ describe("new members", () => {
     const d = deps();
     expect(await reviewRequest(req.id, ids, "admin@x.org", d)).toBe("applied");
     expect(d.createProfile).toHaveBeenCalledTimes(1);
-    expect(d.updateProfile).toHaveBeenCalledWith("new-profile", {
-      phone_number: "5551112222",
-      address_parts: { street: "9 Elm", city: "Dallas" },
-      allergy_notes: "Peanuts",
-    });
+    expect(d.updateProfile).toHaveBeenCalledWith("new-profile", { phone_number: "5551112222", allergy_notes: "Peanuts" });
+    expect(d.updateProfile).toHaveBeenCalledWith("new-profile", { address_parts: { street: "9 Elm", city: "Dallas" } });
   });
 
   it("retries only the extras, never creating the person twice", async () => {
@@ -209,10 +206,34 @@ describe("new members", () => {
     const ids = (await listChanges(req.id)).map((c) => c.id);
     const d = deps({ getProfileAddress: vi.fn(async () => ({ street: "1 Main St", city: "Austin", state: "TX", postal_code: "78701" })) });
     await reviewRequest(req.id, ids, "admin@x.org", d);
+    expect(d.updateProfile).toHaveBeenCalledWith("mom", { phone_number: "5551112222" });
     expect(d.updateProfile).toHaveBeenCalledWith("mom", {
-      phone_number: "5551112222",
       address_parts: { street: "1 Main St", city: "Round Rock", state: "TX", postal_code: "78701" },
     });
+  });
+
+  it("reports a refused address on its own rows without blocking the rest of the person", async () => {
+    const req = await getOrCreateOpenRequest(who);
+    await replaceSubjectChanges(req.id, { type: "profile", id: "mom", label: "Ann Lee" }, [
+      { field: "phone_number", oldValue: null, newValue: "5551112222" },
+      { field: "home_street", oldValue: null, newValue: "9 Elm" },
+      { field: "care_notes", oldValue: null, newValue: "Nightlight" },
+    ]);
+    await submitRequest(req.id, null);
+    const ids = (await listChanges(req.id)).map((c) => c.id);
+    const d = deps({
+      updateProfile: vi.fn(async (_id: string, patch: Record<string, unknown>) => {
+        if ("address_parts" in patch) throw new Error("Subsplash API error: 400 — bad address");
+        return {};
+      }),
+    });
+    expect(await reviewRequest(req.id, ids, "admin@x.org", d)).toBe("pending");
+    const rows = await listChanges(req.id);
+    const by = (f: string) => rows.find((c) => c.field === f)!;
+    expect(by("phone_number").appliedAt).not.toBeNull();
+    expect(by("care_notes").appliedAt).not.toBeNull();
+    expect(by("home_street").appliedAt).toBeNull();
+    expect(by("home_street").applyError).toContain("bad address");
   });
 
   it("does not create a duplicate when retrying after another failure", async () => {
