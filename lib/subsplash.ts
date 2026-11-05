@@ -82,10 +82,10 @@ interface RawProfile {
   graduation_year?: number | null;
   baptism_date?: string | null;
   // Plain top-level string field (openapi.yaml → Profile, maxLength 1500).
-  // care_notes moved off its own plain top-level field onto the
-  // VOLUNTEERNOTES custom field (see NOTES_FIELD_NAME below and ADR-0020) —
-  // it now lives in custom_fields instead, same as campus/directory_access.
+  // care_notes is Subsplash's built-in child notes field (ADR-0030). A legacy
+  // VOLUNTEERNOTES custom field (ADR-0020) is still read as a fallback.
   allergy_notes?: string | null;
+  care_notes?: string | null;
   custom_fields?: RawCustomFieldValue[];
   // Lifecycle status (active/archived/merged/gdpr/fraud) — distinct from the
   // membership status in `_embedded.latest-membership-status-change`. Only
@@ -244,11 +244,9 @@ const ROLE_FIELD_NAME = (process.env.SUBSPLASH_ROLE_FIELD_NAME ?? "DirectoryRole
   .trim()
   .toLowerCase();
 
-// ADR-0020: the custom field a church admin sets in Subsplash to hold a
-// child's care/safety notes, editable by any signed-in role (ADR-0018).
-// Replaces the plain top-level care_notes Profile field so the church can
-// configure/rename/hide it like any other Subsplash custom field. Name is
-// configurable for the same reason ACCESS_FIELD_NAME is.
+// ADR-0020 (superseded by ADR-0030 for writes): the legacy custom field that
+// once held a child's care/safety notes. Only read now, as a fallback for a
+// profile whose built-in care_notes is empty.
 const NOTES_FIELD_NAME = (process.env.SUBSPLASH_NOTES_FIELD_NAME ?? "VOLUNTEERNOTES")
   .trim()
   .toLowerCase();
@@ -393,24 +391,6 @@ function roleFieldUsesChoices(meta: RoleFieldMeta): boolean {
   return meta.type === "dropdown" || Object.keys(meta.choiceIds).length > 0;
 }
 
-// Same write-metadata problem as Campus/DirectoryAccess/DirectoryRole (no
-// custom-field-definitions endpoint), for the VolunteerNotes field instead
-// (ADR-0020). Unlike those, this field always holds free-form text rather
-// than a value from a fixed set, so there's no choiceIds to resolve — a
-// definition/revision id is all a write needs.
-interface NotesFieldMeta {
-  definitionId: string;
-  revisionId?: string;
-}
-
-function mergeNotesFieldMeta(existing: NotesFieldMeta | null, field: RawCustomFieldValue): NotesFieldMeta {
-  const def = field.custom_field_definition;
-  const meta: NotesFieldMeta = existing ?? { definitionId: def.id };
-  meta.definitionId = def.id;
-  if (def.revision_id) meta.revisionId = def.revision_id;
-  return meta;
-}
-
 function formatPhone(phone: RawProfile["phone_number"]): string | undefined {
   if (!phone) return undefined;
   const digits = phone.significant;
@@ -450,7 +430,7 @@ function mapProfile(raw: RawProfile): Profile {
     address_parts,
     baptism_date: raw.baptism_date ?? undefined,
     allergy_notes: raw.allergy_notes ?? undefined,
-    care_notes: extractCareNotes(raw.custom_fields),
+    care_notes: raw.care_notes ?? extractCareNotes(raw.custom_fields),
     photo_url: raw._embedded?.photo?._links?.self?.href,
     custom_fields: raw.custom_fields?.map((f) => ({
       id: f.custom_field_definition.id,
@@ -617,29 +597,6 @@ const getRoleFieldMetaCached = unstable_cache(
   },
   ["subsplash-role-field-meta"],
   { revalidate: CACHE_REVALIDATE_SECONDS, tags: ["subsplash-role-meta"] }
-);
-
-// Same sampling approach as getAccessFieldMetaCached, for the VolunteerNotes
-// field's write metadata (ADR-0020).
-const getNotesFieldMetaCached = unstable_cache(
-  async (): Promise<NotesFieldMeta | null> => {
-    // The first page alone often has no profile with notes filled in, which
-    // left the field "unresolvable". Walk on until one is found.
-    let meta: NotesFieldMeta | null = null;
-    for (let page = 1; page <= MAX_SUBSPLASH_PAGES && !meta?.revisionId; page++) {
-      const data = await subsplashFetch<HalCollection<RawProfile>>(
-        `/people/v1/profiles?page[number]=${page}&page[size]=${MAX_SUBSPLASH_PAGE_SIZE}`
-      );
-      for (const raw of data._embedded.profiles) {
-        const field = findNotesField(raw.custom_fields);
-        if (field) meta = mergeNotesFieldMeta(meta, field);
-      }
-      if (data._embedded.profiles.length < MAX_SUBSPLASH_PAGE_SIZE) break;
-    }
-    return meta;
-  },
-  ["subsplash-notes-field-meta"],
-  { revalidate: CACHE_REVALIDATE_SECONDS, tags: ["subsplash-notes-meta"] }
 );
 
 // --- In-memory search/filter/paginate (shared by mock and real modes) ---
@@ -1528,36 +1485,6 @@ async function buildDirectoryRoleFieldInput(
   };
 }
 
-// Builds the custom_fields entry that sets a child's care/safety notes —
-// same discover-from-real-data approach as the others, but always writes
-// plain text since VolunteerNotes has no fixed set of choices (ADR-0020).
-async function buildVolunteerNotesFieldInput(
-  profileId: string,
-  notes: string
-): Promise<{ custom_field_definition: { id: string; revision_id?: string }; value: object }> {
-  const currentRaw = await subsplashFetch<RawProfile>(`/people/v1/profiles/${profileId}`).catch(
-    () => null
-  );
-  const fromProfile = currentRaw ? findNotesField(currentRaw.custom_fields) : undefined;
-  let meta = fromProfile ? mergeNotesFieldMeta(null, fromProfile) : null;
-
-  if (!meta || !meta.revisionId) {
-    const sampled = await getNotesFieldMetaCached();
-    if (sampled) meta = meta ? { ...sampled, ...meta } : sampled;
-  }
-
-  if (!meta || !meta.revisionId) {
-    throw new CustomFieldUpdateError(
-      `Could not resolve the ${NOTES_FIELD_NAME} custom field's write metadata from Subsplash — it may not be configured.`
-    );
-  }
-
-  return {
-    custom_field_definition: { id: meta.definitionId, revision_id: meta.revisionId },
-    value: { text: notes },
-  };
-}
-
 // --- Generic choice-field writer (ADR-0023) ---
 //
 // Every field above (Campus, DirectoryAccess, DirectoryRole, VolunteerNotes)
@@ -1911,7 +1838,10 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
     throw new Error("Missing SUBSPLASH_ORG_KEY — required as filter[org_key] on every request.");
   }
 
+  // Care notes are Subsplash's built-in child "care_notes" profile field
+  // (ADR-0030), a plain top-level string like allergy_notes.
   const body: Record<string, unknown> = { ...topLevelPatch };
+  if (care_notes !== undefined) body.care_notes = care_notes;
   if (topLevelPatch.phone_number !== undefined) {
     body.phone_number = phoneNumberForSubsplash(topLevelPatch.phone_number);
   }
@@ -1936,9 +1866,6 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
   if (directory_role !== undefined) {
     customFieldInputs.push(await buildDirectoryRoleFieldInput(id, directory_role));
   }
-  if (care_notes !== undefined) {
-    customFieldInputs.push(await buildVolunteerNotesFieldInput(id, care_notes));
-  }
   if (customFieldInputs.length > 0) {
     body.custom_fields = customFieldInputs;
   }
@@ -1946,7 +1873,10 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
   // _embedded.address, same shape as the household write (openapi.yaml →
   // ProfileRequest._embedded.address).
   if (address_parts !== undefined) {
-    body._embedded = { address: address_parts };
+    // Subsplash creates the address when the profile has none yet, and
+    // refuses it without an org_key ("either an org_key or app_key is
+    // required").
+    body._embedded = { address: { ...address_parts, org_key: ORG_KEY } };
   }
 
   const token = await getServiceToken();
@@ -2036,7 +1966,13 @@ export async function createProfile(input: CreateProfileInput): Promise<Profile>
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new Error(`Subsplash API error: ${res.status} POST /people/v1/profiles${await apiErrorDetail(res)}`);
+    const detail = await apiErrorDetail(res);
+    if (res.status === 403) {
+      throw new Error(
+        `Subsplash refused to create the profile${detail}. The API credential needs permission to create profiles; until then, add this person in Subsplash directly.`
+      );
+    }
+    throw new Error(`Subsplash API error: ${res.status} POST /people/v1/profiles${detail}`);
   }
   revalidateTag("subsplash-profiles");
   revalidateTag("subsplash-households");
