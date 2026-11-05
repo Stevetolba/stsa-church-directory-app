@@ -94,8 +94,8 @@ export function HouseholdUpdateReview(props: {
               {g.rows.map((r) => (
                 <tr key={r.id} className="border-t border-border align-top">
                   <td className="px-4 py-2 font-medium">{r.fieldLabel}</td>
-                  <td className="px-4 py-2 text-muted-foreground">{r.atSubmission}</td>
-                  <td className="px-4 py-2">
+                  <td className="whitespace-pre-wrap px-4 py-2 text-muted-foreground">{r.atSubmission}</td>
+                  <td className="whitespace-pre-wrap px-4 py-2">
                     {r.now}
                     {r.drifted && (
                       <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900" title="Subsplash changed after the family proposed this">
@@ -103,7 +103,7 @@ export function HouseholdUpdateReview(props: {
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-2 font-medium text-brand-navy">{r.proposed}</td>
+                  <td className="whitespace-pre-wrap px-4 py-2 font-medium text-brand-navy">{r.proposed}</td>
                   <td className="px-4 py-2">
                     {r.applied ? (
                       <span className="text-green-700">Applied</span>

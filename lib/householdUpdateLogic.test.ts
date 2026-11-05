@@ -124,3 +124,76 @@ describe("helpers", () => {
     expect(findDuplicateCandidates({ first_name: "Nia", last_name: "Lee", date_of_birth: "2019-05-05" }, roster)).toHaveLength(1);
   });
 });
+
+describe("optional phone, home address and notes", () => {
+  const base = { first_name: "Ann", last_name: "Lee" };
+  const adult = { ...base, phone_number: "(555) 111-2222", address_parts: { street: "1 Main St", city: "Austin", state: "TX", postal_code: "78701" } };
+
+  it("leaves everything alone when optional fields are blank and were blank", () => {
+    expect(buildProfileChanges(base, base, { isChild: false, now: NOV_2026 }).changes).toEqual([]);
+  });
+
+  it("treats the same phone in a different format as unchanged", () => {
+    const r = buildProfileChanges(adult, { ...base, phone_number: "555.111.2222", home_street: "1 Main St", home_city: "Austin", home_state: "TX", home_postal_code: "78701" }, { isChild: false, now: NOV_2026 });
+    expect(r.errors).toEqual({});
+    expect(r.changes).toEqual([]);
+  });
+
+  it("drops a leading 1 and stores 10 digits", () => {
+    const r = buildProfileChanges(base, { ...base, phone_number: "1 (555) 333-4444" }, { isChild: false, now: NOV_2026 });
+    expect(r.changes).toEqual([{ field: "phone_number", oldValue: null, newValue: "5553334444" }]);
+  });
+
+  it("rejects a phone that is not 10 digits", () => {
+    expect(buildProfileChanges(base, { ...base, phone_number: "555-1212" }, { isChild: false }).errors.phone_number).toBeTruthy();
+  });
+
+  it("lets a parent clear an optional phone", () => {
+    const r = buildProfileChanges(adult, { ...base, phone_number: "", home_street: "1 Main St", home_city: "Austin", home_state: "TX", home_postal_code: "78701" }, { isChild: false, now: NOV_2026 });
+    expect(r.changes).toEqual([{ field: "phone_number", oldValue: "5551112222", newValue: null }]);
+  });
+
+  it("adds a whole home address, but refuses half of one", () => {
+    const full = buildProfileChanges(base, { ...base, home_street: "9 Elm", home_city: "Dallas", home_state: "TX", home_postal_code: "75001" }, { isChild: false, now: NOV_2026 });
+    expect(full.changes.map((c) => c.field)).toEqual(["home_street", "home_city", "home_state", "home_postal_code"]);
+    const half = buildProfileChanges(base, { ...base, home_street: "9 Elm" }, { isChild: false });
+    expect(half.errors.home_city).toBeTruthy();
+    expect(half.errors.home_postal_code).toBeTruthy();
+  });
+
+  it("only changes the address parts that differ", () => {
+    const r = buildProfileChanges(adult, { ...base, phone_number: "5551112222", home_street: "1 Main St", home_city: "Round Rock", home_state: "TX", home_postal_code: "78701" }, { isChild: false, now: NOV_2026 });
+    expect(r.changes).toEqual([{ field: "home_city", oldValue: "Austin", newValue: "Round Rock" }]);
+  });
+
+  it("keeps allergy and care notes for children, with line breaks", () => {
+    const r = buildProfileChanges(base, { ...base, allergy_notes: " Peanuts\r\nBee stings ", care_notes: "Needs a nightlight" }, { isChild: true, now: NOV_2026 });
+    expect(r.changes).toEqual([
+      { field: "allergy_notes", oldValue: null, newValue: "Peanuts\nBee stings" },
+      { field: "care_notes", oldValue: null, newValue: "Needs a nightlight" },
+    ]);
+  });
+
+  it("ignores notes for adults", () => {
+    const r = buildProfileChanges(base, { ...base, allergy_notes: "x", care_notes: "y" }, { isChild: false, now: NOV_2026 });
+    expect(r.changes).toEqual([]);
+  });
+
+  it("rejects very long notes", () => {
+    const r = buildProfileChanges(base, { ...base, care_notes: "a".repeat(1001) }, { isChild: true, now: NOV_2026 });
+    expect(r.errors.care_notes).toBeTruthy();
+  });
+
+  it("lets a new member carry the optional extras", () => {
+    const r = buildNewMemberChanges(
+      { first_name: "Eve", last_name: "Lee", role: "child", grade_value: 3, phone_number: "555-111-2222", allergy_notes: "Nuts" },
+      NOV_2026
+    );
+    expect(r.errors).toEqual({});
+    expect(r.changes.map((c) => c.field)).toEqual(expect.arrayContaining(["phone_number", "allergy_notes"]));
+  });
+
+  it("shows phone numbers formatted", () => {
+    expect(displayValue("phone_number", "5551112222")).toBe("(555) 111-2222");
+  });
+});

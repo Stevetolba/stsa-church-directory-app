@@ -38,9 +38,9 @@ export default async function ReviewPage() {
                 {g.items.map((c) => (
                   <li key={c.id} className="flex flex-wrap gap-x-2">
                     <span className="text-muted-foreground">{FIELD_LABELS[c.field]}:</span>
-                    {c.oldValue != null && <span className="text-muted-foreground line-through">{displayValue(c.field, c.oldValue)}</span>}
+                    {c.oldValue != null && <span className="whitespace-pre-wrap text-muted-foreground line-through">{displayValue(c.field, c.oldValue)}</span>}
                     {c.oldValue != null && <span aria-hidden>→</span>}
-                    <span className="font-medium text-brand-navy">{displayValue(c.field, c.newValue)}</span>
+                    <span className="whitespace-pre-wrap font-medium text-brand-navy">{displayValue(c.field, c.newValue)}</span>
                   </li>
                 ))}
               </ul>

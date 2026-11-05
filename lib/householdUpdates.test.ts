@@ -154,6 +154,67 @@ describe("new members", () => {
     expect((await listChanges(req.id)).every((c) => c.createdProfileId === "new-profile")).toBe(true);
   });
 
+  it("writes a new member's phone, address and notes with a follow-up update", async () => {
+    const req = await getOrCreateOpenRequest(who);
+    await replaceSubjectChanges(req.id, { type: "new_member", id: "new-1", label: "Eve Lee" }, [
+      { field: "first_name", oldValue: null, newValue: "Eve" },
+      { field: "last_name", oldValue: null, newValue: "Lee" },
+      { field: "household_role", oldValue: null, newValue: "child" },
+      { field: "graduation_year", oldValue: null, newValue: "2035" },
+      { field: "phone_number", oldValue: null, newValue: "5551112222" },
+      { field: "home_street", oldValue: null, newValue: "9 Elm" },
+      { field: "home_city", oldValue: null, newValue: "Dallas" },
+      { field: "allergy_notes", oldValue: null, newValue: "Peanuts" },
+    ]);
+    await submitRequest(req.id, null);
+    const ids = (await listChanges(req.id)).map((c) => c.id);
+    const d = deps();
+    expect(await reviewRequest(req.id, ids, "admin@x.org", d)).toBe("applied");
+    expect(d.createProfile).toHaveBeenCalledTimes(1);
+    expect(d.updateProfile).toHaveBeenCalledWith("new-profile", {
+      phone_number: "5551112222",
+      address_parts: { street: "9 Elm", city: "Dallas" },
+      allergy_notes: "Peanuts",
+    });
+  });
+
+  it("retries only the extras, never creating the person twice", async () => {
+    const req = await getOrCreateOpenRequest(who);
+    await replaceSubjectChanges(req.id, { type: "new_member", id: "new-1", label: "Eve Lee" }, [
+      { field: "first_name", oldValue: null, newValue: "Eve" },
+      { field: "last_name", oldValue: null, newValue: "Lee" },
+      { field: "household_role", oldValue: null, newValue: "child" },
+      { field: "graduation_year", oldValue: null, newValue: "2035" },
+      { field: "care_notes", oldValue: null, newValue: "Nightlight" },
+    ]);
+    await submitRequest(req.id, null);
+    const ids = (await listChanges(req.id)).map((c) => c.id);
+    const flaky = deps({ updateProfile: vi.fn(async () => { throw new Error("422"); }) });
+    expect(await reviewRequest(req.id, ids, "admin@x.org", flaky)).toBe("pending");
+    expect(flaky.createProfile).toHaveBeenCalledTimes(1);
+    const ok = deps();
+    await applyAcceptedChanges(req.id, ok);
+    expect(ok.createProfile).not.toHaveBeenCalled();
+    expect(ok.updateProfile).toHaveBeenCalledWith("new-profile", { care_notes: "Nightlight" });
+    expect((await getRequest(req.id))?.status).toBe("applied");
+  });
+
+  it("sends a changed home address merged with the current one", async () => {
+    const req = await getOrCreateOpenRequest(who);
+    await replaceSubjectChanges(req.id, { type: "profile", id: "mom", label: "Ann Lee" }, [
+      { field: "home_city", oldValue: "Austin", newValue: "Round Rock" },
+      { field: "phone_number", oldValue: null, newValue: "5551112222" },
+    ]);
+    await submitRequest(req.id, null);
+    const ids = (await listChanges(req.id)).map((c) => c.id);
+    const d = deps({ getProfileAddress: vi.fn(async () => ({ street: "1 Main St", city: "Austin", state: "TX", postal_code: "78701" })) });
+    await reviewRequest(req.id, ids, "admin@x.org", d);
+    expect(d.updateProfile).toHaveBeenCalledWith("mom", {
+      phone_number: "5551112222",
+      address_parts: { street: "1 Main St", city: "Round Rock", state: "TX", postal_code: "78701" },
+    });
+  });
+
   it("does not create a duplicate when retrying after another failure", async () => {
     const req = await seedNew();
     const ids = (await listChanges(req.id)).map((c) => c.id);

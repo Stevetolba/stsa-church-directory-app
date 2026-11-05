@@ -28,6 +28,13 @@ export default async function EditMemberPage({ params }: { params: { profileId: 
           last_name: member.last_name,
           date_of_birth: member.date_of_birth,
           gradeValue: member.gradeValue,
+          phone_number: member.phone_number,
+          home_street: member.home_street,
+          home_city: member.home_city,
+          home_state: member.home_state,
+          home_postal_code: member.home_postal_code,
+          allergy_notes: member.allergy_notes,
+          care_notes: member.care_notes,
         }}
       />
     </div>

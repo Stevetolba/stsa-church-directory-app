@@ -29,6 +29,31 @@ describe("buildReviewGroups", () => {
     expect(rows[1]).toMatchObject({ drifted: false });
   });
 
+  it("compares phone, personal address and notes with what Subsplash has now", () => {
+    const hh = {
+      ...household,
+      members: [
+        {
+          id: "k1", first_name: "Samuel", last_name: "Lee",
+          phone_number: "(555) 111-2222",
+          address_parts: { street: "5 Side St", city: "Austin", state: "TX", postal_code: "78701" },
+          care_notes: "Nightlight",
+        } as Profile,
+      ],
+    } as Household;
+    const rows = buildReviewGroups(
+      [
+        change({ id: "1", subjectType: "profile", subjectId: "k1", field: "phone_number", oldValue: "5551112222", newValue: "5559998888" }),
+        change({ id: "2", subjectType: "profile", subjectId: "k1", field: "home_street", oldValue: "5 Side St", newValue: "7 Back Rd" }),
+        change({ id: "3", subjectType: "profile", subjectId: "k1", field: "care_notes", oldValue: "Nightlight", newValue: "Nightlight\nWater bottle" }),
+      ],
+      hh
+    )[0].rows;
+    expect(rows[0]).toMatchObject({ fieldLabel: "Phone number", atSubmission: "(555) 111-2222", now: "(555) 111-2222", proposed: "(555) 999-8888", drifted: false });
+    expect(rows[1]).toMatchObject({ fieldLabel: "Home street", now: "5 Side St", drifted: false });
+    expect(rows[2]).toMatchObject({ fieldLabel: "Care notes", now: "Nightlight", drifted: false });
+  });
+
   it("does not flag drift once applied or for new members", () => {
     const groups = buildReviewGroups(
       [
