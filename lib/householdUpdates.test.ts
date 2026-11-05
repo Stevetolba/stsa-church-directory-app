@@ -5,6 +5,7 @@ import {
   getOrCreateOpenRequest,
   getRequest,
   listChanges,
+  markNewMemberAddedManually,
   rejectRequest,
   replaceSubjectChanges,
   reviewRequest,
@@ -234,6 +235,25 @@ describe("new members", () => {
     expect(by("care_notes").appliedAt).not.toBeNull();
     expect(by("home_street").appliedAt).toBeNull();
     expect(by("home_street").applyError).toContain("bad address");
+  });
+
+  it("can be closed out as added manually when Subsplash refuses to create the person", async () => {
+    const req = await seedNew();
+    const ids = (await listChanges(req.id)).map((c) => c.id);
+    const refused = deps({ createProfile: vi.fn(async () => { throw new Error("403"); }) });
+    expect(await reviewRequest(req.id, ids, "admin@x.org", refused)).toBe("pending");
+    expect(await markNewMemberAddedManually(req.id, "new-1", "admin@x.org")).toBe("applied");
+    const rows = await listChanges(req.id);
+    expect(rows.every((c) => c.appliedAt && c.decision === "accepted")).toBe(true);
+    expect(rows[0].applyError).toContain("manually");
+    // Nothing further is written, and a retry has nothing left to do.
+    expect(refused.createProfile).toHaveBeenCalledTimes(1);
+    await expect(markNewMemberAddedManually(req.id, "new-1", "admin@x.org")).rejects.toThrow();
+  });
+
+  it("only closes out the person asked for", async () => {
+    const req = await seedNew();
+    await expect(markNewMemberAddedManually(req.id, "new-9", "admin@x.org")).rejects.toThrow("wasn't found");
   });
 
   it("does not create a duplicate when retrying after another failure", async () => {

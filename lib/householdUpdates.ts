@@ -443,6 +443,29 @@ export async function reviewRequest(
   return finalizeRequest(requestId, reviewerEmail);
 }
 
+// The admin created this person in Subsplash by hand. Their rows are closed
+// out as applied (noted as manual) without any write to Subsplash.
+export async function markNewMemberAddedManually(
+  requestId: string,
+  subjectId: string,
+  reviewerEmail: string
+): Promise<RequestStatus> {
+  const request = await getRequest(requestId);
+  if (!request || request.status !== "pending") throw new Error("Only a pending request can be updated.");
+  const rows = (await listChanges(requestId)).filter((c) => c.subjectType === "new_member" && c.subjectId === subjectId);
+  if (rows.length === 0) throw new Error("That family member wasn't found.");
+  for (const c of rows) {
+    if (c.appliedAt) continue;
+    await patchChange(c.id, {
+      decision: "accepted",
+      appliedAt: now(),
+      applyError: `Added manually in Subsplash (marked by ${reviewerEmail})`,
+    });
+  }
+  await patchRequest(requestId, { reviewedByEmail: reviewerEmail });
+  return finalizeRequest(requestId, reviewerEmail);
+}
+
 export async function rejectRequest(requestId: string, reason: string, reviewerEmail: string): Promise<void> {
   const request = await getRequest(requestId);
   if (!request || request.status !== "pending") throw new Error("Only a pending request can be rejected.");

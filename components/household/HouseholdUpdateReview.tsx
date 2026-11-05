@@ -80,6 +80,23 @@ export function HouseholdUpdateReview(props: {
               person if they already exist.
             </div>
           )}
+          {isPending && g.type === "new_member" && g.rows.some((r) => !r.applied && r.error) && (
+            <div className="flex flex-wrap items-center gap-3 border-b border-border bg-amber-50 px-4 py-2 text-sm text-amber-900">
+              <span>Subsplash wouldn&apos;t create this person. If you added them in Subsplash yourself, close this out.</span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  if (window.confirm(`Only do this after ${g.label} exists in Subsplash. Mark as added manually?`)) {
+                    void call("manual", { subjectId: g.subjectId });
+                  }
+                }}
+                className="rounded-lg border border-border bg-white px-3 py-1.5 font-semibold text-brand-navy disabled:opacity-50"
+              >
+                Mark as added manually
+              </button>
+            </div>
+          )}
           <table className="w-full text-left text-sm">
             <thead className="text-xs uppercase text-muted-foreground">
               <tr>
@@ -106,7 +123,7 @@ export function HouseholdUpdateReview(props: {
                   <td className="whitespace-pre-wrap px-4 py-2 font-medium text-brand-navy">{r.proposed}</td>
                   <td className="px-4 py-2">
                     {r.applied ? (
-                      <span className="text-green-700">Applied</span>
+                      <span className="text-green-700">{r.error ? "Added manually" : "Applied"}</span>
                     ) : isPending ? (
                       <label className="inline-flex items-center gap-2">
                         <input
