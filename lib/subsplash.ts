@@ -1959,8 +1959,14 @@ export async function createProfile(input: CreateProfileInput): Promise<Profile>
     last_name: input.last_name,
     household_role: input.household_role,
     _embedded: {
-      // No id: Subsplash finds or creates the end user from the properties.
-      "end-user": {},
+      // No id: Subsplash finds or creates the end user from these properties
+      // (email first, then phone + name). An empty object is treated as
+      // missing ("400 missing end-user"), so the name always goes in.
+      "end-user": {
+        first_name: input.first_name,
+        last_name: input.last_name,
+        ...(input.email ? { email: input.email } : {}),
+      },
       household: { id: input.household_id },
     },
   };
