@@ -1916,7 +1916,9 @@ export interface CreateProfileInput {
   date_of_birth?: string;
   graduation_year?: number;
   gender?: string;
-  email?: string;
+  // Deliberately no email: Subsplash matches the end user by email first, so a
+  // child using a parent's address matched the parent and got 409 "duplicate
+  // profile for user and org". The email is set with a follow-up update.
 }
 
 export async function createProfile(input: CreateProfileInput): Promise<Profile> {
@@ -1930,7 +1932,7 @@ export async function createProfile(input: CreateProfileInput): Promise<Profile>
       id: `profile-${crypto.randomUUID()}`,
       first_name: input.first_name,
       last_name: input.last_name,
-      email: input.email ?? "",
+      email: "",
       date_of_birth: input.date_of_birth,
       gender: input.gender,
       household_id: household.id,
@@ -1959,13 +1961,12 @@ export async function createProfile(input: CreateProfileInput): Promise<Profile>
     last_name: input.last_name,
     household_role: input.household_role,
     _embedded: {
-      // No id: Subsplash finds or creates the end user from these properties
-      // (email first, then phone + name). An empty object is treated as
-      // missing ("400 missing end-user"), so the name always goes in.
+      // No id: Subsplash finds or creates the end user from these properties.
+      // An empty object is treated as missing ("400 missing end-user"), so the
+      // name always goes in. No email here (see CreateProfileInput).
       "end-user": {
         first_name: input.first_name,
         last_name: input.last_name,
-        ...(input.email ? { email: input.email } : {}),
       },
       household: { id: input.household_id },
     },
@@ -1973,7 +1974,6 @@ export async function createProfile(input: CreateProfileInput): Promise<Profile>
   if (input.date_of_birth) body.date_of_birth = input.date_of_birth;
   if (input.graduation_year !== undefined) body.graduation_year = input.graduation_year;
   if (input.gender) body.gender = input.gender;
-  if (input.email) body.email = input.email;
 
   const token = await getServiceToken();
   const res = await fetch(`${BASE_URL}/people/v1/profiles?filter[org_key]=${ORG_KEY}`, {

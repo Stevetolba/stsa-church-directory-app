@@ -270,7 +270,6 @@ export interface ApplyDeps {
     date_of_birth?: string;
     graduation_year?: number;
     gender?: string;
-    email?: string;
   }) => Promise<{ id: string }>;
   // Optional: the person's current own address, so a partly changed address
   // is merged rather than sent as a fragment.
@@ -399,7 +398,6 @@ export async function applyAcceptedChanges(requestId: string, deps?: ApplyDeps):
           date_of_birth: v("date_of_birth"),
           graduation_year: gradYear ? Number(gradYear) : undefined,
           gender: v("gender"),
-          email: v("email"),
         });
         createdId = created.id;
         await finish(core, null, createdId);
