@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { submitHouseholdUpdateAction } from "@/app/(household)/household-update/actions";
 import { inputCls, labelCls, primaryBtn } from "./ui";
 
-export function SubmitUpdate(props: { initialNote: string; alreadySubmitted: boolean; hasChanges: boolean }) {
+export function SubmitUpdate(props: { initialNote: string; alreadySubmitted: boolean; hasChanges: boolean; instant?: boolean }) {
   const router = useRouter();
   const [note, setNote] = useState(props.initialNote);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +20,9 @@ export function SubmitUpdate(props: { initialNote: string; alreadySubmitted: boo
       setError(r.error);
       return;
     }
-    router.push("/household-update?submitted=1");
+    router.push(
+      r.mode === "instant" ? `/household-update?submitted=instant&waiting=${r.waiting ?? 0}` : "/household-update?submitted=1"
+    );
     router.refresh();
   }
 
@@ -32,7 +34,7 @@ export function SubmitUpdate(props: { initialNote: string; alreadySubmitted: boo
       </div>
       {error && <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</p>}
       <button type="button" className={primaryBtn} disabled={busy || (!props.hasChanges && !note.trim())} onClick={submit}>
-        {props.alreadySubmitted ? "Update my submission" : "Send to the church office"}
+        {props.instant ? "Save my changes" : props.alreadySubmitted ? "Update my submission" : "Send to the church office"}
       </button>
     </div>
   );

@@ -35,7 +35,7 @@ export interface ReviewGroup {
   rows: ReviewRow[];
 }
 
-function liveValue(household: Household | null, c: UpdateChange): string | null {
+export function liveValue(household: Household | null, c: UpdateChange): string | null {
   if (!household || c.subjectType === "new_member") return null;
   if (c.subjectType === "household") {
     return (household.address_parts?.[c.field as "street" | "city" | "state" | "postal_code"] as string | undefined) ?? null;

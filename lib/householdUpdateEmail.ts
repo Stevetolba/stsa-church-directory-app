@@ -32,6 +32,39 @@ export function buildHouseholdSubmittedAdminEmail(p: {
   return { subject, html };
 }
 
+// Instant apply (ADR-0031): the changes are already in Subsplash. If some are
+// waiting (a new member, or a value that moved since the parent looked), the
+// admin is pointed at the request.
+export function buildHouseholdAutoAppliedAdminEmail(p: {
+  householdName: string;
+  submittedBy: string;
+  appliedCount: number;
+  waitingCount: number;
+  reviewUrl: string;
+}): { subject: string; html: string } {
+  const subject = p.waitingCount > 0
+    ? `Household update applied, ${p.waitingCount} to review: ${p.householdName}`
+    : `Household update applied: ${p.householdName}`;
+  const plural = (n: number) => `${n} change${n === 1 ? "" : "s"}`;
+  const html = shell(`
+    <p style="margin-top:0"><strong>${esc(p.submittedBy)}</strong> updated the ${esc(p.householdName)}. ${plural(p.appliedCount)} ${p.appliedCount === 1 ? "was" : "were"} saved to Subsplash automatically.</p>
+    ${p.waitingCount > 0 ? `<p>${plural(p.waitingCount)} ${p.waitingCount === 1 ? "is" : "are"} waiting for your review (a new family member, or something that changed in Subsplash in the meantime).</p>` : ""}
+    <p style="margin:24px 0"><a href="${esc(p.reviewUrl)}" style="background:#14304a;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;display:inline-block">${p.waitingCount > 0 ? "Review the rest" : "See what changed"}</a></p>`);
+  return { subject, html };
+}
+
+export function buildHouseholdAutoAppliedEmail(p: {
+  householdName: string;
+  waitingCount: number;
+}): { subject: string; html: string } {
+  const subject = `Your ${CHURCH_NAME} household update`;
+  const html = shell(`
+    <p style="margin-top:0">Thank you. Your changes have been saved to the church directory.</p>
+    ${p.waitingCount > 0 ? `<p>Some of your update (such as a new family member) needs a quick review by the church office before it is added.</p>` : ""}
+    <p style="font-size:12px;color:#6b7a88;margin-bottom:0">Household: ${esc(p.householdName)}</p>`);
+  return { subject, html };
+}
+
 export function buildHouseholdReviewedEmail(p: {
   householdName: string;
   outcome: "applied" | "partially_applied" | "rejected";

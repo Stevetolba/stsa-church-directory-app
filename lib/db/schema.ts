@@ -453,6 +453,15 @@ export const customFieldMetaCache = pgTable("custom_field_meta_cache", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Small admin-controlled switches (lib/appSettings.ts). Values are JSON so a
+// setting can be a flag today and richer later.
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedByEmail: text("updated_by_email"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type TrainingCourseRow = typeof trainingCourses.$inferSelect;
 export type NewTrainingCourseRow = typeof trainingCourses.$inferInsert;
 export type TrainingLessonRow = typeof trainingLessons.$inferSelect;

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { listChanges, listRequests, type RequestStatus } from "@/lib/householdUpdates";
+import { getHouseholdAutoApply } from "@/lib/appSettings";
+import { AutoApplySwitch } from "@/components/household/AutoApplySwitch";
+import { AUTO_REVIEWER, listChanges, listRequests, type RequestStatus } from "@/lib/householdUpdates";
 
 const STATUS_LABEL: Record<RequestStatus, string> = {
   draft: "Draft",
@@ -18,14 +20,15 @@ const FILTERS: Array<{ value: RequestStatus | "all"; label: string }> = [
   { value: "all", label: "All" },
 ];
 
-// Admin-only. Households only propose changes; nothing reaches Subsplash until
-// an admin accepts it from the detail page.
+// Admin-only. Unless instant apply is on (ADR-0031), nothing reaches Subsplash
+// until an admin accepts it from the detail page.
 export default async function HouseholdUpdatesPage({ searchParams }: { searchParams: { status?: string } }) {
   const session = await auth();
   if (session?.user?.role !== "admin") redirect("/");
 
   const filter = (FILTERS.find((f) => f.value === searchParams.status)?.value ?? "pending") as RequestStatus | "all";
   const requests = await listRequests(filter === "all" ? {} : { status: filter });
+  const autoApply = await getHouseholdAutoApply();
   const counts = new Map<string, number>();
   for (const r of requests) counts.set(r.id, (await listChanges(r.id)).length);
 
@@ -35,6 +38,7 @@ export default async function HouseholdUpdatesPage({ searchParams }: { searchPar
       <p className="text-sm text-muted-foreground">
         Families propose changes to their own information. Review each one and choose what to apply to Subsplash.
       </p>
+      <AutoApplySwitch initial={autoApply} />
       <nav className="flex flex-wrap gap-2" aria-label="Filter by status">
         {FILTERS.map((f) => (
           <Link
@@ -71,7 +75,7 @@ export default async function HouseholdUpdatesPage({ searchParams }: { searchPar
                   </td>
                   <td className="px-4 py-2">{r.submittedByEmail}</td>
                   <td className="px-4 py-2">{counts.get(r.id)}</td>
-                  <td className="px-4 py-2">{STATUS_LABEL[r.status]}</td>
+                  <td className="px-4 py-2">{r.status === "applied" && r.reviewedByEmail === AUTO_REVIEWER ? "Applied automatically" : STATUS_LABEL[r.status]}</td>
                   <td className="px-4 py-2">{r.submittedAt ? r.submittedAt.toLocaleString("en-US", { timeZone: "America/New_York" }) : "—"}</td>
                 </tr>
               ))}

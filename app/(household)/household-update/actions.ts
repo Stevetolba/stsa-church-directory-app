@@ -17,13 +17,18 @@ import {
   buildProfileChanges,
   type NewMemberRole,
 } from "@/lib/householdUpdateLogic";
-import { getOrCreateOpenRequest, getOpenRequest, listChanges, replaceSubjectChanges, submitRequest } from "@/lib/householdUpdates";
+import { autoApplySubmittedRequest, getOrCreateOpenRequest, getOpenRequest, listChanges, replaceSubjectChanges, submitRequest } from "@/lib/householdUpdates";
 import { getLiveMember } from "@/lib/householdPortal";
 import { getHousehold } from "@/lib/subsplash";
 import { householdMemberType } from "@/lib/household";
 import { CHURCH_NAME } from "@/lib/trainingEmail";
 import { sendEmail } from "@/lib/email";
-import { buildHouseholdSubmittedAdminEmail } from "@/lib/householdUpdateEmail";
+import {
+  buildHouseholdAutoAppliedAdminEmail,
+  buildHouseholdAutoAppliedEmail,
+  buildHouseholdSubmittedAdminEmail,
+} from "@/lib/householdUpdateEmail";
+import { getHouseholdAutoApply } from "@/lib/appSettings";
 
 // ----------------------------------------------------------------- sign-in
 
@@ -184,7 +189,9 @@ export async function discardChangesAction(subject: { type: "profile" | "househo
   await replaceSubjectChanges(request.id, { type: subject.type, id, label: "" }, []);
 }
 
-export async function submitHouseholdUpdateAction(note: string): Promise<{ error?: string }> {
+export type SubmitResult = { error?: string; mode?: "instant" | "review"; waiting?: number };
+
+export async function submitHouseholdUpdateAction(note: string): Promise<SubmitResult> {
   const s = needSession();
   const request = await getOpenRequest(s.householdId);
   if (!request) return { error: "There's nothing to submit yet." };
@@ -194,6 +201,43 @@ export async function submitHouseholdUpdateAction(note: string): Promise<{ error
     return { error: e instanceof Error ? e.message : "Could not submit." };
   }
   await recordAccessEvent({ email: s.email, name: s.name, role: "household", eventType: "household_update_submit", resource: "submitted" });
+
+  // ADR-0031: when the admin switch is on, write straight to Subsplash. Any
+  // failure leaves the request pending for an admin; it never fails the submit.
+  let instant: { applied: number; waiting: number } | null = null;
+  try {
+    if (await getHouseholdAutoApply()) {
+      const r = await autoApplySubmittedRequest(request.id);
+      instant = { applied: r.applied, waiting: r.waiting };
+      await recordAccessEvent({ email: s.email, name: s.name, role: "household", eventType: "household_update_apply", resource: `auto:${r.applied}/${r.waiting}` });
+    }
+  } catch (err) {
+    console.error("Household instant apply failed", err);
+  }
+
+  if (instant) {
+    try {
+      const h = headers();
+      const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+      const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+      const householdName = request.householdName ?? "Your household";
+      const mine = buildHouseholdAutoAppliedEmail({ householdName, waitingCount: instant.waiting });
+      await sendEmail({ to: s.email, fromName: CHURCH_NAME, subject: mine.subject, html: mine.html });
+      const admins = (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim()).filter(Boolean);
+      const adminMail = buildHouseholdAutoAppliedAdminEmail({
+        householdName,
+        submittedBy: s.name,
+        appliedCount: instant.applied,
+        waitingCount: instant.waiting,
+        reviewUrl: `${proto}://${host}/settings/household-updates/${request.id}`,
+      });
+      for (const to of admins) await sendEmail({ to, fromName: CHURCH_NAME, subject: adminMail.subject, html: adminMail.html });
+    } catch (err) {
+      console.error("Household instant-apply emails failed", err);
+    }
+    return { mode: "instant", waiting: instant.waiting };
+  }
+
   // Notify the admins; a failure here must not undo a successful submission.
   try {
     const admins = (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim()).filter(Boolean);
@@ -214,5 +258,5 @@ export async function submitHouseholdUpdateAction(note: string): Promise<{ error
   } catch (err) {
     console.error("Household update admin notification failed", err);
   }
-  return {};
+  return { mode: "review" };
 }

@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { requireHouseholdPage } from "@/lib/householdPageGuard";
 import { loadPortal } from "@/lib/householdPortal";
+import { getHouseholdAutoApply } from "@/lib/appSettings";
 import { RemoveNewMember } from "@/components/household/RemoveNewMember";
 import { cardCls, primaryBtn, secondaryBtn } from "@/components/household/ui";
 
-export default async function HouseholdOverviewPage({ searchParams }: { searchParams: { submitted?: string } }) {
+export default async function HouseholdOverviewPage({ searchParams }: { searchParams: { submitted?: string; waiting?: string } }) {
   const session = await requireHouseholdPage("household-overview");
   const view = await loadPortal(session.householdId);
 
@@ -14,6 +15,8 @@ export default async function HouseholdOverviewPage({ searchParams }: { searchPa
 
   const { household, members, newMembers, address, request, changes } = view;
   const pending = request?.status === "pending";
+  const instant = await getHouseholdAutoApply();
+  const waiting = Number(searchParams.waiting ?? 0);
   const addressLine = [address.street, [address.city, address.state].filter(Boolean).join(", "), address.postal_code].filter(Boolean).join(" · ");
 
   return (
@@ -21,18 +24,28 @@ export default async function HouseholdOverviewPage({ searchParams }: { searchPa
       <div>
         <h1 className="font-heading text-2xl font-semibold text-brand-navy">{household.name}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Check each person and your address. Tap anything that needs fixing. Nothing changes in the church directory until the church office reviews it.
+          {instant
+            ? "Check each person and your household address. Tap anything that needs fixing. Your changes are saved to the church directory when you send them. A new family member is added after the church office reviews it."
+            : "Check each person and your household address. Tap anything that needs fixing. Nothing changes in the church directory until the church office reviews it."}
         </p>
       </div>
 
-      {searchParams.submitted && (
+      {searchParams.submitted === "instant" && (
+        <p className="rounded-lg bg-brand-cream px-4 py-3 text-sm text-brand-navy">
+          Thank you! Your changes were saved to the church directory.
+          {waiting > 0 && " The rest, such as a new family member, is waiting for the church office to review."}
+        </p>
+      )}
+      {searchParams.submitted && searchParams.submitted !== "instant" && (
         <p className="rounded-lg bg-brand-cream px-4 py-3 text-sm text-brand-navy">
           Thank you! Your update was sent to the church office. You can keep editing and send it again until it&apos;s reviewed.
         </p>
       )}
       {pending && !searchParams.submitted && (
         <p className="rounded-lg bg-brand-cream px-4 py-3 text-sm text-brand-navy">
-          Your last update is waiting for review. If you change anything below, send it again from the review page.
+          {instant
+            ? "Part of your last update is waiting for the church office to review. Anything else you change is saved when you send it."
+            : "Your last update is waiting for review. If you change anything below, send it again from the review page."}
         </p>
       )}
 
@@ -70,8 +83,8 @@ export default async function HouseholdOverviewPage({ searchParams }: { searchPa
         <Link href="/household-update/member/new" className={secondaryBtn}>+ Add a family member</Link>
       </section>
 
-      <section className="space-y-3" aria-label="Address">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Address</h2>
+      <section className="space-y-3" aria-label="Household address">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Household address</h2>
         <Link href="/household-update/address" className={`${cardCls} flex items-center justify-between hover:bg-brand-cream`}>
           <div className="text-brand-navy">{addressLine || "No address on file — tap to add"}</div>
           {address.hasPendingChanges && <span className="rounded-full bg-brand-cream px-2 py-1 text-xs font-medium text-brand-navy">Edited</span>}

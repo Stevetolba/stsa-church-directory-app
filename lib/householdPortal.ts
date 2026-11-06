@@ -101,7 +101,9 @@ export async function loadPortal(householdId: string): Promise<PortalView | null
   const household = await getHousehold(householdId);
   if (!household) return null;
   const request = await getOpenRequest(householdId);
-  const changes = request ? await listChanges(request.id) : [];
+  // Rows already written to Subsplash (instant apply, ADR-0031) are history;
+  // the live values already include them.
+  const changes = request ? (await listChanges(request.id)).filter((c) => !c.appliedAt) : [];
 
   const members: MemberView[] = (household.members ?? [])
     .map((m): MemberView => {

@@ -4,13 +4,17 @@ import { requireHouseholdPage } from "@/lib/householdPageGuard";
 import { loadPortal } from "@/lib/householdPortal";
 import { FIELD_LABELS, displayValue } from "@/lib/householdUpdateLogic";
 import { SubmitUpdate } from "@/components/household/SubmitUpdate";
+import { getHouseholdAutoApply } from "@/lib/appSettings";
 import { cardCls } from "@/components/household/ui";
 
 export default async function ReviewPage() {
   const session = await requireHouseholdPage("household-review");
   const view = await loadPortal(session.householdId);
   if (!view) notFound();
-  const { changes, request } = view;
+  const { request } = view;
+  const instant = await getHouseholdAutoApply();
+  // Rows already written to Subsplash are history, not something still to send.
+  const changes = view.changes.filter((c) => !c.appliedAt);
 
   // Group by person / address / new member, in the order they were saved.
   const groups = new Map<string, { label: string; kind: string; items: typeof changes }>();
@@ -49,7 +53,7 @@ export default async function ReviewPage() {
         </div>
       )}
 
-      <SubmitUpdate initialNote={request?.note ?? ""} alreadySubmitted={request?.status === "pending"} hasChanges={changes.length > 0} />
+      <SubmitUpdate initialNote={request?.note ?? ""} alreadySubmitted={request?.status === "pending"} hasChanges={changes.length > 0} instant={instant} />
     </div>
   );
 }

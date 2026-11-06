@@ -5,7 +5,7 @@
 // is set, otherwise an in-memory globalThis store so dev and tests need no
 // setup.
 
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { getDb, isDbConfigured } from "./db";
 import {
   householdUpdateChanges,
@@ -14,7 +14,9 @@ import {
   type HouseholdUpdateRequestRow,
 } from "./db/schema";
 import type { ChangeField, ProposedChange, SubjectType } from "./householdUpdateLogic";
-import { ADDRESS_FIELDS, EXTRA_MEMBER_FIELDS, HOME_ADDRESS_FIELDS, type HomeAddressField } from "./householdUpdateLogic";
+import { ADDRESS_FIELDS, EXTRA_MEMBER_FIELDS, HOME_ADDRESS_FIELDS, hasDrifted, type HomeAddressField } from "./householdUpdateLogic";
+import { liveValue } from "./householdUpdateReview";
+import type { Household } from "@/types/household";
 
 export type RequestStatus = "draft" | "pending" | "applied" | "partially_applied" | "rejected";
 export type Decision = "pending" | "accepted" | "rejected";
@@ -164,13 +166,17 @@ export async function replaceSubjectChanges(requestId: string, subject: Subject,
   const t = now();
   if (isDbConfigured()) {
     const db = getDb();
+    // Rows already written to Subsplash (instant apply, ADR-0031) are kept as
+    // the record of what happened, unless the same field is proposed again.
+    const refields = changes.map((c) => c.field);
     await db
       .delete(householdUpdateChanges)
       .where(
         and(
           eq(householdUpdateChanges.requestId, requestId),
           eq(householdUpdateChanges.subjectType, subject.type),
-          eq(householdUpdateChanges.subjectId, subject.id)
+          eq(householdUpdateChanges.subjectId, subject.id),
+          or(isNull(householdUpdateChanges.appliedAt), inArray(householdUpdateChanges.field, refields.length ? refields : [""]))
         )
       );
     if (changes.length > 0) {
@@ -188,8 +194,15 @@ export async function replaceSubjectChanges(requestId: string, subject: Subject,
     }
   } else {
     const store = mem();
+    const refields = new Set<string>(changes.map((c) => c.field));
     store.changes = store.changes.filter(
-      (c) => !(c.requestId === requestId && c.subjectType === subject.type && c.subjectId === subject.id)
+      (c) =>
+        !(
+          c.requestId === requestId &&
+          c.subjectType === subject.type &&
+          c.subjectId === subject.id &&
+          (!c.appliedAt || refields.has(c.field))
+        )
     );
     for (const c of changes) {
       store.changes.push({
@@ -262,6 +275,9 @@ export interface ApplyDeps {
   // Optional: the person's current own address, so a partly changed address
   // is merged rather than sent as a fragment.
   getProfileAddress?: (id: string) => Promise<Record<string, string | undefined> | undefined>;
+  // Optional: the household as Subsplash has it now, used by instant apply to
+  // spot values that changed since the parent opened the form.
+  getHousehold?: (id: string) => Promise<Household | null>;
 }
 
 function splitProfileWrites(cs: UpdateChange[]): UpdateChange[][] {
@@ -303,6 +319,7 @@ async function defaultDeps(): Promise<ApplyDeps> {
       const p = await sub.getProfile(id);
       return p?.address_parts as Record<string, string | undefined> | undefined;
     },
+    getHousehold: (id) => sub.getHousehold(id),
   };
 }
 
@@ -413,8 +430,11 @@ export async function finalizeRequest(requestId: string, reviewerEmail?: string)
   const accepted = changes.filter((c) => c.decision === "accepted");
   const failed = accepted.filter((c) => !c.appliedAt);
   const rejected = changes.filter((c) => c.decision === "rejected");
+  // Rows nobody has decided yet (new members or held-back rows from instant
+  // apply) keep the request open for an admin.
+  const undecided = changes.filter((c) => c.decision === "pending");
   let status: RequestStatus;
-  if (failed.length > 0) status = "pending";
+  if (failed.length > 0 || undecided.length > 0) status = "pending";
   else if (accepted.length === 0) status = "rejected";
   else if (rejected.length > 0) status = "partially_applied";
   else status = "applied";
@@ -424,6 +444,44 @@ export async function finalizeRequest(requestId: string, reviewerEmail?: string)
     ...(reviewerEmail ? { reviewedByEmail: reviewerEmail } : {}),
   });
   return status;
+}
+
+export const AUTO_REVIEWER = "auto";
+
+export interface AutoApplyResult {
+  status: RequestStatus;
+  applied: number;
+  // Rows left for an admin: new members, rows whose live value moved since the
+  // parent opened the form, and rows whose write failed.
+  waiting: number;
+}
+
+// ADR-0031. Writes a just-submitted request's changes to existing people and
+// the household address straight to Subsplash. New members, and any row whose
+// live value no longer matches what the parent saw, are left for an admin.
+export async function autoApplySubmittedRequest(requestId: string, deps?: ApplyDeps): Promise<AutoApplyResult> {
+  const request = await getRequest(requestId);
+  if (!request || request.status !== "pending") throw new Error("Only a pending request can be applied.");
+  const d = deps ?? (await defaultDeps());
+  const household = d.getHousehold ? await d.getHousehold(request.householdId).catch(() => null) : null;
+
+  for (const c of await listChanges(requestId)) {
+    if (c.appliedAt || c.decision !== "pending") continue;
+    if (c.subjectType === "new_member") continue;
+    // Without a live household we can't tell whether the value moved, so hold.
+    if (!household || hasDrifted(c.oldValue, liveValue(household, c))) continue;
+    await patchChange(c.id, { decision: "accepted", applyError: null });
+  }
+  await patchRequest(requestId, { reviewedByEmail: AUTO_REVIEWER });
+  await applyAcceptedChanges(requestId, d);
+  const status = await finalizeRequest(requestId, AUTO_REVIEWER);
+
+  const after = await listChanges(requestId);
+  return {
+    status,
+    applied: after.filter((c) => c.appliedAt).length,
+    waiting: after.filter((c) => !c.appliedAt).length,
+  };
 }
 
 // Admin accepts the ticked changes (everything else is rejected) and they are

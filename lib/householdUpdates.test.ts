@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyAcceptedChanges,
+  autoApplySubmittedRequest,
   getOpenRequest,
   getOrCreateOpenRequest,
   getRequest,
@@ -282,5 +283,101 @@ describe("new members", () => {
     await applyAcceptedChanges(req.id, ok);
     await applyAcceptedChanges(req.id, ok).catch(() => {}); // already finished
     expect(ok.createProfile).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("instant apply (ADR-0031)", () => {
+  const live = {
+    id: "h1",
+    name: "Lee Family",
+    address_parts: { street: "1 Main St" },
+    members: [{ id: "kid1", first_name: "Sam", last_name: "Lee", graduation_year: 2031 }],
+  } as never;
+  const withLive = (household: unknown = live, over: Partial<ApplyDeps> = {}) =>
+    deps({ getHousehold: vi.fn(async () => household as never), ...over });
+
+  it("writes people and address rows and ends applied, closing the request", async () => {
+    const req = await seed();
+    const d = withLive();
+    const r = await autoApplySubmittedRequest(req.id, d);
+    expect(r).toMatchObject({ status: "applied", waiting: 0 });
+    expect(d.updateProfile).toHaveBeenCalledWith("kid1", expect.objectContaining({ first_name: "Samuel" }));
+    expect(d.updateHousehold).toHaveBeenCalledWith("h1", { street: "2 Oak Ave" });
+    expect((await getRequest(req.id))?.reviewedByEmail).toBe("auto");
+    expect(await getOpenRequest("h1")).toBeNull();
+  });
+
+  it("leaves a new member for an admin and does not create them", async () => {
+    const req = await getOrCreateOpenRequest(who);
+    await replaceSubjectChanges(req.id, { type: "profile", id: "kid1", label: "Sam" }, [
+      { field: "first_name", oldValue: "Sam", newValue: "Samuel" },
+    ]);
+    await replaceSubjectChanges(req.id, { type: "new_member", id: "new-1", label: "Eve Lee" }, [
+      { field: "first_name", oldValue: null, newValue: "Eve" },
+      { field: "last_name", oldValue: null, newValue: "Lee" },
+      { field: "household_role", oldValue: null, newValue: "child" },
+    ]);
+    await submitRequest(req.id, null);
+    const d = withLive();
+    const r = await autoApplySubmittedRequest(req.id, d);
+    expect(r).toMatchObject({ status: "pending", applied: 1, waiting: 3 });
+    expect(d.createProfile).not.toHaveBeenCalled();
+    expect((await getOpenRequest("h1"))?.id).toBe(req.id);
+  });
+
+  it("holds a row whose live value moved since the parent saw it", async () => {
+    const req = await seed();
+    const moved = { ...(live as object), members: [{ id: "kid1", first_name: "Sammy", last_name: "Lee", graduation_year: 2031 }] };
+    const d = withLive(moved);
+    const r = await autoApplySubmittedRequest(req.id, d);
+    // first_name drifted (Sam -> Sammy); grade and address still apply.
+    expect(r.status).toBe("pending");
+    expect(r.waiting).toBe(1);
+    expect(d.updateProfile).toHaveBeenCalledWith("kid1", { graduation_year: 2033 });
+  });
+
+  it("holds everything when the live household can't be read", async () => {
+    const req = await seed();
+    const d = withLive(null);
+    const r = await autoApplySubmittedRequest(req.id, d);
+    expect(r).toMatchObject({ status: "pending", applied: 0 });
+    expect(d.updateProfile).not.toHaveBeenCalled();
+  });
+
+  it("keeps a failed write pending so an admin can retry it", async () => {
+    const req = await seed();
+    const d = withLive(live, { updateHousehold: vi.fn(async () => { throw new Error("boom"); }) });
+    const r = await autoApplySubmittedRequest(req.id, d);
+    expect(r.status).toBe("pending");
+    const failed = (await listChanges(req.id)).filter((c) => c.applyError);
+    expect(failed).toHaveLength(1);
+    const retry = await reviewRequest(req.id, (await listChanges(req.id)).map((c) => c.id), "admin@x.org", deps());
+    expect(retry).toBe("applied");
+  });
+
+  it("starts a fresh request for the next edit after an applied one", async () => {
+    const req = await seed();
+    await autoApplySubmittedRequest(req.id, withLive());
+    const next = await getOrCreateOpenRequest(who);
+    expect(next.id).not.toBe(req.id);
+  });
+
+  it("keeps already-applied rows when the parent edits again while the request is open", async () => {
+    const req = await getOrCreateOpenRequest(who);
+    await replaceSubjectChanges(req.id, { type: "profile", id: "kid1", label: "Sam" }, [
+      { field: "first_name", oldValue: "Sam", newValue: "Samuel" },
+    ]);
+    await replaceSubjectChanges(req.id, { type: "new_member", id: "new-1", label: "Eve" }, [
+      { field: "first_name", oldValue: null, newValue: "Eve" },
+      { field: "last_name", oldValue: null, newValue: "Lee" },
+      { field: "household_role", oldValue: null, newValue: "child" },
+    ]);
+    await submitRequest(req.id, null);
+    await autoApplySubmittedRequest(req.id, withLive());
+    await replaceSubjectChanges(req.id, { type: "profile", id: "kid1", label: "Sam" }, [
+      { field: "last_name", oldValue: "Lee", newValue: "Leigh" },
+    ]);
+    const fields = (await listChanges(req.id)).filter((c) => c.subjectId === "kid1").map((c) => c.field).sort();
+    expect(fields).toEqual(["first_name", "last_name"]);
   });
 });
