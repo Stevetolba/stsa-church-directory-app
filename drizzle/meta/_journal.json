@@ -99,6 +99,13 @@
       "when": 1793825810129,
       "tag": "0013_household_updates",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793984193358,
+      "tag": "0014_app_settings",
+      "breakpoints": true
     }
   ]
 }

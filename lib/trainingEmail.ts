@@ -102,7 +102,7 @@ export function buildHouseholdLoginCodeEmail(params: { code: string; minutesVali
   <div style="border:1px solid #e5dcc8;border-top:0;padding:24px;border-radius:0 0 10px 10px">
     <p style="margin-top:0">Enter this code to review and update your household's information:</p>
     <p style="font-size:32px;font-weight:700;letter-spacing:6px;margin:16px 0">${escapeHtml(code)}</p>
-    <p style="font-size:14px">It works once and expires in ${minutesValid} minutes. Nothing changes in our directory until a church admin reviews your update. If you didn't ask for this code, you can ignore this message.</p>
+    <p style="font-size:14px">It works once and expires in ${minutesValid} minutes. The church office may review some changes before they are added to our directory. If you didn't ask for this code, you can ignore this message.</p>
   </div>
 </div>`.trim();
   return { subject, html };
