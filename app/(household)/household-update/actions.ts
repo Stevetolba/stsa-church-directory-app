@@ -63,6 +63,8 @@ export async function signOutHouseholdAction(): Promise<void> {
 // Optional extras a parent may add for anyone (children also get notes).
 type ContactInput = {
   phone_number?: string;
+  gender?: string;
+  email?: string;
   home_street?: string;
   home_city?: string;
   home_state?: string;

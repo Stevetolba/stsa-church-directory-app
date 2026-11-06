@@ -6,7 +6,7 @@ import { getHousehold } from "./subsplash";
 import { householdMemberType } from "./household";
 import { getOpenRequest, listChanges, type UpdateChange, type UpdateRequest } from "./householdUpdates";
 import { gradeLabelForValue, gradeValueForGraduationYear } from "./grades";
-import { formatUsPhone, HOME_ADDRESS_FIELDS, type HomeAddressField } from "./householdUpdateLogic";
+import { formatUsPhone, normGender, HOME_ADDRESS_FIELDS, type HomeAddressField } from "./householdUpdateLogic";
 import type { Profile } from "@/types/profile";
 import type { Household } from "@/types/household";
 
@@ -21,6 +21,8 @@ export interface MemberView {
   gradeLabel: string | null;
   hasPendingChanges: boolean;
   phone_number: string;
+  gender: string;
+  email: string;
   home_street: string;
   home_city: string;
   home_state: string;
@@ -38,6 +40,8 @@ export interface NewMemberView {
   gradeValue: number | null;
   gradeLabel: string | null;
   phone_number: string;
+  gender: string;
+  email: string;
   home_street: string;
   home_city: string;
   home_state: string;
@@ -114,6 +118,9 @@ export async function loadPortal(householdId: string): Promise<PortalView | null
         gradeLabel: gradeLabelForValue(gradeValue ?? undefined) ?? null,
         hasPendingChanges: changes.some((c) => c.subjectType === "profile" && c.subjectId === m.id),
         phone_number: formatUsPhone(overlay(changes, "profile", m.id, "phone_number", m.phone_number ?? "")),
+        gender: overlay(changes, "profile", m.id, "gender", normGender(m.gender) ?? ""),
+        // A child's own email only; an adult's email is their sign-in.
+        email: isChild ? overlay(changes, "profile", m.id, "email", m.email ?? "") : "",
         ...homeAddress(changes, "profile", m.id, m.address_parts),
         allergy_notes: overlay(changes, "profile", m.id, "allergy_notes", m.allergy_notes ?? ""),
         care_notes: overlay(changes, "profile", m.id, "care_notes", m.care_notes ?? ""),
@@ -135,6 +142,8 @@ export async function loadPortal(householdId: string): Promise<PortalView | null
       gradeValue,
       gradeLabel: gradeLabelForValue(gradeValue ?? undefined) ?? null,
       phone_number: formatUsPhone(overlay(changes, "new_member", key, "phone_number", "")),
+      gender: overlay(changes, "new_member", key, "gender", ""),
+      email: overlay(changes, "new_member", key, "email", ""),
       ...homeAddress(changes, "new_member", key, undefined),
       allergy_notes: overlay(changes, "new_member", key, "allergy_notes", ""),
       care_notes: overlay(changes, "new_member", key, "care_notes", ""),

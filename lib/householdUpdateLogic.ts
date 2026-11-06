@@ -12,6 +12,8 @@ export type ProfileField =
   | "date_of_birth"
   | "graduation_year"
   | "phone_number"
+  | "gender"
+  | "email"
   | HomeAddressField
   | "allergy_notes"
   | "care_notes";
@@ -26,6 +28,8 @@ export const PROFILE_FIELDS: ProfileField[] = [
   "date_of_birth",
   "graduation_year",
   "phone_number",
+  "gender",
+  "email",
   "home_street",
   "home_city",
   "home_state",
@@ -60,6 +64,8 @@ export const FIELD_LABELS: Record<ChangeField, string> = {
   date_of_birth: "Date of birth",
   graduation_year: "Grade",
   phone_number: "Phone number",
+  gender: "Gender",
+  email: "Email",
   home_street: "Home street",
   home_city: "Home city",
   home_state: "Home state",
@@ -92,6 +98,21 @@ const normNote = (v: string | null | undefined): string | null => {
 
 const NOTE_MAX = 1000;
 
+// Subsplash normalizes gender to "male" / "female"; anything else is rejected
+// and blank means "not given".
+export const GENDER_VALUES = ["male", "female"] as const;
+export function normGender(v: string | null | undefined): string | null {
+  const t = (v ?? "").trim().toLowerCase();
+  if (t === "m") return "male";
+  if (t === "f") return "female";
+  return t === "" ? null : t;
+}
+const normEmail = (v: string | null | undefined): string | null => {
+  const t = (v ?? "").trim().toLowerCase();
+  return t === "" ? null : t;
+};
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // US numbers are stored as 10 digits (a leading 1 is dropped). Anything else
 // is kept as typed digits so it still compares equal to itself.
 export function normPhone(v: string | null | undefined): string | null {
@@ -115,6 +136,9 @@ export interface HomeAddressInput {
 
 export interface OptionalContactInput extends HomeAddressInput {
   phone_number?: string | null;
+  gender?: string | null;
+  // Children only: an adult's email is how they sign in, so it isn't editable.
+  email?: string | null;
   allergy_notes?: string | null;
   care_notes?: string | null;
 }
@@ -129,6 +153,11 @@ function checkOptionalContact(
 ) {
   const phone = normPhone(input.phone_number);
   if (phone && phone.length !== 10) errors.phone_number = "Enter a 10-digit phone number.";
+
+  const gender = normGender(input.gender);
+  if (gender && !(GENDER_VALUES as readonly string[]).includes(gender)) errors.gender = "Choose male or female.";
+  const email = opts.allowNotes ? normEmail(input.email) : null;
+  if (email && (email.length > 200 || !EMAIL_RE.test(email))) errors.email = "Enter a valid email address.";
 
   const addr: Record<HomeAddressField, string | null> = {
     home_street: norm(input.home_street),
@@ -154,7 +183,7 @@ function checkOptionalContact(
   if (allergy && allergy.length > NOTE_MAX) errors.allergy_notes = `Keep this under ${NOTE_MAX} characters.`;
   if (care && care.length > NOTE_MAX) errors.care_notes = `Keep this under ${NOTE_MAX} characters.`;
 
-  return { phone, addr, allergy, care };
+  return { phone, gender, email, addr, allergy, care };
 }
 
 export function isValidIsoDate(value: string, today: Date = new Date()): boolean {
@@ -185,6 +214,8 @@ export interface ProfileCurrent {
   graduation_year?: number | null;
   academic_grade_value?: number | null;
   phone_number?: string | null;
+  gender?: string | null;
+  email?: string | null;
   address_parts?: Partial<Record<AddressField, string | null | undefined>> | null;
   allergy_notes?: string | null;
   care_notes?: string | null;
@@ -235,6 +266,8 @@ export function buildProfileChanges(
   }
   // Optional extras: blank means "none", so a parent may also clear them.
   push("phone_number", normPhone(current.phone_number), contact.phone);
+  push("gender", normGender(current.gender), contact.gender);
+  if (opts.isChild) push("email", normEmail(current.email), contact.email);
   for (const [field, part] of Object.entries(HOME_ADDRESS_FIELDS) as [HomeAddressField, AddressField][]) {
     push(field, norm(current.address_parts?.[part]), contact.addr[field]);
   }
@@ -314,6 +347,8 @@ export function buildNewMemberChanges(input: NewMemberInput, now: Date = new Dat
   if (dob) changes.push({ field: "date_of_birth", oldValue: null, newValue: dob });
   if (gradYear !== undefined) changes.push({ field: "graduation_year", oldValue: null, newValue: String(gradYear) });
   if (contact.phone) changes.push({ field: "phone_number", oldValue: null, newValue: contact.phone });
+  if (contact.gender) changes.push({ field: "gender", oldValue: null, newValue: contact.gender });
+  if (contact.email) changes.push({ field: "email", oldValue: null, newValue: contact.email });
   for (const field of Object.keys(HOME_ADDRESS_FIELDS) as HomeAddressField[]) {
     if (contact.addr[field]) changes.push({ field, oldValue: null, newValue: contact.addr[field] });
   }
@@ -339,6 +374,7 @@ export function displayValue(field: ChangeField, value: string | null, now: Date
   }
   if (field === "household_role") return value.charAt(0).toUpperCase() + value.slice(1);
   if (field === "phone_number") return formatUsPhone(value) || "—";
+  if (field === "gender") return value.charAt(0).toUpperCase() + value.slice(1);
   return value;
 }
 

@@ -19,6 +19,8 @@ export interface MemberFormProps {
     gradeValue: number | null;
     role?: string;
     phone_number: string;
+    gender: string;
+    email: string;
     home_street: string;
     home_city: string;
     home_state: string;
@@ -36,6 +38,8 @@ export function MemberForm(props: MemberFormProps) {
   const [dob, setDob] = useState(props.initial.date_of_birth);
   const [grade, setGrade] = useState<string>(props.initial.gradeValue ? String(props.initial.gradeValue) : "");
   const [phone, setPhone] = useState(props.initial.phone_number);
+  const [gender, setGender] = useState(props.initial.gender);
+  const [email, setEmail] = useState(props.initial.email);
   const [street, setStreet] = useState(props.initial.home_street);
   const [city, setCity] = useState(props.initial.home_city);
   const [state, setState] = useState(props.initial.home_state);
@@ -59,6 +63,9 @@ export function MemberForm(props: MemberFormProps) {
       date_of_birth: dob,
       grade_value: isChild && grade ? Number(grade) : null,
       phone_number: phone,
+      gender,
+      // A child's own email only; the server ignores it for adults.
+      email: isChild ? email : "",
       home_street: street,
       home_city: city,
       home_state: state,
@@ -121,6 +128,24 @@ export function MemberForm(props: MemberFormProps) {
         <input id="dob" type="date" className={inputCls} value={dob} onChange={(e) => setDob(e.target.value)} />
         {errors.date_of_birth && <p className={errorCls}>{errors.date_of_birth}</p>}
       </div>
+
+      <div>
+        <label className={labelCls} htmlFor="gender">Gender <span className="font-normal text-muted-foreground">(optional)</span></label>
+        <select id="gender" className={inputCls} value={gender} onChange={(e) => setGender(e.target.value)}>
+          <option value="">Prefer not to say</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+        </select>
+        {errors.gender && <p className={errorCls}>{errors.gender}</p>}
+      </div>
+
+      {isChild && (
+        <div>
+          <label className={labelCls} htmlFor="email">Email <span className="font-normal text-muted-foreground">(optional)</span></label>
+          <input id="email" type="email" inputMode="email" className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" placeholder="child@example.com" />
+          {errors.email && <p className={errorCls}>{errors.email}</p>}
+        </div>
+      )}
 
       <div>
         <label className={labelCls} htmlFor="phone">Phone number <span className="font-normal text-muted-foreground">(optional)</span></label>

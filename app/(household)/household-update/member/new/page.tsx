@@ -28,6 +28,8 @@ export default async function NewMemberPage({ searchParams }: { searchParams: { 
           gradeValue: existing?.gradeValue ?? null,
           role: existing?.role ?? "child",
           phone_number: existing?.phone_number ?? "",
+          gender: existing?.gender ?? "",
+          email: existing?.email ?? "",
           home_street: existing?.home_street ?? "",
           home_city: existing?.home_city ?? "",
           home_state: existing?.home_state ?? "",
