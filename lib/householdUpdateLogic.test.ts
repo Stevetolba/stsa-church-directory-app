@@ -197,3 +197,44 @@ describe("optional phone, home address and notes", () => {
     expect(displayValue("phone_number", "5551112222")).toBe("(555) 111-2222");
   });
 });
+
+describe("gender and a child's email", () => {
+  const base = { first_name: "Ann", last_name: "Lee" };
+
+  it("proposes a gender for an adult and normalizes the case", () => {
+    const r = buildProfileChanges(base, { ...base, gender: "Female" }, { isChild: false, now: NOV_2026 });
+    expect(r.changes).toEqual([{ field: "gender", oldValue: null, newValue: "female" }]);
+  });
+
+  it("treats Subsplash's single-letter gender as unchanged", () => {
+    const r = buildProfileChanges({ ...base, gender: "M" }, { ...base, gender: "male" }, { isChild: false, now: NOV_2026 });
+    expect(r.changes).toEqual([]);
+  });
+
+  it("rejects an unknown gender and allows clearing it", () => {
+    expect(buildProfileChanges(base, { ...base, gender: "x" }, { isChild: false }).errors.gender).toBeTruthy();
+    const cleared = buildProfileChanges({ ...base, gender: "male" }, { ...base, gender: "" }, { isChild: false });
+    expect(cleared.changes).toEqual([{ field: "gender", oldValue: "male", newValue: null }]);
+  });
+
+  it("lets a child's email be set, lower-cased and validated", () => {
+    const r = buildProfileChanges(base, { ...base, email: " Kid@Example.COM " }, { isChild: true, now: NOV_2026 });
+    expect(r.changes).toEqual([{ field: "email", oldValue: null, newValue: "kid@example.com" }]);
+    expect(buildProfileChanges(base, { ...base, email: "nope" }, { isChild: true }).errors.email).toBeTruthy();
+  });
+
+  it("ignores an adult's email, since it is their sign-in", () => {
+    const r = buildProfileChanges({ ...base, email: "a@x.org" }, { ...base, email: "other@x.org" }, { isChild: false, now: NOV_2026 });
+    expect(r.changes).toEqual([]);
+  });
+
+  it("carries gender and email on a new child", () => {
+    const r = buildNewMemberChanges({ first_name: "Eve", last_name: "Lee", role: "child", grade_value: 3, gender: "female", email: "eve@x.org" }, NOV_2026);
+    expect(r.changes).toEqual(expect.arrayContaining([
+      { field: "gender", oldValue: null, newValue: "female" },
+      { field: "email", oldValue: null, newValue: "eve@x.org" },
+    ]));
+    const adult = buildNewMemberChanges({ first_name: "Al", last_name: "Lee", role: "parent", date_of_birth: "1980-01-01", email: "al@x.org" }, NOV_2026);
+    expect(adult.changes.some((c) => c.field === "email")).toBe(false);
+  });
+});

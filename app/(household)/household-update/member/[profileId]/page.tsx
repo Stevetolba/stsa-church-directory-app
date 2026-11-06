@@ -29,6 +29,8 @@ export default async function EditMemberPage({ params }: { params: { profileId: 
           date_of_birth: member.date_of_birth,
           gradeValue: member.gradeValue,
           phone_number: member.phone_number,
+          gender: member.gender,
+          email: member.email,
           home_street: member.home_street,
           home_city: member.home_city,
           home_state: member.home_state,

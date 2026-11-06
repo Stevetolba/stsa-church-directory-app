@@ -7,6 +7,7 @@ import {
   HOME_ADDRESS_FIELDS,
   displayValue,
   hasDrifted,
+  normGender,
   normPhone,
   type ChangeField,
   type HomeAddressField,
@@ -42,6 +43,8 @@ function liveValue(household: Household | null, c: UpdateChange): string | null 
   const member = household.members?.find((m) => m.id === c.subjectId);
   if (!member) return null;
   if (c.field === "phone_number") return normPhone(member.phone_number);
+  if (c.field === "gender") return normGender(member.gender);
+  if (c.field === "email") return member.email ? member.email.trim().toLowerCase() : null;
   if (c.field in HOME_ADDRESS_FIELDS) {
     return member.address_parts?.[HOME_ADDRESS_FIELDS[c.field as HomeAddressField]] ?? null;
   }

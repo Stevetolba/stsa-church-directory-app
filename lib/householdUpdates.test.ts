@@ -176,6 +176,23 @@ describe("new members", () => {
     expect(d.updateProfile).toHaveBeenCalledWith("new-profile", { address_parts: { street: "9 Elm", city: "Dallas" } });
   });
 
+  it("sends a new member's gender and email when creating the profile", async () => {
+    const req = await getOrCreateOpenRequest(who);
+    await replaceSubjectChanges(req.id, { type: "new_member", id: "new-1", label: "Eve Lee" }, [
+      { field: "first_name", oldValue: null, newValue: "Eve" },
+      { field: "last_name", oldValue: null, newValue: "Lee" },
+      { field: "household_role", oldValue: null, newValue: "child" },
+      { field: "gender", oldValue: null, newValue: "female" },
+      { field: "email", oldValue: null, newValue: "eve@x.org" },
+    ]);
+    await submitRequest(req.id, null);
+    const ids = (await listChanges(req.id)).map((c) => c.id);
+    const d = deps();
+    expect(await reviewRequest(req.id, ids, "admin@x.org", d)).toBe("applied");
+    expect(d.createProfile).toHaveBeenCalledWith(expect.objectContaining({ gender: "female", email: "eve@x.org" }));
+    expect(d.updateProfile).not.toHaveBeenCalled();
+  });
+
   it("retries only the extras, never creating the person twice", async () => {
     const req = await getOrCreateOpenRequest(who);
     await replaceSubjectChanges(req.id, { type: "new_member", id: "new-1", label: "Eve Lee" }, [

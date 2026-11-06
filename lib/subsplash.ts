@@ -1280,6 +1280,7 @@ export type UpdateProfileInput = Partial<
     | "last_name"
     | "email"
     | "phone_number"
+    | "gender"
     | "campus"
     | "directory_access"
     | "directory_role"
@@ -1845,6 +1846,9 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
   if (topLevelPatch.phone_number !== undefined) {
     body.phone_number = phoneNumberForSubsplash(topLevelPatch.phone_number);
   }
+  // Cleared optional fields are sent as null, not "".
+  if (topLevelPatch.gender === "") body.gender = null;
+  if (topLevelPatch.email === "") body.email = null;
   if (date_of_birth !== undefined) {
     // Subsplash's date_of_birth is a nullable date field — an empty string
     // isn't a valid date, so clearing the field means sending null.
@@ -1911,6 +1915,8 @@ export interface CreateProfileInput {
   household_role: "guardian" | "parent" | "child";
   date_of_birth?: string;
   graduation_year?: number;
+  gender?: string;
+  email?: string;
 }
 
 export async function createProfile(input: CreateProfileInput): Promise<Profile> {
@@ -1924,8 +1930,9 @@ export async function createProfile(input: CreateProfileInput): Promise<Profile>
       id: `profile-${crypto.randomUUID()}`,
       first_name: input.first_name,
       last_name: input.last_name,
-      email: "",
+      email: input.email ?? "",
       date_of_birth: input.date_of_birth,
+      gender: input.gender,
       household_id: household.id,
       household_name: household.name,
       household_role: input.household_role,
@@ -1955,6 +1962,8 @@ export async function createProfile(input: CreateProfileInput): Promise<Profile>
   };
   if (input.date_of_birth) body.date_of_birth = input.date_of_birth;
   if (input.graduation_year !== undefined) body.graduation_year = input.graduation_year;
+  if (input.gender) body.gender = input.gender;
+  if (input.email) body.email = input.email;
 
   const token = await getServiceToken();
   const res = await fetch(`${BASE_URL}/people/v1/profiles?filter[org_key]=${ORG_KEY}`, {
