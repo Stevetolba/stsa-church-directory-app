@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ReviewGroup } from "@/lib/householdUpdateReview";
+import { BusyLabel } from "./Spinner";
 
 type Duplicates = Record<string, { id: string; name: string; detail: string }[]>;
 
@@ -27,7 +28,9 @@ export function HouseholdUpdateReview(props: {
     () => new Set(allRows.filter((r) => r.applied || r.decision !== "rejected").map((r) => r.id))
   );
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
+  // Which action is running (its path), so only that button shows the spinner.
+  const [working, setWorking] = useState<string | null>(null);
+  const busy = working !== null;
   const [message, setMessage] = useState<string | null>(null);
 
   const hasFailures = allRows.some((r) => r.decision === "accepted" && !r.applied && r.error);
@@ -45,7 +48,7 @@ export function HouseholdUpdateReview(props: {
   }
 
   async function call(path: string, body?: unknown) {
-    setBusy(true);
+    setWorking(path);
     setMessage(null);
     const res = await fetch(`/api/admin/household-updates/${props.requestId}/${path}`, {
       method: "POST",
@@ -53,7 +56,7 @@ export function HouseholdUpdateReview(props: {
       body: JSON.stringify(body ?? {}),
     });
     const data = (await res.json().catch(() => ({}))) as { status?: string; error?: string };
-    setBusy(false);
+    setWorking(null);
     if (!res.ok) {
       setMessage(data.error ?? "Something went wrong.");
       return;
@@ -93,7 +96,7 @@ export function HouseholdUpdateReview(props: {
                 }}
                 className="rounded-lg border border-border bg-white px-3 py-1.5 font-semibold text-brand-navy disabled:opacity-50"
               >
-                Mark as added manually
+                <BusyLabel busy={working === "manual"} idle="Mark as added manually" working="Saving…" />
               </button>
             </div>
           )}
@@ -157,7 +160,11 @@ export function HouseholdUpdateReview(props: {
               onClick={() => call("review", { acceptedIds: Array.from(accepted) })}
               className="rounded-lg bg-brand-navy px-4 py-2 text-sm font-semibold text-brand-cream disabled:opacity-50"
             >
-              Apply {accepted.size} accepted change{accepted.size === 1 ? "" : "s"} to Subsplash
+              <BusyLabel
+                busy={working === "review"}
+                idle={`Apply ${accepted.size} accepted change${accepted.size === 1 ? "" : "s"} to Subsplash`}
+                working="Writing to Subsplash…"
+              />
             </button>
             {hasFailures && (
               <button
@@ -166,7 +173,7 @@ export function HouseholdUpdateReview(props: {
                 onClick={() => call("retry")}
                 className="rounded-lg border border-border bg-white px-4 py-2 text-sm font-semibold text-brand-navy disabled:opacity-50"
               >
-                Retry failed
+                <BusyLabel busy={working === "retry"} idle="Retry failed" working="Retrying…" />
               </button>
             )}
           </div>
@@ -184,7 +191,7 @@ export function HouseholdUpdateReview(props: {
               onClick={() => call("reject", { reason })}
               className="rounded-lg border border-destructive/40 bg-white px-4 py-2 text-sm font-semibold text-destructive disabled:opacity-50"
             >
-              Reject everything
+              <BusyLabel busy={working === "reject"} idle="Reject everything" working="Rejecting…" />
             </button>
           </div>
         </div>
