@@ -49,6 +49,7 @@ export const HOME_ADDRESS_FIELDS: Record<HomeAddressField, AddressField> = {
 // written with a follow-up update once the profile exists).
 export const EXTRA_MEMBER_FIELDS: ChangeField[] = [
   "phone_number",
+  "email",
   "home_street",
   "home_city",
   "home_state",
