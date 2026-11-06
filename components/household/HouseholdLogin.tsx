@@ -52,24 +52,28 @@ export function HouseholdLogin() {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    let r: Awaited<ReturnType<typeof checkHouseholdCodeAction>>;
     try {
-      const r = await checkHouseholdCodeAction(email, code);
-      if (!r.ok) {
-        setError(FAILURE_MESSAGES[r.reason] ?? FAILURE_MESSAGES.invalid);
-        setBusy(false);
-        return;
-      }
-      if (r.candidates.length === 1) {
-        await finish(r.candidates[0].profileId);
-        return;
-      }
-      setCandidates(r.candidates);
-      setStep("pick");
-      setBusy(false);
+      r = await checkHouseholdCodeAction(email, code);
     } catch {
       setError("Something went wrong. Please try again.");
       setBusy(false);
+      return;
     }
+    if (!r.ok) {
+      setError(FAILURE_MESSAGES[r.reason] ?? FAILURE_MESSAGES.invalid);
+      setBusy(false);
+      return;
+    }
+    if (r.candidates.length === 1) {
+      // Not inside the try above: a successful sign-in redirects, and Next
+      // implements that by throwing, which must not be caught as an error.
+      await finish(r.candidates[0].profileId);
+      return;
+    }
+    setCandidates(r.candidates);
+    setStep("pick");
+    setBusy(false);
   }
 
   return (
@@ -80,8 +84,8 @@ export function HouseholdLogin() {
       {step === "email" && (
         <form onSubmit={sendCode} className="mt-6 space-y-3">
           <p className="text-sm text-muted-foreground">
-            Enter the email address the church has on file for you and we&apos;ll email you a code. Any changes you
-            make are reviewed by the church office before the directory is updated.
+            Enter the email address the church has on file for you and we&apos;ll email you a code. The church
+            office may review some changes before the directory is updated.
           </p>
           <input
             type="email"
