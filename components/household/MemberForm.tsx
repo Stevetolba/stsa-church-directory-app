@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { saveMemberAction, saveNewMemberAction, discardChangesAction } from "@/app/(household)/household-update/actions";
 import { GRADE_LEVELS } from "@/lib/grades";
+import { BusyLabel } from "./Spinner";
 import { errorCls, inputCls, labelCls, primaryBtn, secondaryBtn } from "./ui";
 
 export interface MemberFormProps {
@@ -77,11 +78,12 @@ export function MemberForm(props: MemberFormProps) {
     const result = isNew
       ? await saveNewMemberAction(props.newKey ?? null, { ...base, role: role as "parent" | "guardian" | "child" })
       : await saveMemberAction(props.profileId as string, base);
-    setBusy(false);
     if (!result.ok) {
+      setBusy(false);
       setErrors(result.errors);
       return;
     }
+    // Stay busy until the next page loads.
     router.push("/household-update");
     router.refresh();
   }
@@ -216,7 +218,7 @@ export function MemberForm(props: MemberFormProps) {
       )}
 
       <div className="flex flex-col gap-2 pt-2 sm:flex-row">
-        <button type="submit" className={primaryBtn} disabled={busy}>Save</button>
+        <button type="submit" className={primaryBtn} disabled={busy} aria-busy={busy}><BusyLabel busy={busy} idle="Save" working="Saving…" /></button>
         <button type="button" className={secondaryBtn} disabled={busy} onClick={() => router.push("/household-update")}>Cancel</button>
         {props.hasPendingChanges && (
           <button type="button" className="text-sm text-muted-foreground underline sm:ml-auto" disabled={busy} onClick={onDiscard}>
