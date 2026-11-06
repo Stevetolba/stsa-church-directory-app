@@ -1951,6 +1951,10 @@ export async function createProfile(input: CreateProfileInput): Promise<Profile>
     throw new Error("Missing SUBSPLASH_ORG_KEY — required as filter[org_key] on every request.");
   }
   const body: Record<string, unknown> = {
+    // Subsplash reads the org from the JSON body on create (the filter[org_key]
+    // query param is ignored for POST); without it the call 403s with
+    // "lacks sufficient permissions" even for a valid token.
+    org_key: ORG_KEY,
     first_name: input.first_name,
     last_name: input.last_name,
     household_role: input.household_role,
