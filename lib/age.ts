@@ -1,3 +1,5 @@
+import { churchToday } from "./churchTime";
+
 // Parses an ISO date string (e.g. "2016-03-08") into local-date parts,
 // avoiding the UTC-vs-local off-by-one-day issue `new Date(iso)` has for
 // date-only strings — same technique lib/birthdays.ts uses.
@@ -10,7 +12,7 @@ function parseIsoDateParts(iso: string): { year: number; month: number; day: num
 // Age in completed years as of `asOf` (defaults to now) — subtracts one more
 // year if this year's birthday hasn't happened yet, not just a year
 // subtraction. Returns null for an unparseable/missing date of birth.
-export function calculateAge(dateOfBirth: string, asOf: Date = new Date()): number | null {
+export function calculateAge(dateOfBirth: string, asOf: Date = churchToday()): number | null {
   const parts = parseIsoDateParts(dateOfBirth);
   if (!parts) return null;
 
@@ -27,7 +29,7 @@ export function calculateAge(dateOfBirth: string, asOf: Date = new Date()): numb
 // are in months, not years (confirmed against the live org: a "Pre-K-5yrs"
 // session reports 36–71). Same completed-unit semantics as calculateAge, just
 // months instead of years. Returns null for an unparseable/missing date of birth.
-export function calculateAgeInMonths(dateOfBirth: string, asOf: Date = new Date()): number | null {
+export function calculateAgeInMonths(dateOfBirth: string, asOf: Date = churchToday()): number | null {
   const parts = parseIsoDateParts(dateOfBirth);
   if (!parts) return null;
 
