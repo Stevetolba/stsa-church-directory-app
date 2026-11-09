@@ -23,11 +23,7 @@ import { getHousehold } from "@/lib/subsplash";
 import { householdMemberType } from "@/lib/household";
 import { CHURCH_NAME } from "@/lib/trainingEmail";
 import { sendEmail } from "@/lib/email";
-import {
-  buildHouseholdAutoAppliedAdminEmail,
-  buildHouseholdAutoAppliedEmail,
-  buildHouseholdSubmittedAdminEmail,
-} from "@/lib/householdUpdateEmail";
+import { buildHouseholdAutoAppliedAdminEmail, buildHouseholdSubmittedAdminEmail } from "@/lib/householdUpdateEmail";
 import { getHouseholdAutoApply } from "@/lib/appSettings";
 
 // ----------------------------------------------------------------- sign-in
@@ -78,7 +74,11 @@ type ContactInput = {
   care_notes?: string;
 };
 
-export type SaveResult = { ok: true } | { ok: false; errors: Record<string, string> };
+// outcome is only set when instant apply is on (ADR-0031): the edit was written
+// to Subsplash ("applied"), is waiting for the church office ("waiting", e.g. a
+// new member), couldn't be written just now ("failed"), or changed nothing.
+export type SaveOutcome = "applied" | "waiting" | "failed" | "unchanged";
+export type SaveResult = { ok: true; outcome?: SaveOutcome } | { ok: false; errors: Record<string, string> };
 
 function needSession(): HouseholdSession {
   const s = getHouseholdSession();
@@ -94,6 +94,61 @@ async function openRequestFor(s: HouseholdSession) {
     profileId: s.profileId,
     email: s.email,
   });
+}
+
+async function adminEmailsAndUrl(requestId: string) {
+  const h = headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  const admins = (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim()).filter(Boolean);
+  return { admins, reviewUrl: `${proto}://${host}/settings/household-updates/${requestId}` };
+}
+
+// Admins hear about an instant apply only when something is left for them.
+// The family gets an on-screen message instead of an email.
+async function notifyAdminsWaiting(
+  s: HouseholdSession,
+  request: { id: string; householdName: string | null },
+  applied: number,
+  waiting: number
+) {
+  if (waiting === 0) return;
+  try {
+    const { admins, reviewUrl } = await adminEmailsAndUrl(request.id);
+    const mail = buildHouseholdAutoAppliedAdminEmail({
+      householdName: request.householdName ?? "A household",
+      submittedBy: s.name,
+      appliedCount: applied,
+      waitingCount: waiting,
+      reviewUrl,
+    });
+    for (const to of admins) await sendEmail({ to, fromName: CHURCH_NAME, subject: mail.subject, html: mail.html });
+  } catch (err) {
+    console.error("Household instant-apply admin email failed", err);
+  }
+}
+
+// One-click update (ADR-0031): when the admin switch is on, a saved edit is
+// submitted and written to Subsplash straight away. Anything that can't be
+// (new members, values that moved, failed writes) stays pending for an admin.
+async function applyNow(
+  s: HouseholdSession,
+  request: { id: string; householdName: string | null; note: string | null },
+  subjectId: string
+): Promise<SaveOutcome> {
+  try {
+    await submitRequest(request.id, request.note);
+    const r = await autoApplySubmittedRequest(request.id);
+    await recordAccessEvent({ email: s.email, name: s.name, role: "household", eventType: "household_update_apply", resource: `auto:${r.applied}/${r.waiting}` });
+    await notifyAdminsWaiting(s, request, r.applied, r.waiting);
+    const rows = await listChanges(request.id);
+    if (rows.some((c) => c.subjectId === subjectId && !c.appliedAt && c.applyError)) return "failed";
+    if (rows.some((c) => c.subjectId === subjectId && !c.appliedAt)) return "waiting";
+    return "applied";
+  } catch (err) {
+    console.error("Household one-click update failed", err);
+    return "failed";
+  }
 }
 
 export async function saveMemberAction(
@@ -116,6 +171,10 @@ export async function saveMemberAction(
     changes
   );
   await recordAccessEvent({ email: s.email, name: s.name, role: "household", eventType: "household_update_submit", resource: "draft-member" });
+  if (await getHouseholdAutoApply()) {
+    if (changes.length === 0) return { ok: true, outcome: "unchanged" };
+    return { ok: true, outcome: await applyNow(s, request, profileId) };
+  }
   return { ok: true };
 }
 
@@ -133,6 +192,10 @@ export async function saveAddressAction(input: {
   const request = await openRequestFor(s);
   await replaceSubjectChanges(request.id, { type: "household", id: s.householdId, label: "Household address" }, changes);
   await recordAccessEvent({ email: s.email, name: s.name, role: "household", eventType: "household_update_submit", resource: "draft-address" });
+  if (await getHouseholdAutoApply()) {
+    if (changes.length === 0) return { ok: true, outcome: "unchanged" };
+    return { ok: true, outcome: await applyNow(s, request, s.householdId) };
+  }
   return { ok: true };
 }
 
@@ -170,6 +233,9 @@ export async function saveNewMemberAction(
     changes
   );
   await recordAccessEvent({ email: s.email, name: s.name, role: "household", eventType: "household_update_submit", resource: "draft-new-member" });
+  // A new member always waits for the church office; submitting now puts them
+  // in the admin queue (and applies anything else already saved).
+  if (await getHouseholdAutoApply()) return { ok: true, outcome: await applyNow(s, request, subjectKey) };
   return { ok: true };
 }
 
@@ -216,25 +282,7 @@ export async function submitHouseholdUpdateAction(note: string): Promise<SubmitR
   }
 
   if (instant) {
-    try {
-      const h = headers();
-      const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-      const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-      const householdName = request.householdName ?? "Your household";
-      const mine = buildHouseholdAutoAppliedEmail({ householdName, waitingCount: instant.waiting });
-      await sendEmail({ to: s.email, fromName: CHURCH_NAME, subject: mine.subject, html: mine.html });
-      const admins = (process.env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim()).filter(Boolean);
-      const adminMail = buildHouseholdAutoAppliedAdminEmail({
-        householdName,
-        submittedBy: s.name,
-        appliedCount: instant.applied,
-        waitingCount: instant.waiting,
-        reviewUrl: `${proto}://${host}/settings/household-updates/${request.id}`,
-      });
-      for (const to of admins) await sendEmail({ to, fromName: CHURCH_NAME, subject: adminMail.subject, html: adminMail.html });
-    } catch (err) {
-      console.error("Household instant-apply emails failed", err);
-    }
+    await notifyAdminsWaiting(s, request, instant.applied, instant.waiting);
     return { mode: "instant", waiting: instant.waiting };
   }
 

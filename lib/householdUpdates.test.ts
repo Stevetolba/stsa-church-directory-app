@@ -382,3 +382,64 @@ describe("instant apply (ADR-0031)", () => {
     expect(fields).toEqual(["first_name", "last_name"]);
   });
 });
+
+describe("one-click updates (ADR-0031)", () => {
+  const live = {
+    id: "h1",
+    name: "Lee Family",
+    address_parts: { street: "1 Main St" },
+    members: [
+      { id: "kid1", first_name: "Sam", last_name: "Lee", graduation_year: 2031 },
+      { id: "mom", first_name: "Ann", last_name: "Lee" },
+    ],
+  } as never;
+  const withLive = () => deps({ getHousehold: vi.fn(async () => live) });
+
+  // What the server action does for each click: save the subject, submit the
+  // open request (keeping its note) and apply immediately.
+  async function click(subject: { type: "profile" | "household" | "new_member"; id: string }, changes: Parameters<typeof replaceSubjectChanges>[2], d = withLive()) {
+    const req = await getOrCreateOpenRequest(who);
+    await replaceSubjectChanges(req.id, { ...subject, label: subject.id }, changes);
+    await submitRequest(req.id, req.note);
+    const r = await autoApplySubmittedRequest(req.id, d);
+    return { req, r, d };
+  }
+
+  it("applies each edit on its own click, opening a fresh request each time", async () => {
+    const a = await click({ type: "profile", id: "kid1" }, [{ field: "first_name", oldValue: "Sam", newValue: "Samuel" }]);
+    expect(a.r.status).toBe("applied");
+    const b = await click({ type: "profile", id: "mom" }, [{ field: "first_name", oldValue: "Ann", newValue: "Anne" }]);
+    expect(b.r.status).toBe("applied");
+    expect(b.req.id).not.toBe(a.req.id);
+  });
+
+  it("sends a new member to the admin queue, then still applies a later person's edit", async () => {
+    const eve = await click({ type: "new_member", id: "new-1" }, [
+      { field: "first_name", oldValue: null, newValue: "Eve" },
+      { field: "last_name", oldValue: null, newValue: "Lee" },
+      { field: "household_role", oldValue: null, newValue: "child" },
+    ]);
+    expect(eve.r).toMatchObject({ status: "pending", applied: 0, waiting: 3 });
+    expect(eve.d.createProfile).not.toHaveBeenCalled();
+
+    const sam = await click({ type: "profile", id: "kid1" }, [{ field: "first_name", oldValue: "Sam", newValue: "Samuel" }]);
+    expect(sam.req.id).toBe(eve.req.id); // same open request
+    expect(sam.r).toMatchObject({ status: "pending", applied: 1, waiting: 3 });
+    expect(sam.d.updateProfile).toHaveBeenCalledWith("kid1", { first_name: "Samuel" });
+    expect(sam.d.createProfile).not.toHaveBeenCalled();
+  });
+
+  it("keeps the household's note when a click resubmits", async () => {
+    const req = await getOrCreateOpenRequest(who);
+    await replaceSubjectChanges(req.id, { type: "new_member", id: "new-1", label: "Eve" }, [
+      { field: "first_name", oldValue: null, newValue: "Eve" },
+      { field: "last_name", oldValue: null, newValue: "Lee" },
+      { field: "household_role", oldValue: null, newValue: "child" },
+    ]);
+    await submitRequest(req.id, "please add her");
+    const again = await getRequest(req.id);
+    await click({ type: "profile", id: "kid1" }, [{ field: "first_name", oldValue: "Sam", newValue: "Samuel" }]);
+    expect(again?.note).toBe("please add her");
+    expect((await getRequest(req.id))?.note).toBe("please add her");
+  });
+});

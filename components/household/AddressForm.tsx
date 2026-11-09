@@ -9,6 +9,8 @@ import { errorCls, inputCls, labelCls, primaryBtn, secondaryBtn } from "./ui";
 export function AddressForm(props: {
   initial: { street: string; city: string; state: string; postal_code: string };
   hasPendingChanges: boolean;
+  // Instant apply is on (ADR-0031): the button updates the directory itself.
+  instant?: boolean;
 }) {
   const router = useRouter();
   const [v, setV] = useState(props.initial);
@@ -27,7 +29,11 @@ export function AddressForm(props: {
       return;
     }
     // Stay busy until the next page loads.
-    router.push("/household-update");
+    router.push(
+      props.instant
+        ? `/household-update?updated=${encodeURIComponent("Household address")}&outcome=${r.outcome ?? "applied"}&kind=address`
+        : "/household-update"
+    );
     router.refresh();
   }
 
@@ -63,10 +69,16 @@ export function AddressForm(props: {
           {errors.postal_code && <p className={errorCls}>{errors.postal_code}</p>}
         </div>
       </div>
+      {props.instant && <p className="text-sm text-muted-foreground">This updates the church directory right away.</p>}
       <div className="flex flex-col gap-2 pt-2 sm:flex-row">
-        <button type="submit" className={primaryBtn} disabled={busy} aria-busy={busy}><BusyLabel busy={busy} idle="Save" working="Saving…" /></button>
+        <button type="submit" className={primaryBtn} disabled={busy} aria-busy={busy}><BusyLabel
+            busy={busy}
+            idle={props.instant ? "Update" : "Save"}
+            working={props.instant ? "Updating…" : "Saving…"}
+          />
+        </button>
         <button type="button" className={secondaryBtn} disabled={busy} onClick={() => router.push("/household-update")}>Cancel</button>
-        {props.hasPendingChanges && (
+        {props.hasPendingChanges && !props.instant && (
           <button type="button" className="text-sm text-muted-foreground underline sm:ml-auto" disabled={busy} onClick={onDiscard}>
             Undo my address changes
           </button>

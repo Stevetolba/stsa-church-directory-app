@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireHouseholdPage } from "@/lib/householdPageGuard";
 import { loadPortal } from "@/lib/householdPortal";
+import { getHouseholdAutoApply } from "@/lib/appSettings";
 import { MemberForm } from "@/components/household/MemberForm";
 
 export default async function EditMemberPage({ params }: { params: { profileId: string } }) {
@@ -10,6 +11,7 @@ export default async function EditMemberPage({ params }: { params: { profileId: 
   // Only people in the signed-in household are reachable.
   const member = view?.members.find((m) => m.id === params.profileId);
   if (!view || !member) notFound();
+  const instant = await getHouseholdAutoApply();
 
   return (
     <div className="space-y-4">
@@ -20,6 +22,7 @@ export default async function EditMemberPage({ params }: { params: { profileId: 
       <p className="text-sm text-muted-foreground">{member.isChild ? "Child" : "Adult"} · basic information</p>
       <MemberForm
         mode="existing"
+        instant={instant}
         profileId={member.id}
         isChild={member.isChild}
         hasPendingChanges={member.hasPendingChanges}

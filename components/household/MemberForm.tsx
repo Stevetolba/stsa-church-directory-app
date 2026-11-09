@@ -30,6 +30,8 @@ export interface MemberFormProps {
     care_notes: string;
   };
   hasPendingChanges?: boolean;
+  // Instant apply is on (ADR-0031): the button updates the directory itself.
+  instant?: boolean;
 }
 
 export function MemberForm(props: MemberFormProps) {
@@ -84,7 +86,12 @@ export function MemberForm(props: MemberFormProps) {
       return;
     }
     // Stay busy until the next page loads.
-    router.push("/household-update");
+    const name = encodeURIComponent(`${first} ${last}`.trim());
+    router.push(
+      props.instant
+        ? `/household-update?updated=${name}&outcome=${result.outcome ?? "applied"}&kind=${isNew ? "new" : "person"}`
+        : "/household-update"
+    );
     router.refresh();
   }
 
@@ -217,10 +224,22 @@ export function MemberForm(props: MemberFormProps) {
         </>
       )}
 
+      {props.instant && (
+        <p className="text-sm text-muted-foreground">
+          {isNew
+            ? "The church office adds new family members after a quick check."
+            : "This updates the church directory right away."}
+        </p>
+      )}
       <div className="flex flex-col gap-2 pt-2 sm:flex-row">
-        <button type="submit" className={primaryBtn} disabled={busy} aria-busy={busy}><BusyLabel busy={busy} idle="Save" working="Saving…" /></button>
+        <button type="submit" className={primaryBtn} disabled={busy} aria-busy={busy}><BusyLabel
+            busy={busy}
+            idle={props.instant ? (isNew ? "Send to the church office" : "Update") : "Save"}
+            working={props.instant ? (isNew ? "Sending…" : "Updating…") : "Saving…"}
+          />
+        </button>
         <button type="button" className={secondaryBtn} disabled={busy} onClick={() => router.push("/household-update")}>Cancel</button>
-        {props.hasPendingChanges && (
+        {props.hasPendingChanges && !props.instant && (
           <button type="button" className="text-sm text-muted-foreground underline sm:ml-auto" disabled={busy} onClick={onDiscard}>
             Undo my changes for this person
           </button>
