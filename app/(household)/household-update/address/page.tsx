@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireHouseholdPage } from "@/lib/householdPageGuard";
 import { loadPortal } from "@/lib/householdPortal";
+import { getHouseholdAutoApply } from "@/lib/appSettings";
 import { AddressForm } from "@/components/household/AddressForm";
 
 export default async function AddressPage() {
@@ -9,6 +10,7 @@ export default async function AddressPage() {
   const view = await loadPortal(session.householdId);
   if (!view) notFound();
   const { address } = view;
+  const instant = await getHouseholdAutoApply();
 
   return (
     <div className="space-y-4">
@@ -17,6 +19,7 @@ export default async function AddressPage() {
       <p className="text-sm text-muted-foreground">One address is shared by everyone in your household.</p>
       <AddressForm
         hasPendingChanges={address.hasPendingChanges}
+        instant={instant}
         initial={{ street: address.street, city: address.city, state: address.state, postal_code: address.postal_code }}
       />
     </div>

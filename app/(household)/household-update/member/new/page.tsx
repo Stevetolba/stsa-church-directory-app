@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireHouseholdPage } from "@/lib/householdPageGuard";
 import { loadPortal } from "@/lib/householdPortal";
+import { getHouseholdAutoApply } from "@/lib/appSettings";
 import { MemberForm } from "@/components/household/MemberForm";
 
 export default async function NewMemberPage({ searchParams }: { searchParams: { key?: string } }) {
@@ -11,6 +12,7 @@ export default async function NewMemberPage({ searchParams }: { searchParams: { 
 
   const existing = searchParams.key ? view.newMembers.find((n) => n.key === searchParams.key) : undefined;
   if (searchParams.key && !existing) notFound();
+  const instant = await getHouseholdAutoApply();
 
   return (
     <div className="space-y-4">
@@ -19,6 +21,7 @@ export default async function NewMemberPage({ searchParams }: { searchParams: { 
       <p className="text-sm text-muted-foreground">The church office will check this before adding the person to the directory.</p>
       <MemberForm
         mode="new"
+        instant={instant}
         newKey={existing?.key ?? null}
         isChild={(existing?.role ?? "child") === "child"}
         initial={{

@@ -3,9 +3,10 @@ import { requireHouseholdPage } from "@/lib/householdPageGuard";
 import { loadPortal } from "@/lib/householdPortal";
 import { getHouseholdAutoApply } from "@/lib/appSettings";
 import { RemoveNewMember } from "@/components/household/RemoveNewMember";
+import { Banner } from "@/components/household/Banner";
 import { cardCls, primaryBtn, secondaryBtn } from "@/components/household/ui";
 
-export default async function HouseholdOverviewPage({ searchParams }: { searchParams: { submitted?: string; waiting?: string } }) {
+export default async function HouseholdOverviewPage({ searchParams }: { searchParams: { submitted?: string; waiting?: string; updated?: string; outcome?: string; kind?: string } }) {
   const session = await requireHouseholdPage("household-overview");
   const view = await loadPortal(session.householdId);
 
@@ -25,28 +26,41 @@ export default async function HouseholdOverviewPage({ searchParams }: { searchPa
         <h1 className="font-heading text-2xl font-semibold text-brand-navy">{household.name}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {instant
-            ? "Check each person and your household address. Tap anything that needs fixing. Your changes are saved to the church directory when you send them. A new family member is added after the church office reviews it."
+            ? "Check each person and your household address. Tap anything that needs fixing. Each time you tap Update, the church directory is updated right away. A new family member is added after the church office reviews it."
             : "Check each person and your household address. Tap anything that needs fixing. Nothing changes in the church directory until the church office reviews it."}
         </p>
       </div>
 
       {searchParams.submitted === "instant" && (
-        <p className="rounded-lg bg-brand-cream px-4 py-3 text-sm text-brand-navy">
+        <Banner tone={waiting > 0 ? "waiting" : "success"}>
           Thank you! Your changes were saved to the church directory.
           {waiting > 0 && " The rest, such as a new family member, is waiting for the church office to review."}
-        </p>
+        </Banner>
       )}
       {searchParams.submitted && searchParams.submitted !== "instant" && (
-        <p className="rounded-lg bg-brand-cream px-4 py-3 text-sm text-brand-navy">
+        <Banner tone="success">
           Thank you! Your update was sent to the church office. You can keep editing and send it again until it&apos;s reviewed.
-        </p>
+        </Banner>
       )}
-      {pending && !searchParams.submitted && (
-        <p className="rounded-lg bg-brand-cream px-4 py-3 text-sm text-brand-navy">
+      {searchParams.updated && (
+        <Banner
+          tone={
+            searchParams.outcome === "failed"
+              ? "error"
+              : searchParams.kind === "new" || searchParams.outcome === "waiting"
+                ? "waiting"
+                : "success"
+          }
+        >
+          {updateMessage(searchParams.updated, searchParams.outcome, searchParams.kind)}
+        </Banner>
+      )}
+      {pending && !searchParams.submitted && !searchParams.updated && (
+        <Banner tone="waiting">
           {instant
-            ? "Part of your last update is waiting for the church office to review. Anything else you change is saved when you send it."
+            ? "Part of your last update is waiting for the church office to review. Anything else you change is saved when you tap Update."
             : "Your last update is waiting for review. If you change anything below, send it again from the review page."}
-        </p>
+        </Banner>
       )}
 
       <section className="space-y-3" aria-label="Family members">
@@ -91,11 +105,29 @@ export default async function HouseholdOverviewPage({ searchParams }: { searchPa
         </Link>
       </section>
 
+      {/* With instant apply each form updates the directory itself, so the
+          review page is only for drafts saved before the switch was turned on. */}
+      {(!instant || (request?.status === "draft" && changes.length > 0)) && (
       <div className="border-t border-border pt-4">
         <Link href="/household-update/review" className={primaryBtn}>
           {changes.length > 0 ? `Review & send (${changes.length} change${changes.length === 1 ? "" : "s"})` : "Review & send"}
         </Link>
       </div>
+      )}
     </div>
   );
+}
+
+// On-screen confirmation after a one-click update (no email goes to the family).
+function updateMessage(name: string, outcome?: string, kind?: string): string {
+  if (outcome === "failed") {
+    return "We couldn't update the directory just now. Your change was saved and the church office will finish it.";
+  }
+  if (outcome === "unchanged") return "Nothing was different, so nothing was changed.";
+  if (kind === "new") return `${name} was sent to the church office to be added to the directory.`;
+  if (outcome === "waiting") {
+    return "Your change was saved. The church office will review part of it before it is added.";
+  }
+  if (kind === "address") return "Your household address was updated in the church directory.";
+  return `${name}'s details were updated in the church directory.`;
 }
