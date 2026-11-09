@@ -3,6 +3,7 @@ import { requireHouseholdPage } from "@/lib/householdPageGuard";
 import { loadPortal } from "@/lib/householdPortal";
 import { getHouseholdAutoApply } from "@/lib/appSettings";
 import { RemoveNewMember } from "@/components/household/RemoveNewMember";
+import { Banner } from "@/components/household/Banner";
 import { cardCls, primaryBtn, secondaryBtn } from "@/components/household/ui";
 
 export default async function HouseholdOverviewPage({ searchParams }: { searchParams: { submitted?: string; waiting?: string; updated?: string; outcome?: string; kind?: string } }) {
@@ -31,30 +32,35 @@ export default async function HouseholdOverviewPage({ searchParams }: { searchPa
       </div>
 
       {searchParams.submitted === "instant" && (
-        <p className="rounded-lg bg-brand-cream px-4 py-3 text-sm text-brand-navy">
+        <Banner tone={waiting > 0 ? "waiting" : "success"}>
           Thank you! Your changes were saved to the church directory.
           {waiting > 0 && " The rest, such as a new family member, is waiting for the church office to review."}
-        </p>
+        </Banner>
       )}
       {searchParams.submitted && searchParams.submitted !== "instant" && (
-        <p className="rounded-lg bg-brand-cream px-4 py-3 text-sm text-brand-navy">
+        <Banner tone="success">
           Thank you! Your update was sent to the church office. You can keep editing and send it again until it&apos;s reviewed.
-        </p>
+        </Banner>
       )}
       {searchParams.updated && (
-        <p
-          className={`rounded-lg px-4 py-3 text-sm ${searchParams.outcome === "failed" ? "bg-destructive/10 text-destructive" : "bg-brand-cream text-brand-navy"}`}
-          role="status"
+        <Banner
+          tone={
+            searchParams.outcome === "failed"
+              ? "error"
+              : searchParams.kind === "new" || searchParams.outcome === "waiting"
+                ? "waiting"
+                : "success"
+          }
         >
           {updateMessage(searchParams.updated, searchParams.outcome, searchParams.kind)}
-        </p>
+        </Banner>
       )}
       {pending && !searchParams.submitted && !searchParams.updated && (
-        <p className="rounded-lg bg-brand-cream px-4 py-3 text-sm text-brand-navy">
+        <Banner tone="waiting">
           {instant
-            ? "Part of your last update is waiting for the church office to review. Anything else you change is saved when you send it."
+            ? "Part of your last update is waiting for the church office to review. Anything else you change is saved when you tap Update."
             : "Your last update is waiting for review. If you change anything below, send it again from the review page."}
-        </p>
+        </Banner>
       )}
 
       <section className="space-y-3" aria-label="Family members">
