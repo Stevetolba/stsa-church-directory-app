@@ -2,6 +2,7 @@
 // (lib/birthdays.ts). Pure — unit-tested in lib/eventAgenda.test.ts.
 
 import type { AppEvent } from "@/types/event";
+import { churchToday } from "./churchTime";
 
 export interface EventAgendaGroup {
   dateKey: string; // "YYYY-MM-DD"
@@ -20,7 +21,7 @@ function parseDateKey(key: string): Date | null {
 // the reference "today" (local date) for the Today/Tomorrow labels.
 export function groupEventsByDate(
   events: AppEvent[],
-  now: Date = new Date()
+  now: Date = churchToday()
 ): EventAgendaGroup[] {
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const groups = new Map<string, EventAgendaGroup>();

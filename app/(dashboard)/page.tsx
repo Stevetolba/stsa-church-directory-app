@@ -12,6 +12,7 @@ import {
 } from "@/lib/subsplash";
 import { listTodaysEvents } from "@/lib/events";
 import { windowState } from "@/lib/eventTime";
+import { churchToday } from "@/lib/churchTime";
 import { groupProfilesByUpcomingBirthday, type BirthdayEntry } from "@/lib/birthdays";
 import { EventCard } from "@/components/EventCard";
 import { avatarTintForId, initialsOf } from "@/lib/avatar";
@@ -221,7 +222,7 @@ async function TodaysBirthdaysAsync({
 }) {
   const { profiles } = await profilesPromise;
   const todaysBirthdays =
-    groupProfilesByUpcomingBirthday(profiles, now).find((g) => g.daysUntil === 0)?.entries ?? [];
+    groupProfilesByUpcomingBirthday(profiles, churchToday(now)).find((g) => g.daysUntil === 0)?.entries ?? [];
   return <TodaysBirthdaysSection entries={todaysBirthdays} linkPrefix={linkPrefix} />;
 }
 

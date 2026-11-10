@@ -1,4 +1,5 @@
 import type { Profile } from "@/types/profile";
+import { churchToday } from "./churchTime";
 
 export interface BirthdayEntry {
   profile: Profile;
@@ -33,7 +34,7 @@ function dayStart(year: number, month: number, day: number): Date {
 // occurrence, same as any real "upcoming events" agenda would show it.
 export function groupProfilesByUpcomingBirthday(
   profiles: Profile[],
-  today: Date = new Date()
+  today: Date = churchToday()
 ): BirthdayGroup[] {
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const groups = new Map<string, BirthdayGroup>();

@@ -1,5 +1,6 @@
 "use client";
 
+import { churchToday } from "@/lib/churchTime";
 import type { AppEvent } from "@/types/event";
 import type { Role } from "@/types/auth";
 import { groupEventsByDate } from "@/lib/eventAgenda";
@@ -16,7 +17,7 @@ export function EventAgenda({
   role?: Role;
   now?: Date;
 }) {
-  const groups = groupEventsByDate(events, now);
+  const groups = groupEventsByDate(events, churchToday(now));
 
   return (
     <div className="flex flex-col gap-6">
