@@ -9,7 +9,7 @@ export default function DashboardLoading() {
         {[0, 1].map((i) => (
           <div
             key={i}
-            className="flex items-center gap-4 rounded-[14px] border border-[#EAE2D0] bg-white p-5 shadow-[0_1px_3px_rgba(26,58,92,0.05)]"
+            className="flex items-center gap-4 rounded-[14px] border border-[#CBD2D9] bg-white p-5 shadow-[0_1px_3px_rgba(26,58,92,0.05)]"
           >
             <Skeleton className="h-11 w-11 shrink-0 rounded-full" />
             <div className="flex flex-col gap-1.5">
@@ -26,7 +26,7 @@ export default function DashboardLoading() {
         {[0, 1].map((i) => (
           <div
             key={i}
-            className="flex items-center gap-4 rounded-[14px] border border-[#EAE2D0] bg-white p-5 shadow-[0_1px_3px_rgba(26,58,92,0.05)]"
+            className="flex items-center gap-4 rounded-[14px] border border-[#CBD2D9] bg-white p-5 shadow-[0_1px_3px_rgba(26,58,92,0.05)]"
           >
             <Skeleton className="h-11 w-11 shrink-0 rounded-full" />
             <div className="flex flex-col gap-1.5">

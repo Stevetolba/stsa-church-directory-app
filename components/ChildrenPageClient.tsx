@@ -332,7 +332,7 @@ export function ChildrenPageClient({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center rounded-full border border-[#E5DCC8] bg-white p-0.5">
+          <div className="flex items-center rounded-full border border-[#CBD2D9] bg-white p-0.5">
             <button
               type="button"
               onClick={() => updateParams({ view: null, page: null })}
@@ -359,7 +359,7 @@ export function ChildrenPageClient({
               onClick={() => setEmailDialogOpen(true)}
               disabled={!hasActiveFilter}
               title={hasActiveFilter ? undefined : "Apply a filter to email parents"}
-              className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Mail className="h-3.5 w-3.5" />
               Email Parents
@@ -370,7 +370,7 @@ export function ChildrenPageClient({
             onClick={handleExport}
             disabled={!hasActiveFilter || isExporting}
             title={hasActiveFilter ? undefined : "Apply a filter to export"}
-            className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Download className="h-3.5 w-3.5" />
             {isExporting ? "Exporting…" : "Export CSV"}
@@ -408,7 +408,7 @@ export function ChildrenPageClient({
                       type="checkbox"
                       checked={status.includes(option)}
                       onChange={() => toggleListParam("status", option, status)}
-                      className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                      className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
                     />
                     {option}
                   </label>
@@ -435,7 +435,7 @@ export function ChildrenPageClient({
                       type="checkbox"
                       checked={campus.includes(option)}
                       onChange={() => toggleListParam("campus", option, campus)}
-                      className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                      className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
                     />
                     {option}
                   </label>
@@ -460,7 +460,7 @@ export function ChildrenPageClient({
                   <select
                     value={gradeFromRaw ?? ""}
                     onChange={(e) => updateParams({ gradeFrom: e.target.value || null, page: null })}
-                    className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                    className="w-full cursor-pointer rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
                   >
                     <option value="">None</option>
                     {GRADE_LEVELS.map((grade) => (
@@ -477,7 +477,7 @@ export function ChildrenPageClient({
                   <select
                     value={gradeToRaw ?? ""}
                     onChange={(e) => updateParams({ gradeTo: e.target.value || null, page: null })}
-                    className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                    className="w-full cursor-pointer rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
                   >
                     <option value="">None</option>
                     {GRADE_LEVELS.map((grade) => (
@@ -510,7 +510,7 @@ export function ChildrenPageClient({
                     max={MAX_AGE}
                     value={ageFromRaw ?? ""}
                     onChange={(e) => updateParams({ ageFrom: e.target.value || null, page: null })}
-                    className="w-full rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                    className="w-full rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
                   />
                 </div>
                 <div>
@@ -523,7 +523,7 @@ export function ChildrenPageClient({
                     max={MAX_AGE}
                     value={ageToRaw ?? ""}
                     onChange={(e) => updateParams({ ageTo: e.target.value || null, page: null })}
-                    className="w-full rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                    className="w-full rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
                   />
                 </div>
               </div>
@@ -548,8 +548,8 @@ export function ChildrenPageClient({
                     }
                     className={`rounded-md px-2.5 py-1.5 text-left text-[13.5px] transition-colors ${
                       memberType === option.value
-                        ? "bg-brand-cream font-semibold text-brand-navy"
-                        : "text-brand-navy hover:bg-brand-cream/60"
+                        ? "bg-[#F5F7F9] font-semibold text-brand-navy"
+                        : "text-brand-navy hover:bg-[#F5F7F9]/60"
                     }`}
                   >
                     {option.label}
@@ -587,7 +587,7 @@ export function ChildrenPageClient({
                 onChange={(e) =>
                   updateParams({ sortBy: e.target.value === "last_name" ? null : e.target.value, page: null })
                 }
-                className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
+                className="cursor-pointer rounded-full border border-[#CBD2D9] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
               >
                 <option value="last_name">Last Name</option>
                 <option value="first_name">First Name</option>
@@ -627,7 +627,7 @@ export function ChildrenPageClient({
             <button
               type="button"
               onClick={() => updateParams({ showAll: null, page: null })}
-              className="rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30"
+              className="rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30"
             >
               Show Paginated View
             </button>
@@ -637,7 +637,7 @@ export function ChildrenPageClient({
                 type="button"
                 disabled={page <= 1}
                 onClick={() => updateParams({ page: String(page - 1) })}
-                className="rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Previous
               </button>
@@ -648,7 +648,7 @@ export function ChildrenPageClient({
                 type="button"
                 disabled={page >= Math.ceil(total / pageSize)}
                 onClick={() => updateParams({ page: String(page + 1) })}
-                className="rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Next
               </button>

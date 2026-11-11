@@ -29,7 +29,7 @@ export default function LoginPage({
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-brand-sky/20 bg-card p-8 text-center shadow-sm">
+      <div className="w-full max-w-sm rounded-[12px] border border-[#CBD2D9] bg-white p-8 text-center shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
         <div className="relative mx-auto mb-4 h-14 w-14 overflow-hidden rounded-full bg-white">
           <Image src="/stsa-logo.png" alt="STSA Church" fill sizes="56px" className="object-cover" />
         </div>
@@ -45,7 +45,7 @@ export default function LoginPage({
         <form action={signInWithGoogle} className="mt-8">
           <button
             type="submit"
-            className="flex w-full items-center justify-center gap-3 rounded-lg border border-border bg-white px-4 py-3 text-sm font-semibold text-brand-navy shadow-sm transition hover:bg-brand-cream"
+            className="flex w-full items-center justify-center gap-3 rounded-lg border border-[#CBD2D9] bg-white px-4 py-3 text-sm font-semibold text-brand-navy shadow-sm transition hover:bg-[#F5F7F9]"
           >
             <GoogleIcon />
             Sign in with Google

@@ -25,7 +25,7 @@ export function CopyableField({ icon, value, href }: { icon: ReactNode; value: s
   }
 
   return (
-    <div className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-[14px] text-[#3E5670] transition-colors hover:bg-brand-cream">
+    <div className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-[14px] text-[#3E5670] transition-colors hover:bg-[#F5F7F9]">
       {icon}
       {href ? (
         <a

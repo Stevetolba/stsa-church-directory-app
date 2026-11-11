@@ -36,7 +36,7 @@ export function TrainingCatalog({ isAdmin }: { isAdmin: boolean }) {
             <Link
               key={course.id}
               href={`/training/${course.slug}`}
-              className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10 transition-shadow hover:shadow-md"
+              className="overflow-hidden rounded-[12px] border border-[#CBD2D9] bg-white shadow-[0_1px_3px_rgba(26,58,92,0.05)] transition-shadow hover:shadow-md"
             >
               {course.coverImageUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element

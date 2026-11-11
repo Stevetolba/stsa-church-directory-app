@@ -54,7 +54,7 @@ export default async function HouseholdDetailPage({ params }: { params: { id: st
         {backLabel}
       </Link>
 
-      <div className="overflow-hidden rounded-[14px] border border-[#EAE2D0] bg-white shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
+      <div className="overflow-hidden rounded-[14px] border border-[#CBD2D9] bg-white shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
         <div className="bg-brand-navy px-6 py-6">
           <h1 className="font-heading text-[22px] font-semibold text-brand-cream">
             {household.name}
@@ -83,7 +83,7 @@ export default async function HouseholdDetailPage({ params }: { params: { id: st
                   )}
                 </div>
               </Section>
-              <div className="h-px bg-[#F0EBDF]" />
+              <div className="h-px bg-[#E4E8EC]" />
             </>
           )}
 
@@ -96,7 +96,7 @@ export default async function HouseholdDetailPage({ params }: { params: { id: st
                   href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(household.address)}`}
                 />
               </Section>
-              <div className="h-px bg-[#F0EBDF]" />
+              <div className="h-px bg-[#E4E8EC]" />
             </>
           )}
 
@@ -108,7 +108,7 @@ export default async function HouseholdDetailPage({ params }: { params: { id: st
                   <Link
                     key={member.id}
                     href={`/people/${member.id}`}
-                    className="flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-brand-cream"
+                    className="flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-[#F5F7F9]"
                   >
                     <div
                       className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full font-heading text-[13px] font-semibold"

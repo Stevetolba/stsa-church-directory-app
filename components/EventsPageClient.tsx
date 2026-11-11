@@ -63,7 +63,7 @@ function CalendarSyncControl() {
           type="button"
           onClick={handleSync}
           disabled={syncing}
-          className="flex items-center gap-1.5 rounded-[10px] border border-[#E5DCC8] bg-white px-3.5 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex items-center gap-1.5 rounded-[10px] border border-[#CBD2D9] bg-white px-3.5 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <CalendarSync className="h-3.5 w-3.5" />
           {syncing ? "Syncing…" : "Sync to Google Calendar"}

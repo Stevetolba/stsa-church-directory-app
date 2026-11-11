@@ -47,7 +47,7 @@ export function CareNotesEditor({
 
   if (editing) {
     return (
-      <div className="rounded-[10px] border border-[#E5DCC8] bg-[#FBF9F4] px-4 py-3">
+      <div className="rounded-[10px] border border-[#CBD2D9] bg-[#F5F7F9] px-4 py-3">
         <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
           Care Notes · Private
         </div>
@@ -57,7 +57,7 @@ export function CareNotesEditor({
           maxLength={1500}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          className="w-full rounded-[8px] border border-[#E5DCC8] bg-white px-3 py-2 text-[14px] text-brand-navy outline-none focus:border-brand-sky"
+          className="w-full rounded-[8px] border border-[#CBD2D9] bg-white px-3 py-2 text-[14px] text-brand-navy outline-none focus:border-brand-sky"
         />
         <div className="mt-2 flex justify-end gap-2">
           <button
@@ -67,7 +67,7 @@ export function CareNotesEditor({
               setEditing(false);
             }}
             disabled={saving}
-            className="rounded-[8px] border border-[#E5DCC8] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#5B7185] disabled:opacity-60"
+            className="rounded-[8px] border border-[#CBD2D9] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#5B7185] disabled:opacity-60"
           >
             Cancel
           </button>
@@ -85,7 +85,7 @@ export function CareNotesEditor({
   }
 
   return (
-    <div className="rounded-[10px] border border-[#E5DCC8] bg-[#FBF9F4] px-4 py-3">
+    <div className="rounded-[10px] border border-[#CBD2D9] bg-[#F5F7F9] px-4 py-3">
       <div className="mb-1 flex items-center justify-between gap-2">
         <div className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
           Care Notes · Private

@@ -5,7 +5,7 @@ export default function EditProfileLoading() {
     <div className="mx-auto max-w-[640px]">
       <Skeleton className="mb-6 h-9 w-40" />
 
-      <div className="rounded-[14px] border border-[#EAE2D0] bg-white p-6 shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
+      <div className="rounded-[14px] border border-[#CBD2D9] bg-white p-6 shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
         <Skeleton className="mb-6 h-6 w-48" />
 
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">

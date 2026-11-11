@@ -39,7 +39,7 @@ export function ProgressReportSection({ courseId }: { courseId: string }) {
   }
 
   return (
-    <section className="space-y-4 rounded-xl bg-card p-5 ring-1 ring-foreground/10">
+    <section className="space-y-4 rounded-[12px] border border-[#CBD2D9] bg-white p-5 shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
       <div className="flex items-center justify-between">
         <h2 className="font-heading text-lg font-semibold">Progress report</h2>
         <Button variant="outline" size="sm" onClick={exportCsv} disabled={!data || data.rows.length === 0}>

@@ -255,7 +255,7 @@ export default function HouseholdsPage() {
             onClick={handleExport}
             disabled={!hasActiveFilter || isExporting}
             title={hasActiveFilter ? undefined : "Apply a filter to export"}
-            className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Download className="h-3.5 w-3.5" />
             {isExporting ? "Exporting…" : "Export CSV"}
@@ -296,7 +296,7 @@ export default function HouseholdsPage() {
                       type="checkbox"
                       checked={status.includes(option)}
                       onChange={() => toggleListParam("status", option, status)}
-                      className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                      className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
                     />
                     {option}
                   </label>
@@ -323,7 +323,7 @@ export default function HouseholdsPage() {
                       type="checkbox"
                       checked={campus.includes(option)}
                       onChange={() => toggleListParam("campus", option, campus)}
-                      className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                      className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
                     />
                     {option}
                   </label>
@@ -348,7 +348,7 @@ export default function HouseholdsPage() {
                   <select
                     value={gradeFromRaw ?? ""}
                     onChange={(e) => updateParams({ gradeFrom: e.target.value || null, page: null })}
-                    className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                    className="w-full cursor-pointer rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
                   >
                     <option value="">None</option>
                     {GRADE_LEVELS.map((grade) => (
@@ -365,7 +365,7 @@ export default function HouseholdsPage() {
                   <select
                     value={gradeToRaw ?? ""}
                     onChange={(e) => updateParams({ gradeTo: e.target.value || null, page: null })}
-                    className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                    className="w-full cursor-pointer rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
                   >
                     <option value="">None</option>
                     {GRADE_LEVELS.map((grade) => (
@@ -398,7 +398,7 @@ export default function HouseholdsPage() {
                       name="childrenMode"
                       checked={childrenMode === option.value}
                       onChange={() => updateParams({ childrenMode: option.value, page: null })}
-                      className="h-4 w-4 border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                      className="h-4 w-4 border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
                     />
                     {option.label}
                   </label>
@@ -449,7 +449,7 @@ export default function HouseholdsPage() {
             type="button"
             disabled={page <= 1}
             onClick={() => updateParams({ page: String(page - 1) })}
-            className="rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
           >
             Previous
           </button>
@@ -460,7 +460,7 @@ export default function HouseholdsPage() {
             type="button"
             disabled={page >= Math.ceil(total / pageSize)}
             onClick={() => updateParams({ page: String(page + 1) })}
-            className="rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
           >
             Next
           </button>

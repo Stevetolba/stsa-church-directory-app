@@ -76,7 +76,7 @@ function StaffDashboard({ name, role }: { name: string | null; role: Role }) {
       <form
         action="/people"
         method="GET"
-        className="mt-8 flex max-w-[440px] items-center gap-2.5 rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-[11px] shadow-[0_1px_2px_rgba(26,58,92,0.04)]"
+        className="mt-8 flex max-w-[440px] items-center gap-2.5 rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-[11px] shadow-[0_1px_2px_rgba(26,58,92,0.04)]"
       >
         <Search className="h-4 w-4 shrink-0 text-[#97A9B8]" />
         <input
@@ -129,7 +129,7 @@ function VolunteerDashboard({ name }: { name: string | null }) {
       <form
         action="/children"
         method="GET"
-        className="mt-8 flex max-w-[440px] items-center gap-2.5 rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-[11px] shadow-[0_1px_2px_rgba(26,58,92,0.04)]"
+        className="mt-8 flex max-w-[440px] items-center gap-2.5 rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-[11px] shadow-[0_1px_2px_rgba(26,58,92,0.04)]"
       >
         <Search className="h-4 w-4 shrink-0 text-[#97A9B8]" />
         <input
@@ -258,7 +258,7 @@ function TodaysBirthdaysSection({
             <Link
               key={profile.id}
               href={`${linkPrefix}/${profile.id}`}
-              className="flex items-center gap-3 rounded-[12px] border border-[#EAE2D0] bg-white px-4 py-3 shadow-[0_1px_3px_rgba(26,58,92,0.05)] transition-colors hover:border-brand-navy/30"
+              className="flex items-center gap-3 rounded-[12px] border border-[#CBD2D9] bg-white px-4 py-3 shadow-[0_1px_3px_rgba(26,58,92,0.05)] transition-colors hover:border-brand-navy/30"
             >
               <div
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-heading text-[13px] font-semibold"
@@ -299,7 +299,7 @@ function StatPill({
   return (
     <Link
       href={href}
-      className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[7px] text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 hover:text-brand-navy"
+      className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#CBD2D9] bg-white px-3.5 py-[7px] text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 hover:text-brand-navy"
     >
       <Icon className="h-3.5 w-3.5 text-brand-sky" />
       <span className="font-heading text-brand-navy">{value}</span>
@@ -322,7 +322,7 @@ function ActionCard({
   return (
     <Link
       href={href}
-      className="flex items-center gap-4 rounded-[14px] border border-[#EAE2D0] bg-white p-5 shadow-[0_1px_3px_rgba(26,58,92,0.05)] transition hover:shadow-[0_2px_8px_rgba(26,58,92,0.1)]"
+      className="flex items-center gap-4 rounded-[14px] border border-[#CBD2D9] bg-white p-5 shadow-[0_1px_3px_rgba(26,58,92,0.05)] transition hover:shadow-[0_2px_8px_rgba(26,58,92,0.1)]"
     >
       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-sky/[0.12] text-brand-sky">
         <Icon className="h-5 w-5" />

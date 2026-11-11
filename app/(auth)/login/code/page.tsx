@@ -14,7 +14,7 @@ const FAILURE_MESSAGES: Record<string, string> = {
   invalid: "We couldn't use that code. Request a new one.",
 };
 
-const inputCls = "w-full rounded-lg border border-border bg-white px-4 py-3 text-sm text-brand-navy";
+const inputCls = "w-full rounded-lg border border-[#CBD2D9] bg-white px-4 py-3 text-sm text-brand-navy";
 const buttonCls =
   "w-full rounded-lg bg-brand-navy px-4 py-3 text-sm font-semibold text-brand-cream disabled:opacity-50";
 
@@ -74,7 +74,7 @@ export default function CodeLoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-brand-sky/20 bg-card p-8 text-center shadow-sm">
+      <div className="w-full max-w-sm rounded-[12px] border border-[#CBD2D9] bg-white p-8 text-center shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
         <div className="relative mx-auto mb-4 h-14 w-14 overflow-hidden rounded-full bg-white">
           <Image src="/stsa-logo.png" alt="STSA Church" fill sizes="56px" className="object-cover" />
         </div>
@@ -133,7 +133,7 @@ export default function CodeLoginPage() {
               <button
                 key={c.profileId}
                 type="button"
-                className="w-full rounded-lg border border-border bg-white px-4 py-3 text-sm font-semibold text-brand-navy hover:bg-brand-cream disabled:opacity-50"
+                className="w-full rounded-lg border border-[#CBD2D9] bg-white px-4 py-3 text-sm font-semibold text-brand-navy hover:bg-[#F5F7F9] disabled:opacity-50"
                 disabled={busy}
                 onClick={() => finish(c.profileId)}
               >

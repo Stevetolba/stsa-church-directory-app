@@ -36,7 +36,7 @@ export function BirthdayAgenda({ profiles }: { profiles: Profile[] }) {
                 <Link
                   key={profile.id}
                   href={`/people/${profile.id}`}
-                  className="flex items-center gap-3 rounded-[12px] border border-[#EAE2D0] bg-white px-4 py-3 shadow-[0_1px_3px_rgba(26,58,92,0.05)] transition-colors hover:border-brand-navy/30"
+                  className="flex items-center gap-3 rounded-[12px] border border-[#CBD2D9] bg-white px-4 py-3 shadow-[0_1px_3px_rgba(26,58,92,0.05)] transition-colors hover:border-brand-navy/30"
                 >
                   <div
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-heading text-[13px] font-semibold"

@@ -10,7 +10,7 @@
 
 @layer base {
   :root {
-    --background: 40 47% 96%; /* cream #FAF7F1 (mockup-exact) */
+    --background: 0 0% 100%; /* white */
     --foreground: 209 46% 22%; /* navy #1A3A5C */
     --card: 0 0% 100%;
     --card-foreground: 209 46% 22%;
@@ -26,8 +26,8 @@
     --accent-foreground: 209 46% 22%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
-    --border: 42 32% 87%;
-    --input: 42 32% 87%;
+    --border: 208 14% 83%;
+    --input: 208 14% 83%;
     --ring: 37 51% 51%;
     --radius: 0.625rem;
   }

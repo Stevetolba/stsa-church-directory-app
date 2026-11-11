@@ -220,7 +220,7 @@ export function EmailAbsenteesDialog({
   const fromField = (
     <div>
       <span className="mb-1.5 block text-[12.5px] font-semibold text-[#5B7185]">From</span>
-      <div className="rounded-[10px] border border-[#E5DCC8] bg-brand-cream/40 px-3.5 py-2.5 text-[14px] text-brand-navy">
+      <div className="rounded-[10px] border border-[#CBD2D9] bg-[#F5F7F9] px-3.5 py-2.5 text-[14px] text-brand-navy">
         {user.name} &lt;{fromAddress}&gt;
       </div>
       <p className="mt-1 text-[12px] text-[#8A94A0]">Replies go to {user.email}.</p>
@@ -253,7 +253,7 @@ export function EmailAbsenteesDialog({
 
             <div>
               <span className="mb-1.5 block text-[12.5px] font-semibold text-[#5B7185]">To</span>
-              <div className="rounded-[10px] border border-[#E5DCC8] bg-brand-cream/40 px-3.5 py-2.5 text-[14px] text-brand-navy">
+              <div className="rounded-[10px] border border-[#CBD2D9] bg-[#F5F7F9] px-3.5 py-2.5 text-[14px] text-brand-navy">
                 {recipientSummary}
               </div>
             </div>
@@ -266,7 +266,7 @@ export function EmailAbsenteesDialog({
                 id="subject"
                 {...register("subject")}
                 className={`w-full rounded-[10px] border ${
-                  errors.subject ? "border-destructive" : "border-[#E5DCC8]"
+                  errors.subject ? "border-destructive" : "border-[#CBD2D9]"
                 } bg-white px-3.5 py-2.5 text-[14px] text-brand-navy outline-none focus:border-brand-sky`}
               />
               {errors.subject && <p className="mt-1 text-[12px] text-destructive">{errors.subject.message}</p>}
@@ -292,7 +292,7 @@ export function EmailAbsenteesDialog({
                 {attachments.map((attachment, index) => (
                   <div
                     key={`${attachment.filename}-${index}`}
-                    className="flex items-center justify-between gap-3 rounded-[10px] border border-[#E5DCC8] bg-white px-3.5 py-2 text-[13px] text-brand-navy"
+                    className="flex items-center justify-between gap-3 rounded-[10px] border border-[#CBD2D9] bg-white px-3.5 py-2 text-[13px] text-brand-navy"
                   >
                     <span className="truncate">
                       {attachment.filename}{" "}
@@ -301,7 +301,7 @@ export function EmailAbsenteesDialog({
                     <button
                       type="button"
                       onClick={() => removeAttachment(index)}
-                      className="shrink-0 rounded-md p-1 text-[#8A94A0] hover:bg-brand-cream hover:text-brand-navy"
+                      className="shrink-0 rounded-md p-1 text-[#8A94A0] hover:bg-[#F5F7F9] hover:text-brand-navy"
                     >
                       <X className="h-3.5 w-3.5" />
                       <span className="sr-only">Remove {attachment.filename}</span>
@@ -312,7 +312,7 @@ export function EmailAbsenteesDialog({
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={attachments.length >= MAX_ATTACHMENTS_COUNT}
-                  className="flex w-fit items-center gap-2 rounded-[10px] border border-dashed border-[#E5DCC8] px-3.5 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex w-fit items-center gap-2 rounded-[10px] border border-dashed border-[#CBD2D9] px-3.5 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Paperclip className="h-3.5 w-3.5" />
                   Attach files
@@ -331,7 +331,7 @@ export function EmailAbsenteesDialog({
               <button
                 type="button"
                 onClick={() => onOpenChange(false)}
-                className="rounded-[10px] border border-[#E5DCC8] px-5 py-2.5 text-[14px] font-semibold text-[#5B7185]"
+                className="rounded-[10px] border border-[#CBD2D9] px-5 py-2.5 text-[14px] font-semibold text-[#5B7185]"
               >
                 Cancel
               </button>
@@ -345,14 +345,14 @@ export function EmailAbsenteesDialog({
               <span className="mb-1.5 block text-[12.5px] font-semibold text-[#5B7185]">
                 To — {recipientSummary}
               </span>
-              <div className="max-h-32 overflow-y-auto rounded-[10px] border border-[#E5DCC8] bg-brand-cream/40 px-3.5 py-2.5 text-[13px] leading-relaxed text-brand-navy">
+              <div className="max-h-32 overflow-y-auto rounded-[10px] border border-[#CBD2D9] bg-[#F5F7F9] px-3.5 py-2.5 text-[13px] leading-relaxed text-brand-navy">
                 {recipients && recipients.length > 0 ? recipients.join(", ") : "—"}
               </div>
             </div>
 
             <div>
               <span className="mb-1.5 block text-[12.5px] font-semibold text-[#5B7185]">Subject</span>
-              <div className="rounded-[10px] border border-[#E5DCC8] bg-white px-3.5 py-2.5 text-[14px] font-semibold text-brand-navy">
+              <div className="rounded-[10px] border border-[#CBD2D9] bg-white px-3.5 py-2.5 text-[14px] font-semibold text-brand-navy">
                 {reviewSubject}
               </div>
             </div>
@@ -360,7 +360,7 @@ export function EmailAbsenteesDialog({
             <div>
               <span className="mb-1.5 block text-[12.5px] font-semibold text-[#5B7185]">Message</span>
               <div
-                className="prose-sm max-w-none rounded-[10px] border border-[#E5DCC8] bg-white px-3.5 py-2.5 text-[14px] text-brand-navy"
+                className="prose-sm max-w-none rounded-[10px] border border-[#CBD2D9] bg-white px-3.5 py-2.5 text-[14px] text-brand-navy"
                 // Body is authored by the signed-in sender via RichTextEditor
                 // (TipTap StarterKit + Link) — its own paste/command schema
                 // constrains output, not arbitrary attacker-controlled HTML.
@@ -377,7 +377,7 @@ export function EmailAbsenteesDialog({
                   {attachments.map((attachment, index) => (
                     <div
                       key={`${attachment.filename}-${index}`}
-                      className="flex items-center gap-2 rounded-[10px] border border-[#E5DCC8] bg-brand-cream/40 px-3.5 py-2 text-[13px] text-brand-navy"
+                      className="flex items-center gap-2 rounded-[10px] border border-[#CBD2D9] bg-[#F5F7F9] px-3.5 py-2 text-[13px] text-brand-navy"
                     >
                       <Paperclip className="h-3.5 w-3.5 shrink-0 text-[#8A94A0]" />
                       <span className="truncate">
@@ -404,7 +404,7 @@ export function EmailAbsenteesDialog({
                 type="button"
                 onClick={() => setStep("compose")}
                 disabled={isSending}
-                className="flex items-center gap-2 rounded-[10px] border border-[#E5DCC8] px-5 py-2.5 text-[14px] font-semibold text-[#5B7185] disabled:opacity-60"
+                className="flex items-center gap-2 rounded-[10px] border border-[#CBD2D9] px-5 py-2.5 text-[14px] font-semibold text-[#5B7185] disabled:opacity-60"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
                 Back

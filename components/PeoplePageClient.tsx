@@ -343,7 +343,7 @@ export function PeoplePageClient({
             onClick={() => setEmailDialogOpen(true)}
             disabled={!hasActiveFilter}
             title={hasActiveFilter ? undefined : "Apply a filter to email people"}
-            className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Mail className="h-3.5 w-3.5" />
             Email People
@@ -354,7 +354,7 @@ export function PeoplePageClient({
               onClick={() => setInviteDialogOpen(true)}
               disabled={!hasActiveFilter}
               title={hasActiveFilter ? undefined : "Apply a filter to invite people to training"}
-              className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <GraduationCap className="h-3.5 w-3.5" />
               Invite to Training
@@ -365,7 +365,7 @@ export function PeoplePageClient({
             onClick={handleExport}
             disabled={!hasActiveFilter || isExporting}
             title={hasActiveFilter ? undefined : "Apply a filter to export"}
-            className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Download className="h-3.5 w-3.5" />
             {isExporting ? "Exporting…" : "Export CSV"}
@@ -406,7 +406,7 @@ export function PeoplePageClient({
                       type="checkbox"
                       checked={status.includes(option)}
                       onChange={() => toggleListParam("status", option, status)}
-                      className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                      className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
                     />
                     {option}
                   </label>
@@ -433,7 +433,7 @@ export function PeoplePageClient({
                       type="checkbox"
                       checked={campus.includes(option)}
                       onChange={() => toggleListParam("campus", option, campus)}
-                      className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                      className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
                     />
                     {option}
                   </label>
@@ -458,7 +458,7 @@ export function PeoplePageClient({
                   <select
                     value={gradeFromRaw ?? ""}
                     onChange={(e) => updateParams({ gradeFrom: e.target.value || null, page: null })}
-                    className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                    className="w-full cursor-pointer rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
                   >
                     <option value="">None</option>
                     {GRADE_LEVELS.map((grade) => (
@@ -475,7 +475,7 @@ export function PeoplePageClient({
                   <select
                     value={gradeToRaw ?? ""}
                     onChange={(e) => updateParams({ gradeTo: e.target.value || null, page: null })}
-                    className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                    className="w-full cursor-pointer rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
                   >
                     <option value="">None</option>
                     {GRADE_LEVELS.map((grade) => (
@@ -509,7 +509,7 @@ export function PeoplePageClient({
                         name="childrenMode"
                         checked={childrenMode === option.value}
                         onChange={() => updateParams({ childrenMode: option.value, page: null })}
-                        className="h-4 w-4 border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                        className="h-4 w-4 border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
                       />
                       {option.label}
                     </label>
@@ -517,7 +517,7 @@ export function PeoplePageClient({
                 </div>
 
                 {childrenMode === "grade" && (
-                  <div className="flex flex-col gap-3 border-t border-[#E5DCC8] pt-3">
+                  <div className="flex flex-col gap-3 border-t border-[#CBD2D9] pt-3">
                     <div>
                       <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
                         Min
@@ -525,7 +525,7 @@ export function PeoplePageClient({
                       <select
                         value={childGradeFromRaw ?? ""}
                         onChange={(e) => updateParams({ childGradeFrom: e.target.value || null, page: null })}
-                        className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                        className="w-full cursor-pointer rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
                       >
                         <option value="">None</option>
                         {GRADE_LEVELS.map((grade) => (
@@ -542,7 +542,7 @@ export function PeoplePageClient({
                       <select
                         value={childGradeToRaw ?? ""}
                         onChange={(e) => updateParams({ childGradeTo: e.target.value || null, page: null })}
-                        className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                        className="w-full cursor-pointer rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
                       >
                         <option value="">None</option>
                         {GRADE_LEVELS.map((grade) => (
@@ -556,7 +556,7 @@ export function PeoplePageClient({
                 )}
 
                 {childrenMode === "age" && (
-                  <div className="flex flex-col gap-3 border-t border-[#E5DCC8] pt-3">
+                  <div className="flex flex-col gap-3 border-t border-[#CBD2D9] pt-3">
                     <div>
                       <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
                         Min
@@ -567,7 +567,7 @@ export function PeoplePageClient({
                         max={MAX_CHILD_AGE}
                         value={childAgeFromRaw ?? ""}
                         onChange={(e) => updateParams({ childAgeFrom: e.target.value || null, page: null })}
-                        className="w-full rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                        className="w-full rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
                       />
                     </div>
                     <div>
@@ -580,7 +580,7 @@ export function PeoplePageClient({
                         max={MAX_CHILD_AGE}
                         value={childAgeToRaw ?? ""}
                         onChange={(e) => updateParams({ childAgeTo: e.target.value || null, page: null })}
-                        className="w-full rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                        className="w-full rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
                       />
                     </div>
                   </div>
@@ -616,7 +616,7 @@ export function PeoplePageClient({
               onChange={(e) =>
                 updateParams({ sortBy: e.target.value === "last_name" ? null : e.target.value, page: null })
               }
-              className="cursor-pointer rounded-full border border-[#E5DCC8] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
+              className="cursor-pointer rounded-full border border-[#CBD2D9] bg-white px-3.5 py-[9px] text-[13px] font-semibold text-[#5B7185] outline-none"
             >
               <option value="last_name">Last Name</option>
               <option value="first_name">First Name</option>
@@ -649,7 +649,7 @@ export function PeoplePageClient({
             <button
               type="button"
               onClick={() => updateParams({ showAll: null, page: null })}
-              className="rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30"
+              className="rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30"
             >
               Show Paginated View
             </button>
@@ -659,7 +659,7 @@ export function PeoplePageClient({
                 type="button"
                 disabled={page <= 1}
                 onClick={() => updateParams({ page: String(page - 1) })}
-                className="rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Previous
               </button>
@@ -670,7 +670,7 @@ export function PeoplePageClient({
                 type="button"
                 disabled={page >= Math.ceil(total / pageSize)}
                 onClick={() => updateParams({ page: String(page + 1) })}
-                className="rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-2 text-[13px] font-semibold text-[#5B7185] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Next
               </button>
