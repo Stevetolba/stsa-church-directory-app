@@ -74,15 +74,25 @@ export function getHouseholdSession(): HouseholdSession | null {
 export function setHouseholdSession(data: Omit<HouseholdSession, "expiresAt">): void {
   cookies().set(HOUSEHOLD_COOKIE, createHouseholdSessionToken(data), {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    ...householdCookieSite(),
     path: "/",
     maxAge: HOUSEHOLD_SESSION_MINUTES * 60,
   });
 }
 
 export function clearHouseholdSession(): void {
-  cookies().set(HOUSEHOLD_COOKIE, "", { httpOnly: true, path: "/", maxAge: 0 });
+  // Same site attributes as when it was set, or browsers keep the old cookie.
+  cookies().set(HOUSEHOLD_COOKIE, "", { httpOnly: true, ...householdCookieSite(), path: "/", maxAge: 0 });
+}
+
+// The household pages are embedded in the Subsplash mobile app, a third-party
+// context, where a SameSite=Lax cookie is never sent. In production the cookie
+// is SameSite=None; Secure (browsers require Secure with None); on plain-http
+// localhost it stays Lax so local development keeps working.
+export function householdCookieSite(): { secure: boolean; sameSite: "none" | "lax" } {
+  return process.env.NODE_ENV === "production"
+    ? { secure: true, sameSite: "none" }
+    : { secure: false, sameSite: "lax" };
 }
 
 // API guard: the session, or a 401 response. householdId always comes from
