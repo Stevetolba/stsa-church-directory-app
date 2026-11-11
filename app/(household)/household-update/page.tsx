@@ -4,7 +4,8 @@ import { loadPortal } from "@/lib/householdPortal";
 import { getHouseholdAutoApply } from "@/lib/appSettings";
 import { RemoveNewMember } from "@/components/household/RemoveNewMember";
 import { Banner } from "@/components/household/Banner";
-import { cardCls, primaryBtn, secondaryBtn } from "@/components/household/ui";
+import { avatarTintForId, initialsOf } from "@/lib/avatar";
+import { cardCls, primaryBtn, secondaryBtn, sectionLabelCls } from "@/components/household/ui";
 
 export default async function HouseholdOverviewPage({ searchParams }: { searchParams: { submitted?: string; waiting?: string; updated?: string; outcome?: string; kind?: string } }) {
   const session = await requireHouseholdPage("household-overview");
@@ -64,10 +65,11 @@ export default async function HouseholdOverviewPage({ searchParams }: { searchPa
       )}
 
       <section className="space-y-3" aria-label="Family members">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Family</h2>
+        <h2 className={sectionLabelCls}>Family</h2>
         {members.map((m) => (
-          <Link key={m.id} href={`/household-update/member/${m.id}`} className={`${cardCls} flex items-center justify-between hover:bg-brand-cream`}>
-            <div>
+          <Link key={m.id} href={`/household-update/member/${m.id}`} className={`${cardCls} flex items-center gap-3 transition-colors hover:border-brand-navy/30`}>
+            <Avatar id={m.id} first={m.first_name} last={m.last_name} />
+            <div className="min-w-0 flex-1">
               <div className="font-semibold text-brand-navy">{m.first_name} {m.last_name}</div>
               <div className="text-sm text-muted-foreground">
                 {m.roleLabel}
@@ -80,8 +82,9 @@ export default async function HouseholdOverviewPage({ searchParams }: { searchPa
         ))}
 
         {newMembers.map((n) => (
-          <div key={n.key} className={`${cardCls} flex items-center justify-between`}>
-            <Link href={`/household-update/member/new?key=${encodeURIComponent(n.key)}`} className="flex-1">
+          <div key={n.key} className={`${cardCls} flex items-center gap-3`}>
+            <Avatar id={n.key} first={n.first_name} last={n.last_name} />
+            <Link href={`/household-update/member/new?key=${encodeURIComponent(n.key)}`} className="min-w-0 flex-1">
               <div className="font-semibold text-brand-navy">{n.first_name} {n.last_name}</div>
               <div className="text-sm text-muted-foreground">
                 New {n.role}{n.gradeLabel ? ` · ${n.gradeLabel}` : ""}{n.date_of_birth ? ` · Born ${n.date_of_birth}` : ""}
@@ -98,8 +101,8 @@ export default async function HouseholdOverviewPage({ searchParams }: { searchPa
       </section>
 
       <section className="space-y-3" aria-label="Household address">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Household address</h2>
-        <Link href="/household-update/address" className={`${cardCls} flex items-center justify-between hover:bg-brand-cream`}>
+        <h2 className={sectionLabelCls}>Household address</h2>
+        <Link href="/household-update/address" className={`${cardCls} flex items-center justify-between transition-colors hover:border-brand-navy/30`}>
           <div className="text-brand-navy">{addressLine || "No address on file — tap to add"}</div>
           {address.hasPendingChanges && <span className="rounded-full bg-brand-cream px-2 py-1 text-xs font-medium text-brand-navy">Edited</span>}
         </Link>
@@ -130,4 +133,18 @@ function updateMessage(name: string, outcome?: string, kind?: string): string {
   }
   if (kind === "address") return "Your household address was updated in the church directory.";
   return `${name}'s details were updated in the church directory.`;
+}
+
+// Initials circle, tinted per person like the staff app's directory cards.
+function Avatar({ id, first, last }: { id: string; first: string; last: string }) {
+  const tint = avatarTintForId(id);
+  return (
+    <div
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-heading text-[13px] font-semibold"
+      style={{ backgroundColor: tint.bg, color: tint.text }}
+      aria-hidden
+    >
+      {initialsOf(first, last)}
+    </div>
+  );
 }

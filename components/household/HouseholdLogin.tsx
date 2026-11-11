@@ -44,6 +44,8 @@ export function HouseholdLogin() {
     setBusy(true);
     // Redirects on success; only returns when the code didn't work.
     const r = await signInHouseholdAction(email, code, profileId);
+    // On success the action redirects and the client gets nothing back.
+    if (!r) return;
     setError(r.error);
     setBusy(false);
   }

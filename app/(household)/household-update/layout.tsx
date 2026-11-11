@@ -14,17 +14,18 @@ export default function HouseholdLayout({ children }: { children: React.ReactNod
       {/* The root layout paints the page cream; keep the whole page white so
           nothing cream shows in the embedded view (overscroll, short pages). */}
       <style>{"html,body{background:#fff}"}</style>
-      <header className="border-b border-brand-sky/20 bg-white">
+      {/* Same navy top bar as the staff app's mobile header. */}
+      <header className="bg-brand-navy">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
-          <Link href="/household-update" className="flex items-center gap-3">
-            <span className="relative h-9 w-9 overflow-hidden rounded-full bg-white">
-              <Image src="/stsa-logo.png" alt="STSA Church" fill sizes="36px" className="object-cover" />
+          <Link href="/household-update" className="flex items-center gap-2.5">
+            <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-white">
+              <Image src="/stsa-logo.png" alt="STSA Church" fill sizes="32px" className="object-cover" />
             </span>
-            <span className="font-heading text-lg font-semibold text-brand-navy">Update Profile</span>
+            <span className="font-heading text-[15px] font-semibold leading-tight text-brand-cream">Update Profile</span>
           </Link>
           {session && (
             <form action={signOutHouseholdAction}>
-              <button type="submit" className="text-sm text-muted-foreground underline">
+              <button type="submit" className="text-[13px] text-[#B9C4CF] transition-colors hover:text-brand-cream">
                 Sign out
               </button>
             </form>
