@@ -162,7 +162,7 @@ export function MemberForm(props: MemberFormProps) {
         {errors.phone_number && <p className={errorCls}>{errors.phone_number}</p>}
       </div>
 
-      <fieldset className="space-y-3 rounded-lg border border-border p-4">
+      <fieldset className="space-y-3 rounded-lg border border-[#CBD2D9] p-4">
         <legend className="px-1 text-sm font-medium text-brand-navy">
           Home address <span className="font-normal text-muted-foreground">(optional)</span>
         </legend>

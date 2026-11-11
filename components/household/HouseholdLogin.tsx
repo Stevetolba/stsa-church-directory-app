@@ -135,7 +135,7 @@ export function HouseholdLogin() {
             <button
               key={c.profileId}
               type="button"
-              className="w-full rounded-lg border border-border bg-white px-4 py-3 text-sm font-semibold text-brand-navy hover:bg-brand-cream disabled:opacity-50"
+              className="w-full rounded-lg border border-[#CBD2D9] bg-white px-4 py-3 text-sm font-semibold text-brand-navy hover:bg-brand-cream disabled:opacity-50"
               disabled={busy}
               onClick={() => finish(c.profileId)}
             >
