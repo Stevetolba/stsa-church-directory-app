@@ -83,7 +83,7 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
         {backLabel}
       </Link>
 
-      <div className="rounded-[14px] border border-[#EAE2D0] bg-white p-6 shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
+      <div className="rounded-[14px] border border-[#CBD2D9] bg-white p-6 shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-4">
             <div
@@ -99,7 +99,7 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
               <div className="mt-1.5 flex items-center gap-2">
                 <StatusBadge status={profile.status} />
                 {profile.campus && (
-                  <span className="flex items-center gap-1 whitespace-nowrap rounded-full border border-[#E5DCC8] bg-white px-[11px] py-1 text-[12px] font-semibold text-[#5B7185]">
+                  <span className="flex items-center gap-1 whitespace-nowrap rounded-full border border-[#CBD2D9] bg-white px-[11px] py-1 text-[12px] font-semibold text-[#5B7185]">
                     <MapPin className="h-3 w-3" />
                     {profile.campus}
                   </span>
@@ -122,7 +122,7 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
           )}
         </div>
 
-        <div className="my-6 h-px bg-[#F0EBDF]" />
+        <div className="my-6 h-px bg-[#E4E8EC]" />
 
         <div className="flex flex-col gap-6">
           <Section label="Contact">
@@ -151,7 +151,7 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
             </div>
           </Section>
 
-          <div className="h-px bg-[#F0EBDF]" />
+          <div className="h-px bg-[#E4E8EC]" />
 
           <Section label="Personal">
             <div className="grid grid-cols-2 gap-4">
@@ -178,7 +178,7 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
               already present. */}
           {(profile.allergy_notes || isChild) && (
             <>
-              <div className="h-px bg-[#F0EBDF]" />
+              <div className="h-px bg-[#E4E8EC]" />
               <Section label="Care & Safety">
                 <div className="flex flex-col gap-3">
                   {profile.allergy_notes && (
@@ -202,7 +202,7 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
 
           {profile.household_id && (
             <>
-              <div className="h-px bg-[#F0EBDF]" />
+              <div className="h-px bg-[#E4E8EC]" />
               <Section label="Household">
                 <Link
                   href={`/households/${profile.household_id}`}
@@ -231,7 +231,7 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
                         <Link
                           key={member.id}
                           href={`/people/${member.id}`}
-                          className="flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-brand-cream"
+                          className="flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-[#F5F7F9]"
                         >
                           <div
                             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-heading text-[12px] font-semibold"

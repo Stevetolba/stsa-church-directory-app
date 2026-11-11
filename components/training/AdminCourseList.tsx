@@ -40,7 +40,7 @@ export function AdminCourseList() {
           Create course
         </Button>
       </div>
-      <ul className="mt-6 divide-y rounded-xl bg-card ring-1 ring-foreground/10">
+      <ul className="mt-6 divide-y rounded-[12px] border border-[#CBD2D9] bg-white shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
         {data?.courses.map((c) => (
           <li key={c.id}>
             <Link href={`/settings/training/${c.id}`} className="flex items-center justify-between px-4 py-3 hover:bg-muted">

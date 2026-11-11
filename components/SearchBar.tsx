@@ -38,7 +38,7 @@ export function SearchBar({
 
   return (
     <div
-      className={`flex min-w-[260px] max-w-[440px] flex-1 items-center gap-2.5 rounded-[10px] border border-[#E5DCC8] bg-white px-4 py-[11px] shadow-[0_1px_2px_rgba(26,58,92,0.04)] ${className}`}
+      className={`flex min-w-[260px] max-w-[440px] flex-1 items-center gap-2.5 rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-[11px] shadow-[0_1px_2px_rgba(26,58,92,0.04)] ${className}`}
     >
       <Search className="h-4 w-4 shrink-0 text-[#97A9B8]" />
       <input

@@ -44,7 +44,7 @@ export default async function HouseholdUpdateDetailPage({ params }: { params: { 
         Nothing below has been written to Subsplash unless it is marked applied.
       </p>
       {request.note && (
-        <blockquote className="rounded-lg border-l-4 border-brand-navy bg-brand-cream px-4 py-3 text-sm">{request.note}</blockquote>
+        <blockquote className="rounded-lg border-l-4 border-brand-navy bg-[#F5F7F9] px-4 py-3 text-sm">{request.note}</blockquote>
       )}
       {request.status === "rejected" && request.rejectionReason && (
         <p className="text-sm text-muted-foreground">Rejected: {request.rejectionReason}</p>

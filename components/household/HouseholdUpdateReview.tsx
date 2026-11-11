@@ -73,7 +73,7 @@ export function HouseholdUpdateReview(props: {
 
       {props.groups.map((g) => (
         <section key={g.key} className="overflow-x-auto rounded-xl border border-border bg-white">
-          <header className="border-b border-border bg-brand-cream/50 px-4 py-2 font-semibold text-brand-navy">
+          <header className="border-b border-border bg-[#F5F7F9] px-4 py-2 font-semibold text-brand-navy">
             {g.type === "new_member" ? `New family member: ${g.label}` : g.label}
           </header>
           {g.type === "new_member" && (props.duplicates[g.subjectId]?.length ?? 0) > 0 && (
@@ -149,7 +149,7 @@ export function HouseholdUpdateReview(props: {
         </section>
       ))}
 
-      {message && <p className="rounded-lg bg-brand-cream px-4 py-3 text-sm text-brand-navy" role="status">{message}</p>}
+      {message && <p className="rounded-lg bg-[#F5F7F9] px-4 py-3 text-sm text-brand-navy" role="status">{message}</p>}
 
       {isPending && (
         <div className="space-y-3 border-t border-border pt-4">

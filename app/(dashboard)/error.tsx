@@ -36,7 +36,7 @@ export default function DashboardError({
         </button>
         <Link
           href="/"
-          className="rounded-[10px] border border-[#E5DCC8] px-5 py-2.5 text-[14px] font-semibold text-[#5B7185]"
+          className="rounded-[10px] border border-[#CBD2D9] px-5 py-2.5 text-[14px] font-semibold text-[#5B7185]"
         >
           Back to Dashboard
         </Link>

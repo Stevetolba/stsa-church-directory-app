@@ -35,8 +35,8 @@ export function RichTextEditor({
   if (!editor) return null;
 
   return (
-    <div className="overflow-hidden rounded-[10px] border border-[#E5DCC8] bg-white focus-within:border-brand-sky">
-      <div className="flex items-center gap-1 border-b border-[#E5DCC8] bg-brand-cream/40 px-2 py-1.5">
+    <div className="overflow-hidden rounded-[10px] border border-[#CBD2D9] bg-white focus-within:border-brand-sky">
+      <div className="flex items-center gap-1 border-b border-[#CBD2D9] bg-[#F5F7F9] px-2 py-1.5">
         <ToolbarButton
           active={editor.isActive("bold")}
           onClick={() => editor.chain().focus().toggleBold().run()}

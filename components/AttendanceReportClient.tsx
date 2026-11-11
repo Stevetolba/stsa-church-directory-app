@@ -190,7 +190,7 @@ function ReportFilterBar({
                   type="checkbox"
                   checked={filters.campus.includes(option)}
                   onChange={() => toggleListValue("campus", option)}
-                  className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                  className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
                 />
                 {option}
               </label>
@@ -214,7 +214,7 @@ function ReportFilterBar({
                   type="checkbox"
                   checked={filters.status.includes(option)}
                   onChange={() => toggleListValue("status", option)}
-                  className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                  className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
                 />
                 {option}
               </label>
@@ -241,7 +241,7 @@ function ReportFilterBar({
                 onChange={(e) =>
                   onChange({ ...filters, gradeFrom: e.target.value ? Number(e.target.value) : undefined })
                 }
-                className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                className="w-full cursor-pointer rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
               >
                 <option value="">None</option>
                 {GRADE_LEVELS.map((grade) => (
@@ -260,7 +260,7 @@ function ReportFilterBar({
                 onChange={(e) =>
                   onChange({ ...filters, gradeTo: e.target.value ? Number(e.target.value) : undefined })
                 }
-                className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                className="w-full cursor-pointer rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
               >
                 <option value="">None</option>
                 {GRADE_LEVELS.map((grade) => (
@@ -295,7 +295,7 @@ function ReportFilterBar({
                 onChange={(e) =>
                   onChange({ ...filters, ageFrom: e.target.value ? Number(e.target.value) : undefined })
                 }
-                className="w-full rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                className="w-full rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
               />
             </div>
             <div>
@@ -310,7 +310,7 @@ function ReportFilterBar({
                 onChange={(e) =>
                   onChange({ ...filters, ageTo: e.target.value ? Number(e.target.value) : undefined })
                 }
-                className="w-full rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                className="w-full rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
               />
             </div>
           </div>
@@ -426,7 +426,7 @@ export function AttendanceReportClient({
         <p className="mt-1 text-[13.5px] text-[#5B7185]">Attendance report</p>
       </div>
 
-      <div className="mb-5 flex w-fit items-center rounded-full border border-[#E5DCC8] bg-white p-0.5">
+      <div className="mb-5 flex w-fit items-center rounded-full border border-[#CBD2D9] bg-white p-0.5">
         <TabButton active={tab === "occurrence"} onClick={() => setTab("occurrence")}>
           Occurrence
         </TabButton>
@@ -467,7 +467,7 @@ function Loading() {
 
 function Stat({ label, value, accent = false }: { label: string; value: number; accent?: boolean }) {
   return (
-    <div className={`rounded-[12px] border px-4 py-2 ${accent ? "border-[#3F6B45]/30 bg-[#E6EEE1]" : "border-[#EAE2D0] bg-white"}`}>
+    <div className={`rounded-[12px] border px-4 py-2 ${accent ? "border-[#3F6B45]/30 bg-[#E6EEE1]" : "border-[#CBD2D9] bg-white"}`}>
       <div className={`text-[20px] font-semibold ${accent ? "text-[#3F6B45]" : "text-brand-navy"}`}>{value}</div>
       <div className="text-[11.5px] uppercase tracking-[0.04em] text-[#8A94A0]">{label}</div>
     </div>
@@ -480,7 +480,7 @@ function ExportButton({ onClick, disabled }: { onClick: () => void; disabled?: b
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex items-center gap-1.5 rounded-[10px] border border-[#E5DCC8] bg-white px-3.5 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex items-center gap-1.5 rounded-[10px] border border-[#CBD2D9] bg-white px-3.5 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-50"
     >
       <Download className="h-3.5 w-3.5" />
       Export CSV
@@ -564,7 +564,7 @@ function UploadCsvButton({
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={uploading}
-        className="flex items-center gap-1.5 rounded-[10px] border border-[#E5DCC8] bg-white px-3.5 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex items-center gap-1.5 rounded-[10px] border border-[#CBD2D9] bg-white px-3.5 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Upload className="h-3.5 w-3.5" />
         {uploading ? "Uploading…" : "Upload CSV"}
@@ -627,7 +627,7 @@ function CollapsiblePanel({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="mb-4 rounded-[12px] border border-[#E5DCC8] bg-[#FBF8F1] text-[12.5px] text-[#5B7185]">
+    <div className="mb-4 rounded-[12px] border border-[#CBD2D9] bg-[#F5F7F9] text-[12.5px] text-[#5B7185]">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -642,7 +642,7 @@ function CollapsiblePanel({
           className={`h-4 w-4 shrink-0 text-[#8A94A0] transition-transform ${open ? "rotate-180" : ""}`}
         />
       </button>
-      {open && <div className="border-t border-[#F0EBDF] px-3.5 py-3">{children}</div>}
+      {open && <div className="border-t border-[#E4E8EC] px-3.5 py-3">{children}</div>}
     </div>
   );
 }
@@ -769,7 +769,7 @@ function OccurrenceTab({
         <select
           value={occurrenceDate}
           onChange={(e) => setOccurrenceDate(e.target.value)}
-          className="cursor-pointer rounded-[10px] border border-[#E5DCC8] bg-white px-3 py-2 text-[13.5px] text-brand-navy outline-none"
+          className="cursor-pointer rounded-[10px] border border-[#CBD2D9] bg-white px-3 py-2 text-[13.5px] text-brand-navy outline-none"
         >
           {occurrences.map((o) => (
             <option key={o.occurrence_date} value={o.occurrence_date}>
@@ -839,7 +839,7 @@ function AttendeeTable({ title, records, timezone }: { title: string; records: C
       <div className="mb-1.5 text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">{title}</div>
       <div className="flex flex-col gap-2">
         {records.map((r) => (
-          <div key={r.id} className="flex flex-wrap items-center gap-3 rounded-[12px] border border-[#EAE2D0] bg-white px-3.5 py-2.5">
+          <div key={r.id} className="flex flex-wrap items-center gap-3 rounded-[12px] border border-[#CBD2D9] bg-white px-3.5 py-2.5">
             <NameAvatar displayName={r.displayName} />
             <div className="min-w-[110px] flex-1">
               <div className="text-[14.5px] font-semibold text-brand-navy">{r.displayName}</div>
@@ -1014,7 +1014,7 @@ function SeriesTab({ event }: { event: AppEvent }) {
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="flex items-center rounded-full border border-[#E5DCC8] bg-white p-0.5">
+        <div className="flex items-center rounded-full border border-[#CBD2D9] bg-white p-0.5">
           <TabButton active={rangeMode === "month"} onClick={() => setRangeMode("month")}>
             Month
           </TabButton>
@@ -1027,20 +1027,20 @@ function SeriesTab({ event }: { event: AppEvent }) {
             type="month"
             value={month}
             onChange={(e) => setMonth(e.target.value)}
-            className="rounded-[10px] border border-[#E5DCC8] bg-white px-3 py-2 text-[13.5px] text-brand-navy outline-none"
+            className="rounded-[10px] border border-[#CBD2D9] bg-white px-3 py-2 text-[13.5px] text-brand-navy outline-none"
           />
         ) : (
           <input
             type="number"
             value={year}
             onChange={(e) => setYear(e.target.value)}
-            className="w-24 rounded-[10px] border border-[#E5DCC8] bg-white px-3 py-2 text-[13.5px] text-brand-navy outline-none"
+            className="w-24 rounded-[10px] border border-[#CBD2D9] bg-white px-3 py-2 text-[13.5px] text-brand-navy outline-none"
           />
         )}
         <select
           value={childFilter}
           onChange={(e) => setChildFilter(e.target.value as ChildFilter)}
-          className="cursor-pointer rounded-[10px] border border-[#E5DCC8] bg-white px-3 py-2 text-[13.5px] text-brand-navy outline-none"
+          className="cursor-pointer rounded-[10px] border border-[#CBD2D9] bg-white px-3 py-2 text-[13.5px] text-brand-navy outline-none"
         >
           <option value="all">Everyone</option>
           <option value="children">Children only</option>
@@ -1057,10 +1057,10 @@ function SeriesTab({ event }: { event: AppEvent }) {
       ) : people.length === 0 ? (
         <EmptyState icon={<BarChart3 className="h-6 w-6" />} message="No attendance recorded in this range." />
       ) : (
-        <div className="overflow-x-auto rounded-[12px] border border-[#EAE2D0]">
+        <div className="overflow-x-auto rounded-[12px] border border-[#CBD2D9]">
           <table className="w-full border-collapse text-[13px]">
             <thead>
-              <tr className="border-b border-[#EAE2D0] bg-[#FAF7F1] text-left text-[11.5px] uppercase tracking-[0.04em] text-[#8A94A0]">
+              <tr className="border-b border-[#CBD2D9] bg-[#F5F7F9] text-left text-[11.5px] uppercase tracking-[0.04em] text-[#8A94A0]">
                 <SortableColumnHeader label="Name" sortKey="name" sort={sort} onChange={setSort} />
                 {showGrade && (
                   <SortableColumnHeader label="Grade" sortKey="grade" sort={sort} onChange={setSort} />
@@ -1080,7 +1080,7 @@ function SeriesTab({ event }: { event: AppEvent }) {
                 const attended = new Set(p.attendedDates);
                 const pct = Math.round((p.attendedDates.length / occurrenceDates.length) * 100);
                 return (
-                  <tr key={p.profileId} className="border-b border-[#EAE2D0] last:border-0">
+                  <tr key={p.profileId} className="border-b border-[#CBD2D9] last:border-0">
                     <td className="whitespace-nowrap px-3 py-2 font-semibold text-brand-navy">{p.displayName}</td>
                     {showGrade && (
                       <td className="whitespace-nowrap px-3 py-2 text-[#5B7185]">{p.grade ?? "—"}</td>
@@ -1181,7 +1181,7 @@ function AbsenteesTab({
         <select
           value={lastN}
           onChange={(e) => setLastN(Number(e.target.value))}
-          className="cursor-pointer rounded-[10px] border border-[#E5DCC8] bg-white px-3 py-2 text-[13.5px] text-brand-navy outline-none"
+          className="cursor-pointer rounded-[10px] border border-[#CBD2D9] bg-white px-3 py-2 text-[13.5px] text-brand-navy outline-none"
         >
           {[4, 8, 12, 26, 52].map((n) => (
             <option key={n} value={n}>
@@ -1194,7 +1194,7 @@ function AbsenteesTab({
             type="checkbox"
             checked={childrenOnly}
             onChange={(e) => setChildrenOnly(e.target.checked)}
-            className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+            className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
           />
           Children only
         </label>
@@ -1233,7 +1233,7 @@ function AbsenteesTab({
             <Link
               key={p.id}
               href={`/people/${p.id}`}
-              className="flex items-center gap-3 rounded-[12px] border border-[#EAE2D0] bg-white px-3.5 py-2.5 transition-colors hover:border-brand-navy/30"
+              className="flex items-center gap-3 rounded-[12px] border border-[#CBD2D9] bg-white px-3.5 py-2.5 transition-colors hover:border-brand-navy/30"
             >
               <NameAvatar displayName={`${p.first_name} ${p.last_name}`} />
               <div className="min-w-0 flex-1">

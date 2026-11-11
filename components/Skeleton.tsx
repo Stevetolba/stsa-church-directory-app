@@ -5,5 +5,5 @@ export function Skeleton({
   className?: string;
   style?: React.CSSProperties;
 }) {
-  return <div className={`animate-pulse rounded-md bg-[#EAE2D0]/60 ${className}`} style={style} />;
+  return <div className={`animate-pulse rounded-md bg-[#CBD2D9]/60 ${className}`} style={style} />;
 }

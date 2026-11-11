@@ -140,11 +140,11 @@ export function ActivityLog() {
                 {day.people.map((person) => (
                   <div
                     key={person.key}
-                    className="flex flex-col gap-2 rounded-[14px] border border-[#EAE2D0] bg-white px-4 py-3"
+                    className="flex flex-col gap-2 rounded-[14px] border border-[#CBD2D9] bg-white px-4 py-3"
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="truncate text-[14.5px] font-semibold text-brand-navy">{person.name}</span>
-                      <span className="shrink-0 rounded-full bg-[#FAF7F1] px-2 py-0.5 text-[11px] font-semibold text-[#8A94A0]">
+                      <span className="shrink-0 rounded-full bg-[#F5F7F9] px-2 py-0.5 text-[11px] font-semibold text-[#8A94A0]">
                         {ROLE_LABEL[person.role]}
                       </span>
                     </div>

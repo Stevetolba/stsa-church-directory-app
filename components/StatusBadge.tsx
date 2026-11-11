@@ -10,7 +10,7 @@ const STATUS_BADGE_STYLES: Record<MemberStatus, { bg: string; text: string }> = 
   "Regular Attendee": { bg: "#FDF1DC", text: "#8A6A24" },
   Visitor: { bg: "#EEF2F6", text: "#4C6178" },
   Newcomer: { bg: "#E4F4FC", text: "#1B6E93" },
-  "Former Attender": { bg: "#F0EBDF", text: "#8A94A0" },
+  "Former Attender": { bg: "#E4E8EC", text: "#8A94A0" },
 };
 
 export function StatusBadge({ status, className = "" }: { status: MemberStatus; className?: string }) {

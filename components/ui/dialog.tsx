@@ -40,7 +40,7 @@ function DialogContent({ className, children, ...props }: DialogPrimitive.Popup.
         {children}
         <DialogPrimitive.Close
           data-slot="dialog-close"
-          className="absolute right-4 top-4 rounded-md p-1 text-[#8A94A0] transition-colors hover:bg-brand-cream hover:text-brand-navy"
+          className="absolute right-4 top-4 rounded-md p-1 text-[#8A94A0] transition-colors hover:bg-[#F5F7F9] hover:text-brand-navy"
         >
           <X className="h-4 w-4" />
           <span className="sr-only">Close</span>

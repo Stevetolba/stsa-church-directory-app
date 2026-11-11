@@ -25,7 +25,7 @@ export function SuggestedFilters<T>({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="rounded-[12px] border border-[#E5DCC8] bg-white">
+    <div className="rounded-[12px] border border-[#CBD2D9] bg-white">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -41,7 +41,7 @@ export function SuggestedFilters<T>({
         />
       </button>
       {open && (
-        <div className="flex flex-wrap gap-2 border-t border-[#F0EBDF] px-4 py-3">
+        <div className="flex flex-wrap gap-2 border-t border-[#E4E8EC] px-4 py-3">
           {filters.map((f) => (
             <button
               key={f.label}
@@ -50,7 +50,7 @@ export function SuggestedFilters<T>({
                 onSelect(f.preset);
                 setOpen(false);
               }}
-              className="whitespace-nowrap rounded-full border border-[#E5DCC8] bg-white px-3.5 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 hover:bg-brand-cream"
+              className="whitespace-nowrap rounded-full border border-[#CBD2D9] bg-white px-3.5 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 hover:bg-[#F5F7F9]"
             >
               {f.label}
             </button>

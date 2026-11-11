@@ -51,7 +51,7 @@ const config: Config = {
         brand: {
           navy: "#1A3A5C",
           sky: "#29B6F6",
-          cream: "#FAF7F1",
+          cream: "#F5F7F9",
         },
         status: {
           active: "#16A34A",

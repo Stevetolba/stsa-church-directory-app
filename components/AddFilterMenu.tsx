@@ -28,7 +28,7 @@ export function AddFilterMenu({
               <MenuPrimitive.Item
                 key={option.key}
                 onClick={() => onSelect(option.key)}
-                className="cursor-default rounded-md px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none select-none data-highlighted:bg-brand-cream"
+                className="cursor-default rounded-md px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none select-none data-highlighted:bg-[#F5F7F9]"
               >
                 {option.label}
               </MenuPrimitive.Item>

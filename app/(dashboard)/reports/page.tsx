@@ -65,7 +65,7 @@ export default async function ReportsPage() {
             <Link
               key={c.representativeEventId}
               href={`/events/${encodeURIComponent(c.representativeEventId)}/report`}
-              className="flex items-center justify-between gap-3 rounded-[14px] border border-[#EAE2D0] bg-white px-5 py-4 shadow-[0_1px_3px_rgba(26,58,92,0.05)] transition-colors hover:border-brand-navy/30"
+              className="flex items-center justify-between gap-3 rounded-[14px] border border-[#CBD2D9] bg-white px-5 py-4 shadow-[0_1px_3px_rgba(26,58,92,0.05)] transition-colors hover:border-brand-navy/30"
             >
               <div className="flex items-center gap-2 min-w-0">
                 <BarChart3 className="h-[18px] w-[18px] shrink-0 text-[#7C8FA0]" />

@@ -29,7 +29,7 @@ export function FilterPill({
         className={`flex items-center gap-1 whitespace-nowrap rounded-full border py-2 pl-3.5 pr-2 text-[13px] font-semibold transition-colors ${
           active
             ? "border-brand-navy bg-brand-navy text-brand-cream"
-            : "border-[#E5DCC8] bg-white text-[#5B7185] hover:border-brand-navy/30"
+            : "border-[#CBD2D9] bg-white text-[#5B7185] hover:border-brand-navy/30"
         }`}
       >
         <PopoverTrigger className="outline-none">{label}</PopoverTrigger>

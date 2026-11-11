@@ -5,7 +5,7 @@ export default function HouseholdDetailLoading() {
     <div className="mx-auto max-w-[640px]">
       <Skeleton className="mb-6 h-5 w-40" />
 
-      <div className="overflow-hidden rounded-[14px] border border-[#EAE2D0] bg-white shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
+      <div className="overflow-hidden rounded-[14px] border border-[#CBD2D9] bg-white shadow-[0_1px_3px_rgba(26,58,92,0.05)]">
         <div className="bg-brand-navy px-6 py-6">
           <Skeleton className="h-6 w-48 bg-white/20" />
           <Skeleton className="mt-2 h-4 w-64 bg-white/10" />
@@ -18,7 +18,7 @@ export default function HouseholdDetailLoading() {
             <Skeleton className="h-4 w-32" />
           </div>
 
-          <div className="h-px bg-[#F0EBDF]" />
+          <div className="h-px bg-[#E4E8EC]" />
 
           <div className="flex flex-col gap-3">
             <Skeleton className="h-3 w-20" />

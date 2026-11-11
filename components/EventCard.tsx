@@ -36,7 +36,7 @@ export function EventCard({
   return (
     <div
       className={`flex flex-col gap-3 rounded-[14px] border bg-white px-5 py-4 shadow-[0_1px_3px_rgba(26,58,92,0.05)] transition-colors sm:flex-row sm:items-center sm:justify-between ${
-        highlighted ? "border-[#3F6B45]/40 ring-1 ring-[#3F6B45]/20" : "border-[#EAE2D0]"
+        highlighted ? "border-[#3F6B45]/40 ring-1 ring-[#3F6B45]/20" : "border-[#CBD2D9]"
       }`}
     >
       <div className="min-w-0">
@@ -62,7 +62,7 @@ export function EventCard({
         <div className="flex shrink-0 items-center gap-2 pl-[26px] sm:pl-0">
           <Link
             href={`/events/${event.id}/report`}
-            className="flex items-center gap-1.5 whitespace-nowrap rounded-[10px] border border-[#E5DCC8] bg-white px-3.5 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30"
+            className="flex items-center gap-1.5 whitespace-nowrap rounded-[10px] border border-[#CBD2D9] bg-white px-3.5 py-2 text-[13px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30"
           >
             <BarChart3 className="h-3.5 w-3.5" />
             Report

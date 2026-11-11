@@ -77,7 +77,7 @@ export default async function HouseholdOverviewPage({ searchParams }: { searchPa
                 {m.date_of_birth ? ` · Born ${m.date_of_birth}` : ""}
               </div>
             </div>
-            {m.hasPendingChanges && <span className="rounded-full bg-brand-cream px-2 py-1 text-xs font-medium text-brand-navy">Edited</span>}
+            {m.hasPendingChanges && <span className="rounded-full bg-[#F5F7F9] px-2 py-1 text-xs font-medium text-brand-navy">Edited</span>}
           </Link>
         ))}
 
@@ -91,7 +91,7 @@ export default async function HouseholdOverviewPage({ searchParams }: { searchPa
               </div>
             </Link>
             <div className="flex items-center gap-3">
-              <span className="rounded-full bg-brand-cream px-2 py-1 text-xs font-medium text-brand-navy">To be added</span>
+              <span className="rounded-full bg-[#F5F7F9] px-2 py-1 text-xs font-medium text-brand-navy">To be added</span>
               <RemoveNewMember memberKey={n.key} />
             </div>
           </div>
@@ -104,7 +104,7 @@ export default async function HouseholdOverviewPage({ searchParams }: { searchPa
         <h2 className={sectionLabelCls}>Household address</h2>
         <Link href="/household-update/address" className={`${cardCls} flex items-center justify-between transition-colors hover:border-brand-navy/30`}>
           <div className="text-brand-navy">{addressLine || "No address on file — tap to add"}</div>
-          {address.hasPendingChanges && <span className="rounded-full bg-brand-cream px-2 py-1 text-xs font-medium text-brand-navy">Edited</span>}
+          {address.hasPendingChanges && <span className="rounded-full bg-[#F5F7F9] px-2 py-1 text-xs font-medium text-brand-navy">Edited</span>}
         </Link>
       </section>
 

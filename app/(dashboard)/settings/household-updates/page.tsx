@@ -56,7 +56,7 @@ export default async function HouseholdUpdatesPage({ searchParams }: { searchPar
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border bg-white">
           <table className="w-full text-left text-sm">
-            <thead className="border-b border-border bg-brand-cream/50 text-xs uppercase text-muted-foreground">
+            <thead className="border-b border-border bg-[#F5F7F9] text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-2">Household</th>
                 <th className="px-4 py-2">Submitted by</th>
@@ -67,7 +67,7 @@ export default async function HouseholdUpdatesPage({ searchParams }: { searchPar
             </thead>
             <tbody>
               {requests.map((r) => (
-                <tr key={r.id} className="border-b border-border last:border-0 hover:bg-brand-cream/30">
+                <tr key={r.id} className="border-b border-border last:border-0 hover:bg-[#F5F7F9]/30">
                   <td className="px-4 py-2 font-medium">
                     <Link href={`/settings/household-updates/${r.id}`} className="text-brand-navy underline">
                       {r.householdName ?? r.householdId}

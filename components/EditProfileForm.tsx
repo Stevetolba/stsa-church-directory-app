@@ -96,7 +96,7 @@ export function EditProfileForm({
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="rounded-[14px] border border-[#EAE2D0] bg-white p-6 shadow-[0_1px_3px_rgba(26,58,92,0.05)]"
+      className="rounded-[14px] border border-[#CBD2D9] bg-white p-6 shadow-[0_1px_3px_rgba(26,58,92,0.05)]"
     >
       <div className="mb-6 flex items-center gap-3">
         <span className="text-[13px] text-[#5B7185]">Status</span>
@@ -152,7 +152,7 @@ export function EditProfileForm({
               id="directory_access"
               type="checkbox"
               {...register("directory_access")}
-              className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+              className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
             />
             Grant read-only volunteer sign-in access
           </label>
@@ -179,7 +179,7 @@ export function EditProfileForm({
         </Field>
       </div>
 
-      <div className="my-6 h-px bg-[#F0EBDF]" />
+      <div className="my-6 h-px bg-[#E4E8EC]" />
       <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#8A94A0]">
         Care &amp; Safety
       </div>
@@ -209,7 +209,7 @@ export function EditProfileForm({
         )}
       </div>
 
-      <div className="my-6 h-px bg-[#F0EBDF]" />
+      <div className="my-6 h-px bg-[#E4E8EC]" />
       <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#8A94A0]">
         Address
       </div>
@@ -257,7 +257,7 @@ export function EditProfileForm({
         </button>
         <Link
           href={`/people/${profile.id}`}
-          className="rounded-[10px] border border-[#E5DCC8] px-5 py-2.5 text-[14px] font-semibold text-[#5B7185]"
+          className="rounded-[10px] border border-[#CBD2D9] px-5 py-2.5 text-[14px] font-semibold text-[#5B7185]"
         >
           Cancel
         </Link>
@@ -268,7 +268,7 @@ export function EditProfileForm({
 
 function inputClass(hasError: boolean): string {
   return `w-full rounded-[10px] border ${
-    hasError ? "border-destructive" : "border-[#E5DCC8]"
+    hasError ? "border-destructive" : "border-[#CBD2D9]"
   } bg-white px-3.5 py-2.5 text-[14px] text-brand-navy outline-none focus:border-brand-sky`;
 }
 

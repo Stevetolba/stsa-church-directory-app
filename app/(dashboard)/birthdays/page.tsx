@@ -206,7 +206,7 @@ export default function BirthdaysPage() {
                       type="checkbox"
                       checked={status.includes(option)}
                       onChange={() => toggleListParam("status", option, status)}
-                      className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                      className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
                     />
                     {option}
                   </label>
@@ -233,7 +233,7 @@ export default function BirthdaysPage() {
                       type="checkbox"
                       checked={campus.includes(option)}
                       onChange={() => toggleListParam("campus", option, campus)}
-                      className="h-4 w-4 rounded border-[#E5DCC8] text-brand-navy focus:ring-brand-sky"
+                      className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
                     />
                     {option}
                   </label>
@@ -258,7 +258,7 @@ export default function BirthdaysPage() {
                   <select
                     value={gradeFromRaw ?? ""}
                     onChange={(e) => updateParams({ gradeFrom: e.target.value || null })}
-                    className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                    className="w-full cursor-pointer rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
                   >
                     <option value="">None</option>
                     {GRADE_LEVELS.map((grade) => (
@@ -275,7 +275,7 @@ export default function BirthdaysPage() {
                   <select
                     value={gradeToRaw ?? ""}
                     onChange={(e) => updateParams({ gradeTo: e.target.value || null })}
-                    className="w-full cursor-pointer rounded-lg border border-[#E5DCC8] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                    className="w-full cursor-pointer rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
                   >
                     <option value="">None</option>
                     {GRADE_LEVELS.map((grade) => (
