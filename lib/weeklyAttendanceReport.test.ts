@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildCampusReport, reportWeekFor, teamLeadsFor } from "./weeklyAttendanceReport";
+import { buildCampusReport,
+  buildWeekBirthdays, reportWeekFor, teamLeadsFor } from "./weeklyAttendanceReport";
 import { buildWeeklyAttendanceEmail } from "./attendanceReportEmail";
 import { SUNDAY_SCHOOL_PRESETS_BY_CAMPUS } from "./sundaySchoolGroups";
 import type { CheckInRecord } from "@/types/attendance";
@@ -85,6 +86,13 @@ describe("buildWeeklyAttendanceEmail", () => {
     expect(subject).toContain("1 came");
     expect(html).toContain("&lt;b&gt;Ann");
     expect(html).not.toContain("<b>Ann");
-    expect((html.match(/<h3 /g) ?? []).length).toBe(6);
+    expect((html.match(/<h3 /g) ?? []).length).toBe(7); // 5 bands + All + birthdays
+    expect(html).toContain("Children's birthdays");
+  });
+  it("lists children's birthdays for each week", () => {
+    const kid = profile("k", { household_role: "child", date_of_birth: "2016-11-10", first_name: "Kay", last_name: "Lee" });
+    const weeks = buildWeekBirthdays(["2026-11-01", "2026-11-08"], [kid]);
+    expect(weeks[0].children).toEqual([]);
+    expect(weeks[1].children).toEqual([{ name: "Kay Lee", date: "2026-11-10", turning: 10 }]);
   });
 });
