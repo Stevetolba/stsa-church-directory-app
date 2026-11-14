@@ -291,6 +291,9 @@ interface CampusFieldMeta {
   definitionId: string;
   revisionId?: string;
   type?: string;
+  // Campus reads back as a `choices` array (multi-select) on the live org —
+  // writes (type `checkbox`) must send `value.choices`, not a single `choice`.
+  multi?: boolean;
   choiceIds: Partial<Record<Campus, string>>;
 }
 
@@ -303,6 +306,7 @@ function mergeCampusFieldMeta(
   meta.definitionId = def.id;
   if (def.revision_id) meta.revisionId = def.revision_id;
   if (def.type) meta.type = def.type;
+  if (def.type === "checkbox" || def.type === "multiple_choice" || Array.isArray(field.value.choices)) meta.multi = true;
   const choices = field.value.choices?.length
     ? field.value.choices
     : field.value.choice
@@ -1349,7 +1353,7 @@ async function buildCampusFieldInput(
     );
   }
 
-  let value: { choice: { id: string } } | { text: string };
+  let value: { choice: { id: string } } | { choices: { choice: { id: string } }[] } | { text: string };
   if (campusUsesChoices(meta)) {
     const choiceId = meta.choiceIds[campus];
     if (!choiceId) {
@@ -1357,7 +1361,7 @@ async function buildCampusFieldInput(
         `No known Subsplash dropdown choice id for campus "${campus}" — it hasn't appeared on any sampled profile yet.`
       );
     }
-    value = { choice: { id: choiceId } };
+    value = meta.multi ? { choices: [{ choice: { id: choiceId } }] } : { choice: { id: choiceId } };
   } else {
     value = { text: campus };
   }
