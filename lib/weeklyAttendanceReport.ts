@@ -59,8 +59,23 @@ export interface ReportSection {
   cameLastSunday: number;
 }
 
+export interface WeekBirthday {
+  name: string;
+  // YYYY-MM-DD of this year's birthday.
+  date: string;
+  turning: number;
+}
+
+export interface WeekBirthdays {
+  // The Sunday that starts the week (Sunday through Saturday).
+  weekStart: string;
+  children: WeekBirthday[];
+}
+
 export interface CampusReport {
   sunday: string;
+  // Children's birthdays for each Sunday-to-Saturday week of the month.
+  birthdays: WeekBirthdays[];
   // The month's Sundays up to and including `sunday`.
   occurrenceDates: string[];
   sections: ReportSection[];
@@ -85,6 +100,25 @@ function matchesPreset(profile: Profile | undefined, preset: ReportPreset, asOf:
   return gradeActive || ageActive;
 }
 
+// Children (household role "child") with a birthday in each Sunday-to-Saturday
+// week starting on one of `weekStarts`.
+export function buildWeekBirthdays(weekStarts: string[], children: Profile[]): WeekBirthdays[] {
+  return weekStarts.map((weekStart) => {
+    const found: WeekBirthday[] = [];
+    for (let i = 0; i < 7; i++) {
+      const day = addDays(weekStart, i);
+      const [y, m, d] = day.split("-").map(Number);
+      for (const c of children) {
+        if (!c.date_of_birth) continue;
+        const [by, bm, bd] = c.date_of_birth.split("-").map(Number);
+        if (!by || bm !== m || bd !== d) continue;
+        found.push({ name: `${c.first_name} ${c.last_name}`.trim(), date: day, turning: y - by });
+      }
+    }
+    return { weekStart, children: found };
+  });
+}
+
 // `records` are the campus series' check-ins for the month up to `sunday`;
 // `occurrenceDates` that month's Sundays up to `sunday`. Children only.
 export function buildCampusReport(
@@ -92,7 +126,8 @@ export function buildCampusReport(
   occurrenceDates: string[],
   profilesById: Map<string, Profile>,
   presets: { label: string; preset: ReportPreset }[],
-  sunday: string
+  sunday: string,
+  campusChildren: Profile[] = []
 ): CampusReport {
   const [y, m, d] = sunday.split("-").map(Number);
   const asOf = new Date(y, m - 1, d);
@@ -124,7 +159,12 @@ export function buildCampusReport(
     toSection(p.label, people.filter((x) => matchesPreset(x.profile, p.preset, asOf)))
   );
   sections.push(toSection("All Sunday School", people));
-  return { sunday, occurrenceDates: freq.occurrenceDates, sections };
+  return {
+    sunday,
+    occurrenceDates: freq.occurrenceDates,
+    sections,
+    birthdays: buildWeekBirthdays(freq.occurrenceDates, campusChildren),
+  };
 }
 
 export type CampusStatus =
@@ -155,7 +195,7 @@ export function teamLeadsFor(campus: Campus, profiles: Profile[]): Profile[] {
 export async function runWeeklyAttendanceReports(
   appUrl: string,
   now = new Date(),
-  opts: { force?: boolean; onlyTo?: string } = {}
+  opts: { force?: boolean; onlyTo?: string; onlyCampus?: Campus } = {}
 ): Promise<WeeklyReportResult> {
   const week = reportWeekFor(now);
   if (!week.isSendWindow && !opts.force) return { skipped: "outside send window", campuses: [] };
@@ -165,7 +205,7 @@ export async function runWeeklyAttendanceReports(
   const profilesById = new Map(profiles.map((p) => [p.id, p]));
   const results: WeeklyReportResult["campuses"] = [];
 
-  for (const campus of CAMPUSES) {
+  for (const campus of opts.onlyCampus ? [opts.onlyCampus] : CAMPUSES) {
     try {
       // Real org: pinned Subsplash series id. Mock data uses different ids,
       // so fall back to a title match.
@@ -203,7 +243,8 @@ export async function runWeeklyAttendanceReports(
           monthOccurrences.map((o) => o.occurrence_date),
           profilesById,
           SUNDAY_SCHOOL_PRESETS_BY_CAMPUS[campus],
-          week.sunday
+          week.sunday,
+          profiles.filter((p) => p.campus === campus && p.household_role === "child")
         );
         const { subject, html } = buildWeeklyAttendanceEmail({
           campus,

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { EmailAbsenteesDialog } from "@/components/EmailAbsenteesDialog";
+import { EmailWeeklyReportButton } from "@/components/EmailWeeklyReportButton";
 import { FilterPill } from "@/components/FilterPill";
 import { AddFilterMenu } from "@/components/AddFilterMenu";
 import { SuggestedFilters } from "@/components/SuggestedFilters";
@@ -421,9 +422,12 @@ export function AttendanceReportClient({
         All reports
       </Link>
 
-      <div className="mb-5">
-        <h1 className="font-heading text-2xl font-semibold text-brand-navy">{event.title}</h1>
-        <p className="mt-1 text-[13.5px] text-[#5B7185]">Attendance report</p>
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-heading text-2xl font-semibold text-brand-navy">{event.title}</h1>
+          <p className="mt-1 text-[13.5px] text-[#5B7185]">Attendance report</p>
+        </div>
+        {isSundaySchoolSeriesId(event.series_id) && <EmailWeeklyReportButton seriesId={event.series_id} />}
       </div>
 
       <div className="mb-5 flex w-fit items-center rounded-full border border-[#CBD2D9] bg-white p-0.5">

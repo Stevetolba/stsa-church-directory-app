@@ -10,7 +10,8 @@ export async function GET(request: NextRequest) {
   if (!cronSecretMatches(request.headers.get("authorization"))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const appUrl = process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? new URL(request.url).origin;
+  const envUrl = process.env.NEXTAUTH_URL ?? process.env.AUTH_URL;
+  const appUrl = envUrl && !/localhost|127\.0\.0\.1/.test(envUrl) ? envUrl : new URL(request.url).origin;
   const params = new URL(request.url).searchParams;
   // Dev-only testing hooks (never honored in production).
   const dev = process.env.NODE_ENV !== "production";

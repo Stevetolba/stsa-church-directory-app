@@ -61,6 +61,20 @@ export function buildWeeklyAttendanceEmail(params: {
     })
     .join("");
 
+  const birthdayRows = (report.birthdays ?? [])
+    .map((w) => {
+      const items = w.children.length
+        ? w.children
+            .map((c) => `${escapeHtml(c.name)} <span style="color:#6b7a88">(${escapeHtml(longDate(c.date))}, turns ${c.turning})</span>`)
+            .join("<br/>")
+        : `<span style="color:#8a94a0">None</span>`;
+      return `<tr><td style="padding:6px 8px;border-bottom:1px solid #f0ebdf;white-space:nowrap;vertical-align:top;color:#5b7185">Week of ${escapeHtml(longDate(w.weekStart))}</td><td style="padding:6px 8px;border-bottom:1px solid #f0ebdf">${items}</td></tr>`;
+    })
+    .join("");
+  const birthdays = birthdayRows
+    ? `<h3 style="margin:28px 0 6px;font-size:15px;color:#14304a">Children's birthdays</h3><table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #eae2d0">${birthdayRows}</table>`
+    : "";
+
   const html = `
 <div style="font-family:Arial,Helvetica,sans-serif;max-width:680px;margin:0 auto;color:#1f2d3a;line-height:1.5">
   <div style="background:#14304a;color:#f6f0e2;padding:18px 24px;border-radius:10px 10px 0 0">
@@ -79,6 +93,7 @@ export function buildWeeklyAttendanceEmail(params: {
     <p style="margin:0 0 14px;font-size:13px;color:#6b7a88">Who came last Sunday, and how many of this month's ${total} Sunday${total === 1 ? "" : "s"} so far each child has attended. Children who came last Sunday are listed first.</p>
     <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse"><tr>${summary}</tr></table>
     ${sections}
+    ${birthdays}
     <p style="margin:24px 0">
       <a href="${escapeHtml(reportUrl)}" style="background:#14304a;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;display:inline-block">Open the full report</a>
     </p>
