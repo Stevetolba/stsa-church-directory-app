@@ -274,14 +274,14 @@ function findCampusField(
   );
 }
 
-function extractCampus(customFields: RawCustomFieldValue[] | undefined): Campus | undefined {
+function extractCampuses(customFields: RawCustomFieldValue[] | undefined): Campus[] {
   const field = findCampusField(customFields);
   // A profile can have multiple campus choices selected at once (confirmed
   // against the live org) — our model only supports one, so pick the first
   // recognized value rather than requiring an exact single-choice match.
   const choiceNames =
     field?.value.choices?.map((c) => c.name) ?? (field?.value.choice ? [field.value.choice.name] : []);
-  return choiceNames.find((v): v is Campus => v === "Arlington" || v === "Leesburg");
+  return choiceNames.filter((v): v is Campus => v === "Arlington" || v === "Leesburg");
 }
 
 // The Campus custom field's write metadata (definition id, revision id, and
@@ -408,6 +408,7 @@ function mapProfile(raw: RawProfile): Profile {
   const statusRaw = raw._embedded?.["latest-membership-status-change"]?.status;
   const household = raw._embedded?.household;
   const address_parts = mapAddressParts(raw._embedded?.address);
+  const campuses = extractCampuses(raw.custom_fields);
 
   return {
     id: raw.id,
@@ -427,7 +428,8 @@ function mapProfile(raw: RawProfile): Profile {
     academic_grade_value: raw.academic_grade?.value,
     graduation_year: raw.graduation_year ?? undefined,
     status: statusRaw ? MEMBERSHIP_STATUS_MAP[statusRaw] : "Visitor",
-    campus: extractCampus(raw.custom_fields),
+    campus: campuses[0],
+    campuses: campuses.length ? campuses : undefined,
     directory_access: extractDirectoryAccess(raw.custom_fields),
     directory_role: extractDirectoryRole(raw.custom_fields),
     address: formatAddressParts(address_parts),
@@ -1285,7 +1287,7 @@ export type UpdateProfileInput = Partial<
     | "email"
     | "phone_number"
     | "gender"
-    | "campus"
+    | "campuses"
     | "directory_access"
     | "directory_role"
     | "allergy_notes"
@@ -1330,7 +1332,7 @@ function phoneNumberForSubsplash(
 // write can't be resolved so the caller can report a clear reason.
 async function buildCampusFieldInput(
   profileId: string,
-  campus: Campus
+  campuses: Campus[]
 ): Promise<{ custom_field_definition: { id: string; revision_id?: string }; value: object }> {
   const currentRaw = await subsplashFetch<RawProfile>(`/people/v1/profiles/${profileId}`).catch(
     () => null
@@ -1338,7 +1340,7 @@ async function buildCampusFieldInput(
   const fromProfile = currentRaw ? findCampusField(currentRaw.custom_fields) : undefined;
   let meta = fromProfile ? mergeCampusFieldMeta(null, fromProfile) : null;
 
-  if (!meta || !meta.revisionId || (campusUsesChoices(meta) && !meta.choiceIds[campus])) {
+  if (!meta || !meta.revisionId || (campusUsesChoices(meta) && campuses.some((c) => !meta!.choiceIds[c]))) {
     const sampled = await getCampusFieldMetaCached();
     if (sampled) {
       meta = meta
@@ -1353,17 +1355,23 @@ async function buildCampusFieldInput(
     );
   }
 
-  let value: { choice: { id: string } } | { choices: { choice: { id: string } }[] } | { text: string };
+  let value: { choice: { id: string } } | { choices: { id: string }[] } | { text: string };
   if (campusUsesChoices(meta)) {
-    const choiceId = meta.choiceIds[campus];
-    if (!choiceId) {
-      throw new CampusUpdateError(
-        `No known Subsplash dropdown choice id for campus "${campus}" — it hasn't appeared on any sampled profile yet.`
-      );
+    const choiceIds: string[] = [];
+    for (const campus of campuses) {
+      const choiceId = meta.choiceIds[campus];
+      if (!choiceId) {
+        throw new CampusUpdateError(
+          `No known Subsplash dropdown choice id for campus "${campus}" — it hasn't appeared on any sampled profile yet.`
+        );
+      }
+      choiceIds.push(choiceId);
     }
-    value = meta.multi ? { choices: [{ choice: { id: choiceId } }] } : { choice: { id: choiceId } };
+    value = meta.multi
+      ? { choices: choiceIds.map((id) => ({ id })) }
+      : { choice: { id: choiceIds[0] } };
   } else {
-    value = { text: campus };
+    value = { text: campuses.join(", ") };
   }
 
   return {
@@ -1754,7 +1762,7 @@ export async function setChoiceCustomField(
 
 export async function updateProfile(id: string, patch: UpdateProfileInput): Promise<Profile> {
   const {
-    campus,
+    campuses,
     directory_access,
     directory_role,
     care_notes,
@@ -1776,8 +1784,10 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
       existing.academic_grade_value = value;
       existing.academic_grade = gradeLabelForValue(value);
     }
-    if (campus !== undefined) {
-      existing.campus = campus;
+    if (campuses !== undefined) {
+      const campus = campuses.join(", ");
+      existing.campus = campuses[0];
+      existing.campuses = campuses;
       const campusField = existing.custom_fields?.find((f) => f.label.toLowerCase() === "campus");
       if (campusField) {
         campusField.value = campus;
@@ -1865,8 +1875,8 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
     custom_field_definition: { id: string; revision_id?: string };
     value: object;
   }> = [];
-  if (campus !== undefined) {
-    customFieldInputs.push(await buildCampusFieldInput(id, campus));
+  if (campuses !== undefined) {
+    customFieldInputs.push(await buildCampusFieldInput(id, campuses));
   }
   if (directory_access !== undefined) {
     customFieldInputs.push(await buildDirectoryAccessFieldInput(id, directory_access));

@@ -17,7 +17,7 @@ export const editProfileSchema = z.object({
   // Optional: the edit form only includes campus in the PATCH body when it
   // actually changed (real-mode campus updates aren't implemented yet —
   // see updateProfile), so omitting it must still validate.
-  campus: z.enum(["Arlington", "Leesburg"]).optional(),
+  campuses: z.array(z.enum(["Arlington", "Leesburg"])).min(1, "Select at least one campus").optional(),
   // Grants/revokes volunteer read-only sign-in access (ADR-0010) — see
   // updateProfile's DirectoryAccess custom-field write in lib/subsplash.ts.
   directory_access: z.boolean().optional(),
