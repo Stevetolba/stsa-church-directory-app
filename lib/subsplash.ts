@@ -1353,7 +1353,7 @@ async function buildCampusFieldInput(
     );
   }
 
-  let value: { choice: { id: string } } | { choices: { choice: { id: string } }[] } | { text: string };
+  let value: { choice: { id: string } } | { choices: { id: string }[] } | { text: string };
   if (campusUsesChoices(meta)) {
     const choiceId = meta.choiceIds[campus];
     if (!choiceId) {
@@ -1361,7 +1361,7 @@ async function buildCampusFieldInput(
         `No known Subsplash dropdown choice id for campus "${campus}" — it hasn't appeared on any sampled profile yet.`
       );
     }
-    value = meta.multi ? { choices: [{ choice: { id: choiceId } }] } : { choice: { id: choiceId } };
+    value = meta.multi ? { choices: [{ id: choiceId }] } : { choice: { id: choiceId } };
   } else {
     value = { text: campus };
   }
