@@ -35,6 +35,7 @@ export function EditProfileForm({
 
   const {
     register,
+    watch,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<EditFormValues>({
@@ -56,6 +57,8 @@ export function EditProfileForm({
       postal_code: addressDefaults?.postal_code ?? "",
     },
   });
+
+  const directoryAccess = watch("directory_access");
 
   async function onSubmit(values: EditFormValues) {
     setSubmitError(null);
@@ -101,6 +104,11 @@ export function EditProfileForm({
       <div className="mb-6 flex items-center gap-3">
         <span className="text-[13px] text-[#5B7185]">Status</span>
         <StatusBadge status={profile.status} />
+        {profile.household_role && (
+          <span className="rounded-full bg-[#EAF0F5] px-3 py-1 text-[12px] font-semibold capitalize text-brand-navy">
+            {profile.household_role}
+          </span>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
@@ -157,26 +165,28 @@ export function EditProfileForm({
             Grant read-only volunteer sign-in access
           </label>
         </Field>
-        <Field
-          label="Directory Role"
-          htmlFor="directory_role"
-          error={errors.directory_role?.message}
-          className="sm:col-span-2"
-        >
-          <select
-            id="directory_role"
-            {...register("directory_role")}
-            className={inputClass(!!errors.directory_role)}
+        {directoryAccess && (
+          <Field
+            label="Directory Role"
+            htmlFor="directory_role"
+            error={errors.directory_role?.message}
+            className="sm:col-span-2"
           >
-            <option value="Volunteer">Volunteer</option>
-            <option value="Team Lead">Team Lead — can email Children/Youth parents</option>
-            <option value="Admin">Admin — full access, same as an admin email</option>
-          </select>
-          <p className="mt-1.5 text-[12px] text-[#8A94A0]">
-            Elevates a non-staff person beyond read-only access. Admin and Team Lead both let
-            this person sign in even without Directory Access checked above.
-          </p>
-        </Field>
+            <select
+              id="directory_role"
+              {...register("directory_role")}
+              className={inputClass(!!errors.directory_role)}
+            >
+              <option value="Volunteer">Volunteer</option>
+              <option value="Team Lead">Team Lead — can email Children/Youth parents</option>
+              <option value="Admin">Admin — full access, same as an admin email</option>
+            </select>
+            <p className="mt-1.5 text-[12px] text-[#8A94A0]">
+              Elevates a non-staff person beyond read-only access. Admin and Team Lead both let
+              this person sign in even without Directory Access checked above.
+            </p>
+          </Field>
+        )}
       </div>
 
       <div className="my-6 h-px bg-[#E4E8EC]" />
