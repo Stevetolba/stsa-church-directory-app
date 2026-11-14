@@ -17,6 +17,10 @@ import { StatusBadge } from "@/components/StatusBadge";
 // save, independent of the household's shared address.
 type EditFormValues = z.infer<typeof editProfileWithAddressSchema>;
 
+function sameCampuses(a: string[], b: string[]) {
+  return a.length === b.length && [...a].sort().join() === [...b].sort().join();
+}
+
 export function EditProfileForm({
   profile,
   household,
@@ -45,7 +49,7 @@ export function EditProfileForm({
       last_name: profile.last_name,
       email: profile.email,
       phone_number: profile.phone_number ?? "",
-      campus: profile.campus ?? "Arlington",
+      campuses: profile.campuses ?? (profile.campus ? [profile.campus] : ["Arlington"]),
       directory_access: profile.directory_access ?? false,
       directory_role: profile.directory_role ?? "Volunteer",
       date_of_birth: profile.date_of_birth ?? "",
@@ -60,16 +64,19 @@ export function EditProfileForm({
 
   const directoryAccess = watch("directory_access");
 
+  const initialCampuses: string[] =
+    profile.campuses ?? (profile.campus ? [profile.campus] : ["Arlington"]);
+
   async function onSubmit(values: EditFormValues) {
     setSubmitError(null);
-    const { campus, directory_access, directory_role, ...restValues } = values;
+    const { campuses, directory_access, directory_role, ...restValues } = values;
     // Campus, Directory Access, and Directory Role all default to a value
     // even when unchanged (a controlled <select>/checkbox always reports
     // one) — only include each in the PATCH if it actually changed, so
     // saving name/email/phone doesn't trigger a needless custom-field write.
     const profileValues = {
       ...restValues,
-      ...(campus !== (profile.campus ?? "Arlington") ? { campus } : {}),
+      ...(!sameCampuses(campuses ?? [], initialCampuses) ? { campuses } : {}),
       ...(directory_access !== (profile.directory_access ?? false) ? { directory_access } : {}),
       ...(directory_role !== (profile.directory_role ?? "Volunteer") ? { directory_role } : {}),
     };
@@ -132,11 +139,25 @@ export function EditProfileForm({
             className={inputClass(!!errors.phone_number)}
           />
         </Field>
-        <Field label="Campus" htmlFor="campus" error={errors.campus?.message}>
-          <select id="campus" {...register("campus")} className={inputClass(!!errors.campus)}>
-            <option value="Arlington">Arlington</option>
-            <option value="Leesburg">Leesburg</option>
-          </select>
+        <Field label="Campus" htmlFor="campus-Arlington" error={errors.campuses?.message}>
+          <div className="flex h-[42px] items-center gap-5">
+            {(["Arlington", "Leesburg"] as const).map((c) => (
+              <label
+                key={c}
+                htmlFor={`campus-${c}`}
+                className="flex cursor-pointer items-center gap-2 text-[13.5px] text-brand-navy"
+              >
+                <input
+                  id={`campus-${c}`}
+                  type="checkbox"
+                  value={c}
+                  {...register("campuses")}
+                  className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
+                />
+                {c}
+              </label>
+            ))}
+          </div>
         </Field>
         <Field label="Date of Birth" htmlFor="date_of_birth" error={errors.date_of_birth?.message}>
           <input

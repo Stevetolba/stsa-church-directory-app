@@ -57,6 +57,9 @@ export interface Profile {
   graduation_year?: number;
   status: MemberStatus;
   campus?: Campus;
+  // Every campus checked on the profile (Campus is a checkbox field, so a
+  // person can belong to both). `campus` is the first of these.
+  campuses?: Campus[];
   // Whether this person's Subsplash profile has the DirectoryAccess custom
   // field set to an affirmative value — grants a personal-email volunteer
   // read-only sign-in (ADR-0010). Admin-editable from the person's edit
