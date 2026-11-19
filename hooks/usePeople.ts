@@ -1,6 +1,7 @@
 "use client";
 
 import useSWR from "swr";
+import type { BirthdayRange } from "@/lib/birthdays";
 import type { Campus, MemberStatus } from "@/types/profile";
 import type { ChildrenFilter, ProfileSearchResult, SearchProfilesParams } from "@/lib/subsplash";
 
@@ -10,6 +11,11 @@ export interface UsePeopleParams {
   campus?: Campus[];
   gradeFrom?: number;
   gradeTo?: number;
+  ageFrom?: number;
+  ageTo?: number;
+  gender?: string[];
+  maritalStatus?: string[];
+  birthday?: BirthdayRange;
   sortBy?: SearchProfilesParams["sortBy"];
   page?: number;
   // Callers that need every match at once (e.g. the birthday agenda, which
@@ -33,6 +39,11 @@ export function usePeople({
   campus,
   gradeFrom,
   gradeTo,
+  ageFrom,
+  ageTo,
+  gender,
+  maritalStatus,
+  birthday,
   sortBy,
   page = 1,
   pageSize,
@@ -44,6 +55,11 @@ export function usePeople({
   campus?.forEach((c) => params.append("campus", c));
   if (gradeFrom !== undefined) params.set("gradeFrom", String(gradeFrom));
   if (gradeTo !== undefined) params.set("gradeTo", String(gradeTo));
+  if (ageFrom !== undefined) params.set("ageFrom", String(ageFrom));
+  if (ageTo !== undefined) params.set("ageTo", String(ageTo));
+  gender?.forEach((g) => params.append("gender", g));
+  maritalStatus?.forEach((m) => params.append("maritalStatus", m));
+  if (birthday) params.set("birthday", birthday);
   if (sortBy) params.set("sortBy", sortBy);
   if (pageSize !== undefined) params.set("pageSize", String(pageSize));
   if (withChildren) {

@@ -15,6 +15,7 @@ import { EmailPeopleDialog } from "@/components/EmailPeopleDialog";
 import { InviteToTrainingDialog } from "@/components/training/InviteToTrainingDialog";
 import { usePeople } from "@/hooks/usePeople";
 import { GRADE_LEVELS } from "@/lib/grades";
+import { BIRTHDAY_RANGES, type BirthdayRange } from "@/lib/birthdays";
 import { downloadCsv, PROFILE_EXPORT_COLUMNS, profileToExportRow, toCsv } from "@/lib/csv";
 import type { ChildrenFilter, ChildrenFilterMode, ProfileSearchResult, SearchProfilesParams } from "@/lib/subsplash";
 import type { Campus, MemberStatus } from "@/types/profile";
@@ -51,11 +52,37 @@ const SHOW_ALL_PAGE_SIZE = 20000;
 const MIN_CHILD_AGE = 0;
 const MAX_CHILD_AGE = 25;
 
-type FilterKey = "status" | "campus" | "grade" | "children";
-const ALL_FILTER_KEYS: FilterKey[] = ["status", "campus", "grade", "children"];
+// Subsplash's enums, lowercase (what profile.gender / marital_status hold).
+const GENDER_OPTIONS = [
+  { value: "male", label: "Male" },
+  { value: "female", label: "Female" },
+];
+const MARITAL_OPTIONS = [
+  { value: "single", label: "Single" },
+  { value: "married", label: "Married" },
+  { value: "separated", label: "Separated" },
+  { value: "divorced", label: "Divorced" },
+  { value: "widowed", label: "Widowed" },
+];
+
+type FilterKey = "status" | "campus" | "age" | "birthday" | "gender" | "marital" | "grade" | "children";
+const ALL_FILTER_KEYS: FilterKey[] = [
+  "status",
+  "campus",
+  "age",
+  "birthday",
+  "gender",
+  "marital",
+  "grade",
+  "children",
+];
 const FILTER_LABELS: Record<FilterKey, string> = {
   status: "Status",
   campus: "Campus",
+  age: "Age",
+  birthday: "Birthday",
+  gender: "Gender",
+  marital: "Marital status",
   grade: "Grade",
   children: "Adults with Children",
 };
@@ -87,6 +114,23 @@ function summarizeStatus(status: MemberStatus[]): string {
 function summarizeCampus(campus: Campus[]): string {
   if (campus.length === 0) return "Campus";
   return `Campus: ${campus.join(", ")}`;
+}
+
+function summarizeOptions(
+  label: string,
+  selected: string[],
+  options: { value: string; label: string }[]
+): string {
+  if (selected.length === 0) return label;
+  if (selected.length > 2) return `${label}: ${selected.length} selected`;
+  return `${label}: ${selected.map((v) => options.find((o) => o.value === v)?.label ?? v).join(", ")}`;
+}
+
+function summarizeAge(ageFrom?: number, ageTo?: number): string {
+  if (ageFrom !== undefined && ageTo !== undefined) return `Age: ${ageFrom} – ${ageTo}`;
+  if (ageFrom !== undefined) return `Age: ${ageFrom}+`;
+  if (ageTo !== undefined) return `Age: up to ${ageTo}`;
+  return "Age";
 }
 
 function summarizeGrade(gradeFrom?: number, gradeTo?: number): string {
@@ -160,6 +204,14 @@ export function PeoplePageClient({
   const withChildren: ChildrenFilter | undefined = childrenMode
     ? { mode: childrenMode, gradeFrom: childGradeFrom, gradeTo: childGradeTo, ageFrom: childAgeFrom, ageTo: childAgeTo }
     : undefined;
+  const ageFromRaw = searchParams.get("ageFrom");
+  const ageToRaw = searchParams.get("ageTo");
+  const ageFrom = ageFromRaw ? Number(ageFromRaw) : undefined;
+  const ageTo = ageToRaw ? Number(ageToRaw) : undefined;
+  const gender = searchParams.getAll("gender");
+  const maritalStatus = searchParams.getAll("maritalStatus");
+  const birthdayRaw = searchParams.get("birthday");
+  const birthday = BIRTHDAY_RANGES.some((r) => r.value === birthdayRaw) ? (birthdayRaw as BirthdayRange) : undefined;
   const sortBy =
     (searchParams.get("sortBy") as NonNullable<SearchProfilesParams["sortBy"]> | null) ?? "last_name";
   const page = Number(searchParams.get("page") ?? "1");
@@ -171,6 +223,11 @@ export function PeoplePageClient({
     campus,
     gradeFrom,
     gradeTo,
+    ageFrom,
+    ageTo,
+    gender,
+    maritalStatus,
+    birthday,
     sortBy,
     page: showAll ? 1 : page,
     pageSize: showAll ? SHOW_ALL_PAGE_SIZE : undefined,
@@ -187,6 +244,10 @@ export function PeoplePageClient({
   if (status.length > 0) activeFilters.add("status");
   if (campus.length > 0) activeFilters.add("campus");
   if (gradeFrom !== undefined || gradeTo !== undefined) activeFilters.add("grade");
+  if (ageFrom !== undefined || ageTo !== undefined) activeFilters.add("age");
+  if (birthday) activeFilters.add("birthday");
+  if (gender.length > 0) activeFilters.add("gender");
+  if (maritalStatus.length > 0) activeFilters.add("marital");
   if (childrenMode !== null) activeFilters.add("children");
 
   const hasActiveFilter =
@@ -195,6 +256,11 @@ export function PeoplePageClient({
     campus.length > 0 ||
     gradeFrom !== undefined ||
     gradeTo !== undefined ||
+    ageFrom !== undefined ||
+    ageTo !== undefined ||
+    !!birthday ||
+    gender.length > 0 ||
+    maritalStatus.length > 0 ||
     childrenMode !== null;
   const [isExporting, setIsExporting] = useState(false);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
@@ -207,6 +273,11 @@ export function PeoplePageClient({
       campus.forEach((c) => params.append("campus", c));
       if (gradeFrom !== undefined) params.set("gradeFrom", String(gradeFrom));
       if (gradeTo !== undefined) params.set("gradeTo", String(gradeTo));
+      if (ageFrom !== undefined) params.set("ageFrom", String(ageFrom));
+      if (ageTo !== undefined) params.set("ageTo", String(ageTo));
+      gender.forEach((g) => params.append("gender", g));
+      maritalStatus.forEach((m) => params.append("maritalStatus", m));
+      if (birthday) params.set("birthday", birthday);
       if (childrenMode) {
         params.set("childrenMode", childrenMode);
         if (childGradeFrom !== undefined) params.set("childGradeFrom", String(childGradeFrom));
@@ -261,7 +332,7 @@ export function PeoplePageClient({
 
   // Toggles `value` in a multi-select query param (e.g. status/campus),
   // resetting to page 1 the same way single-value filters already do.
-  function toggleListParam(key: "status" | "campus", value: string, current: string[]) {
+  function toggleListParam(key: "status" | "campus" | "gender" | "maritalStatus", value: string, current: string[]) {
     const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
     const params = new URLSearchParams(searchParams.toString());
     params.delete(key);
@@ -285,6 +356,10 @@ export function PeoplePageClient({
     if (openFilter === key) setOpenFilter(null);
     if (key === "status") updateParams({ status: null, page: null });
     else if (key === "campus") updateParams({ campus: null, page: null });
+    else if (key === "age") updateParams({ ageFrom: null, ageTo: null, page: null });
+    else if (key === "birthday") updateParams({ birthday: null, page: null });
+    else if (key === "gender") updateParams({ gender: null, page: null });
+    else if (key === "marital") updateParams({ maritalStatus: null, page: null });
     else if (key === "grade") updateParams({ gradeFrom: null, gradeTo: null, page: null });
     else
       updateParams({
@@ -305,6 +380,11 @@ export function PeoplePageClient({
       campus: null,
       gradeFrom: null,
       gradeTo: null,
+      ageFrom: null,
+      ageTo: null,
+      birthday: null,
+      gender: null,
+      maritalStatus: null,
       childrenMode: null,
       childGradeFrom: null,
       childGradeTo: null,
@@ -436,6 +516,119 @@ export function PeoplePageClient({
                       className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
                     />
                     {option}
+                  </label>
+                ))}
+              </div>
+            </FilterPill>
+          )}
+
+          {activeFilters.has("age") && (
+            <FilterPill
+              label={summarizeAge(ageFrom, ageTo)}
+              active={ageFrom !== undefined || ageTo !== undefined}
+              open={openFilter === "age"}
+              onOpenChange={(open) => setOpenFilter(open ? "age" : null)}
+              onRemove={() => handleRemoveFilter("age")}
+            >
+              <div className="flex flex-col gap-3">
+                {[
+                  { label: "Min", raw: ageFromRaw, param: "ageFrom" },
+                  { label: "Max", raw: ageToRaw, param: "ageTo" },
+                ].map(({ label, raw, param }) => (
+                  <div key={param}>
+                    <label className="mb-1 block text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8A94A0]">
+                      {label}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={120}
+                      value={raw ?? ""}
+                      onChange={(e) => updateParams({ [param]: e.target.value || null, page: null })}
+                      className="w-full rounded-lg border border-[#CBD2D9] bg-white px-2.5 py-1.5 text-[13.5px] text-brand-navy outline-none"
+                    />
+                  </div>
+                ))}
+              </div>
+            </FilterPill>
+          )}
+
+          {activeFilters.has("birthday") && (
+            <FilterPill
+              label={birthday ? `Birthday: ${BIRTHDAY_RANGES.find((r) => r.value === birthday)?.label}` : "Birthday"}
+              active={!!birthday}
+              open={openFilter === "birthday"}
+              onOpenChange={(open) => setOpenFilter(open ? "birthday" : null)}
+              onRemove={() => handleRemoveFilter("birthday")}
+            >
+              <div className="flex flex-col gap-1.5">
+                {BIRTHDAY_RANGES.map((option) => (
+                  <label
+                    key={option.value}
+                    className="flex cursor-pointer items-center gap-2 text-[13.5px] text-brand-navy"
+                  >
+                    <input
+                      type="radio"
+                      name="birthday"
+                      checked={birthday === option.value}
+                      onChange={() => updateParams({ birthday: option.value, page: null })}
+                      className="h-4 w-4 border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            </FilterPill>
+          )}
+
+          {activeFilters.has("gender") && (
+            <FilterPill
+              label={summarizeOptions("Gender", gender, GENDER_OPTIONS)}
+              active={gender.length > 0}
+              open={openFilter === "gender"}
+              onOpenChange={(open) => setOpenFilter(open ? "gender" : null)}
+              onRemove={() => handleRemoveFilter("gender")}
+            >
+              <div className="flex flex-col gap-1.5">
+                {GENDER_OPTIONS.map((option) => (
+                  <label
+                    key={option.value}
+                    className="flex cursor-pointer items-center gap-2 text-[13.5px] text-brand-navy"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={gender.includes(option.value)}
+                      onChange={() => toggleListParam("gender", option.value, gender)}
+                      className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            </FilterPill>
+          )}
+
+          {activeFilters.has("marital") && (
+            <FilterPill
+              label={summarizeOptions("Marital status", maritalStatus, MARITAL_OPTIONS)}
+              active={maritalStatus.length > 0}
+              open={openFilter === "marital"}
+              onOpenChange={(open) => setOpenFilter(open ? "marital" : null)}
+              onRemove={() => handleRemoveFilter("marital")}
+            >
+              <div className="flex flex-col gap-1.5">
+                {MARITAL_OPTIONS.map((option) => (
+                  <label
+                    key={option.value}
+                    className="flex cursor-pointer items-center gap-2 text-[13.5px] text-brand-navy"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={maritalStatus.includes(option.value)}
+                      onChange={() => toggleListParam("maritalStatus", option.value, maritalStatus)}
+                      className="h-4 w-4 rounded border-[#CBD2D9] text-brand-navy focus:ring-brand-sky"
+                    />
+                    {option.label}
                   </label>
                 ))}
               </div>
@@ -700,7 +893,19 @@ export function PeoplePageClient({
         onOpenChange={setEmailDialogOpen}
         user={user}
         fromAddress={fromAddress}
-        filters={{ search, status, campus, gradeFrom, gradeTo, withChildren }}
+        filters={{
+          search,
+          status,
+          campus,
+          gradeFrom,
+          gradeTo,
+          ageFrom,
+          ageTo,
+          gender,
+          maritalStatus,
+          birthday,
+          withChildren,
+        }}
         matchCount={total}
       />
     </div>

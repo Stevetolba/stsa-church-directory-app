@@ -79,6 +79,11 @@ export const emailPeopleSchema = z
     campus: z.array(z.enum(["Arlington", "Leesburg"])).optional(),
     gradeFrom: z.number().int().optional(),
     gradeTo: z.number().int().optional(),
+    ageFrom: z.number().int().optional(),
+    ageTo: z.number().int().optional(),
+    gender: z.array(z.string()).optional(),
+    maritalStatus: z.array(z.string()).optional(),
+    birthday: z.enum(["today", "this_week", "this_month", "next_month"]).optional(),
     withChildren: withChildrenSchema,
   })
   .refine(attachmentsWithinLimit, ATTACHMENTS_REFINE_OPTIONS);

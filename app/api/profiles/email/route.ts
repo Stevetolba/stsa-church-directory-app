@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
   }
   const { subject, bodyHtml, attachments, search, status, campus, gradeFrom, gradeTo, withChildren } =
     parsed.data;
+  const { ageFrom, ageTo, gender, maritalStatus, birthday } = parsed.data;
 
   // Requires at least one real filter, same gate the CSV export button uses
   // client-side — recomputed here server-side so a bare/empty filter set
@@ -34,6 +35,11 @@ export async function POST(request: NextRequest) {
     (campus && campus.length > 0) ||
     gradeFrom !== undefined ||
     gradeTo !== undefined ||
+    ageFrom !== undefined ||
+    ageTo !== undefined ||
+    (gender && gender.length > 0) ||
+    (maritalStatus && maritalStatus.length > 0) ||
+    birthday !== undefined ||
     withChildren !== undefined;
   if (!hasActiveFilter) {
     return NextResponse.json({ error: "Apply a filter before emailing people." }, { status: 400 });
@@ -45,6 +51,11 @@ export async function POST(request: NextRequest) {
     campus,
     gradeFrom,
     gradeTo,
+    ageFrom,
+    ageTo,
+    gender,
+    maritalStatus,
+    birthday,
     withChildren,
     pageSize: FULL_ROSTER_PAGE_SIZE,
   });
