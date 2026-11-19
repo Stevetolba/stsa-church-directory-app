@@ -32,3 +32,14 @@ nothing more.
   without an admin seeing them first. The snapshot of old values on every row
   is the record for undoing a change by hand; a one-click revert is not built.
 - Turning the switch off restores full review without a deploy.
+
+## Amendment: speed
+
+Saves were slow because every Subsplash write evicted the cached roster and the next `getHousehold` re-walked all profiles (15-40s). The portal and instant apply now:
+
+- read the household with `getHouseholdLive` (household + each member fetched directly, in parallel) instead of joining the full roster walk;
+- write with `revalidate: false`, so a family's save doesn't evict the roster cache (staff lists may lag by up to `CACHE_REVALIDATE_SECONDS`);
+- apply each person's writes, the address write and the change-row updates in parallel;
+- look up the household name only when a new request is created.
+
+The cold roster walk itself now fetches pages in parallel batches.

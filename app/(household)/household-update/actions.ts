@@ -18,8 +18,7 @@ import {
   type NewMemberRole,
 } from "@/lib/householdUpdateLogic";
 import { autoApplySubmittedRequest, getOrCreateOpenRequest, getOpenRequest, listChanges, replaceSubjectChanges, submitRequest } from "@/lib/householdUpdates";
-import { getLiveMember } from "@/lib/householdPortal";
-import { getHousehold } from "@/lib/subsplash";
+import { getHouseholdLive } from "@/lib/subsplash";
 import { householdMemberType } from "@/lib/household";
 import { CHURCH_NAME } from "@/lib/trainingEmail";
 import { sendEmail } from "@/lib/email";
@@ -86,11 +85,14 @@ function needSession(): HouseholdSession {
   return s;
 }
 
-async function openRequestFor(s: HouseholdSession) {
-  const household = await getHousehold(s.householdId);
+// The name is only needed when a new request is created, so it's looked up
+// lazily rather than costing a Subsplash read on every save.
+async function openRequestFor(s: HouseholdSession, householdName: () => Promise<string | null> | string | null) {
+  const existing = await getOpenRequest(s.householdId);
+  if (existing) return existing;
   return getOrCreateOpenRequest({
     householdId: s.householdId,
-    householdName: household?.name ?? null,
+    householdName: await householdName(),
     profileId: s.profileId,
     email: s.email,
   });
@@ -157,14 +159,15 @@ export async function saveMemberAction(
 ): Promise<SaveResult> {
   const s = needSession();
   // The household id comes from the session; the profile must be a member of it.
-  const live = await getLiveMember(s.householdId, profileId);
+  const household = await getHouseholdLive(s.householdId);
+  const live = household?.members?.find((m) => m.id === profileId) ?? null;
   if (!live) return { ok: false, errors: { form: "That person isn't part of your household." } };
 
   const isChild = householdMemberType(live.household_role) === "Child";
   const { changes, errors } = buildProfileChanges(live, input, { isChild });
   if (Object.keys(errors).length > 0) return { ok: false, errors };
 
-  const request = await openRequestFor(s);
+  const request = await openRequestFor(s, () => household?.name ?? null);
   await replaceSubjectChanges(
     request.id,
     { type: "profile", id: profileId, label: `${live.first_name} ${live.last_name}`.trim() },
@@ -185,11 +188,11 @@ export async function saveAddressAction(input: {
   postal_code: string;
 }): Promise<SaveResult> {
   const s = needSession();
-  const household = await getHousehold(s.householdId);
+  const household = await getHouseholdLive(s.householdId);
   if (!household) return { ok: false, errors: { form: "We couldn't find your household." } };
   const { changes, errors } = buildAddressChanges(household.address_parts ?? {}, input);
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  const request = await openRequestFor(s);
+  const request = await openRequestFor(s, () => household.name ?? null);
   await replaceSubjectChanges(request.id, { type: "household", id: s.householdId, label: "Household address" }, changes);
   await recordAccessEvent({ email: s.email, name: s.name, role: "household", eventType: "household_update_submit", resource: "draft-address" });
   if (await getHouseholdAutoApply()) {
@@ -212,7 +215,7 @@ export async function saveNewMemberAction(
   const s = needSession();
   const { changes, errors } = buildNewMemberChanges(input);
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  const request = await openRequestFor(s);
+  const request = await openRequestFor(s, async () => (await getHouseholdLive(s.householdId))?.name ?? null);
 
   let subjectKey = key;
   const existing = await listChanges(request.id);
