@@ -9,6 +9,7 @@ import { ArrowLeft, Mail, Paperclip, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { MAX_ATTACHMENTS_COUNT, MAX_ATTACHMENTS_TOTAL_BYTES } from "@/lib/validation/email";
+import type { BirthdayRange } from "@/lib/birthdays";
 import type { ChildrenFilter, ProfileSearchResult } from "@/lib/subsplash";
 import type { Campus, MemberStatus } from "@/types/profile";
 
@@ -46,6 +47,11 @@ export interface EmailPeopleFilters {
   campus: Campus[];
   gradeFrom?: number;
   gradeTo?: number;
+  ageFrom?: number;
+  ageTo?: number;
+  gender?: string[];
+  maritalStatus?: string[];
+  birthday?: BirthdayRange;
   withChildren?: ChildrenFilter;
 }
 
@@ -56,6 +62,11 @@ function buildParams(filters: EmailPeopleFilters): URLSearchParams {
   filters.campus.forEach((c) => params.append("campus", c));
   if (filters.gradeFrom !== undefined) params.set("gradeFrom", String(filters.gradeFrom));
   if (filters.gradeTo !== undefined) params.set("gradeTo", String(filters.gradeTo));
+  if (filters.ageFrom !== undefined) params.set("ageFrom", String(filters.ageFrom));
+  if (filters.ageTo !== undefined) params.set("ageTo", String(filters.ageTo));
+  filters.gender?.forEach((g) => params.append("gender", g));
+  filters.maritalStatus?.forEach((m) => params.append("maritalStatus", m));
+  if (filters.birthday) params.set("birthday", filters.birthday);
   if (filters.withChildren) {
     params.set("childrenMode", filters.withChildren.mode);
     if (filters.withChildren.gradeFrom !== undefined)
@@ -206,6 +217,11 @@ export function EmailPeopleDialog({
           campus: filters.campus,
           gradeFrom: filters.gradeFrom,
           gradeTo: filters.gradeTo,
+          ageFrom: filters.ageFrom,
+          ageTo: filters.ageTo,
+          gender: filters.gender,
+          maritalStatus: filters.maritalStatus,
+          birthday: filters.birthday,
           withChildren: filters.withChildren,
         }),
       });

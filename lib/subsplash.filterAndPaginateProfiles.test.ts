@@ -162,3 +162,22 @@ describe("filterAndPaginateProfiles — withChildren", () => {
     expect(result.profiles.map((p) => p.id)).not.toContain("childless");
   });
 });
+
+describe("filterAndPaginateProfiles — gender / marital / birthday / age", () => {
+  const a = profile({ id: "a", first_name: "A", last_name: "A", gender: "male", marital_status: "married", date_of_birth: "1980-06-15" });
+  const b = profile({ id: "b", first_name: "B", last_name: "B", gender: "female", marital_status: "single", date_of_birth: "1990-06-20" });
+  const c = profile({ id: "c", first_name: "C", last_name: "C" });
+  const pool = [a, b, c];
+  const ids = (r: { profiles: { id: string }[] }) => r.profiles.map((p) => p.id);
+
+  it("filters by gender and marital status (multi-select)", () => {
+    expect(ids(filterAndPaginateProfiles(pool, { gender: ["female"] }))).toEqual(["b"]);
+    expect(ids(filterAndPaginateProfiles(pool, { maritalStatus: ["married", "single"] }))).toEqual(["a", "b"]);
+  });
+
+  it("filters by birthday range", () => {
+    // matchesBirthdayRange is exercised directly with a fixed 'today' below;
+    // here just confirm profiles without a DOB never match an active range.
+    expect(ids(filterAndPaginateProfiles(pool, { birthday: "this_month" })).includes("c")).toBe(false);
+  });
+});

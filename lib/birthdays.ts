@@ -82,3 +82,43 @@ export function groupProfilesByUpcomingBirthday(
 
   return groupList.sort((a, b) => a.daysUntil - b.daysUntil);
 }
+
+// --- Birthday filter (People page) ---
+
+export type BirthdayRange = "today" | "this_week" | "this_month" | "next_month";
+
+export const BIRTHDAY_RANGES: { value: BirthdayRange; label: string }[] = [
+  { value: "today", label: "Today" },
+  { value: "this_week", label: "This week" },
+  { value: "this_month", label: "This month" },
+  { value: "next_month", label: "Next month" },
+];
+
+// Whether `dateOfBirth`'s month/day falls in the given range relative to
+// `today`. Year of birth is ignored. "This week" is Sunday–Saturday of the
+// current week (matching Subsplash's own People-page Birthday filter), and
+// is checked against the previous/current/next year's occurrence so a week
+// that straddles New Year still matches.
+export function matchesBirthdayRange(
+  dateOfBirth: string | undefined,
+  range: BirthdayRange,
+  today: Date = churchToday()
+): boolean {
+  if (!dateOfBirth) return false;
+  const parts = parseIsoDateParts(dateOfBirth);
+  if (!parts) return false;
+
+  const year = today.getFullYear();
+  const todayMonth = today.getMonth() + 1;
+
+  if (range === "today") return parts.month === todayMonth && parts.day === today.getDate();
+  if (range === "this_month") return parts.month === todayMonth;
+  if (range === "next_month") return parts.month === (todayMonth % 12) + 1;
+
+  const weekStart = dayStart(year, todayMonth, today.getDate() - today.getDay()).getTime();
+  const weekEnd = weekStart + 6 * 86400000;
+  return [year - 1, year, year + 1].some((y) => {
+    const t = dayStart(y, parts.month, parts.day).getTime();
+    return t >= weekStart && t <= weekEnd;
+  });
+}

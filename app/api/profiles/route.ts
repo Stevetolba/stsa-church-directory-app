@@ -6,6 +6,7 @@ import {
   type ChildrenFilterMode,
   type SearchProfilesParams,
 } from "@/lib/subsplash";
+import { BIRTHDAY_RANGES, type BirthdayRange } from "@/lib/birthdays";
 import type { Campus, MemberStatus } from "@/types/profile";
 
 const VALID_SORT_BY: NonNullable<SearchProfilesParams["sortBy"]>[] = [
@@ -34,6 +35,16 @@ export async function GET(request: NextRequest) {
   const gradeToRaw = searchParams.get("gradeTo");
   const gradeFrom = gradeFromRaw ? Number(gradeFromRaw) : undefined;
   const gradeTo = gradeToRaw ? Number(gradeToRaw) : undefined;
+  const ageFromRaw = searchParams.get("ageFrom");
+  const ageToRaw = searchParams.get("ageTo");
+  const ageFrom = ageFromRaw ? Number(ageFromRaw) : undefined;
+  const ageTo = ageToRaw ? Number(ageToRaw) : undefined;
+  const gender = searchParams.getAll("gender").map((g) => g.toLowerCase());
+  const maritalStatus = searchParams.getAll("maritalStatus").map((m) => m.toLowerCase());
+  const birthdayRaw = searchParams.get("birthday");
+  const birthday = BIRTHDAY_RANGES.some((r) => r.value === birthdayRaw)
+    ? (birthdayRaw as BirthdayRange)
+    : undefined;
   const sortByRaw = searchParams.get("sortBy");
   const sortBy = VALID_SORT_BY.includes(sortByRaw as NonNullable<SearchProfilesParams["sortBy"]>)
     ? (sortByRaw as SearchProfilesParams["sortBy"])
@@ -69,6 +80,11 @@ export async function GET(request: NextRequest) {
     campus,
     gradeFrom,
     gradeTo,
+    ageFrom,
+    ageTo,
+    gender,
+    maritalStatus,
+    birthday,
     sortBy,
     page,
     pageSize,

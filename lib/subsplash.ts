@@ -15,6 +15,7 @@ import { mockHouseholds, mockProfiles } from "./mockData";
 import { formatAddressParts, householdCampus, householdMemberType, parseAddressString } from "./household";
 import { MAX_GRADE_VALUE, MIN_GRADE_VALUE, gradeLabelForValue, gradeValueForGraduationYear } from "./grades";
 import { calculateAge } from "./age";
+import { matchesBirthdayRange, type BirthdayRange } from "./birthdays";
 import { eq } from "drizzle-orm";
 import { getDb, isDbConfigured } from "./db";
 import { customFieldMetaCache } from "./db/schema";
@@ -634,6 +635,12 @@ export interface SearchProfilesParams {
   // gradeFrom/gradeTo/ageFrom/ageTo above, which filter by the *profile's
   // own* grade/age rather than a household child's.
   withChildren?: ChildrenFilter;
+  // Subsplash-style People filters: Gender / Marital status are multi-select
+  // (values are Subsplash's lowercase enums, e.g. "male", "married");
+  // birthday matches month/day against the church's current date.
+  gender?: string[];
+  maritalStatus?: string[];
+  birthday?: BirthdayRange;
 }
 
 export type ChildrenFilterMode = "grade" | "age" | "all";
@@ -701,6 +708,9 @@ export function filterAndPaginateProfiles(
     pageSize = DEFAULT_PAGE_SIZE,
     expandHouseholds,
     withChildren,
+    gender,
+    maritalStatus,
+    birthday,
   }: SearchProfilesParams
 ): ProfileSearchResult {
   const needle = search?.trim().toLowerCase();
@@ -740,7 +750,20 @@ export function filterAndPaginateProfiles(
       (householdMemberType(p.household_role) === "Adult" &&
         !!p.household_id &&
         qualifyingHouseholdIds.has(p.household_id));
-    return matchesStatus && matchesCampus && matchesGrade && matchesAge && matchesChildren;
+    const matchesGender = !gender?.length || (!!p.gender && gender.includes(p.gender.toLowerCase()));
+    const matchesMarital =
+      !maritalStatus?.length || (!!p.marital_status && maritalStatus.includes(p.marital_status.toLowerCase()));
+    const matchesBirthday = !birthday || matchesBirthdayRange(p.date_of_birth, birthday);
+    return (
+      matchesStatus &&
+      matchesCampus &&
+      matchesGrade &&
+      matchesAge &&
+      matchesChildren &&
+      matchesGender &&
+      matchesMarital &&
+      matchesBirthday
+    );
   }
 
   function matchesSearchText(p: Profile): boolean {
