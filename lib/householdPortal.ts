@@ -2,7 +2,7 @@
 // has it now, with this household's saved-but-unreviewed proposals laid over
 // it so a parent sees their own edits when they come back.
 
-import { getHousehold } from "./subsplash";
+import { getHouseholdLive } from "./subsplash";
 import { householdMemberType } from "./household";
 import { getOpenRequest, listChanges, type UpdateChange, type UpdateRequest } from "./householdUpdates";
 import { gradeLabelForValue, gradeValueForGraduationYear } from "./grades";
@@ -98,7 +98,7 @@ function homeAddress(
 }
 
 export async function loadPortal(householdId: string): Promise<PortalView | null> {
-  const household = await getHousehold(householdId);
+  const household = await getHouseholdLive(householdId);
   if (!household) return null;
   const request = await getOpenRequest(householdId);
   // Rows already written to Subsplash (instant apply, ADR-0031) are history;
@@ -167,6 +167,6 @@ export async function loadPortal(householdId: string): Promise<PortalView | null
 // The member as Subsplash holds them right now (never the proposal), for
 // diffing and for confirming a profile id really belongs to this household.
 export async function getLiveMember(householdId: string, profileId: string): Promise<Profile | null> {
-  const household = await getHousehold(householdId);
+  const household = await getHouseholdLive(householdId);
   return household?.members?.find((m) => m.id === profileId) ?? null;
 }

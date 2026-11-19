@@ -308,17 +308,20 @@ async function buildProfilePatch(
   return patch;
 }
 
-async function defaultDeps(): Promise<ApplyDeps> {
+// `instant` is the household self-update path (ADR-0031): writes there skip
+// evicting the cached roster and read the household live.
+async function defaultDeps(opts: { instant?: boolean } = {}): Promise<ApplyDeps> {
   const sub = await import("./subsplash");
+  const write = opts.instant ? { revalidate: false } : undefined;
   return {
-    updateProfile: (id, patch) => sub.updateProfile(id, patch),
-    updateHousehold: (id, patch) => sub.updateHousehold(id, patch),
+    updateProfile: (id, patch) => sub.updateProfile(id, patch, write),
+    updateHousehold: (id, patch) => sub.updateHousehold(id, patch, write),
     createProfile: (input) => sub.createProfile(input),
     getProfileAddress: async (id) => {
       const p = await sub.getProfile(id);
       return p?.address_parts as Record<string, string | undefined> | undefined;
     },
-    getHousehold: (id) => sub.getHousehold(id),
+    getHousehold: (id) => (opts.instant ? sub.getHouseholdLive(id) : sub.getHousehold(id)),
   };
 }
 
@@ -340,27 +343,32 @@ export async function applyAcceptedChanges(requestId: string, deps?: ApplyDeps):
     return m;
   };
   const finish = async (cs: UpdateChange[], error: string | null, createdProfileId?: string) => {
-    for (const c of cs) {
-      await patchChange(c.id, error ? { applyError: error } : { appliedAt: now(), applyError: null, ...(createdProfileId ? { createdProfileId } : {}) });
-    }
+    await Promise.all(
+      cs.map((c) =>
+        patchChange(c.id, error ? { applyError: error } : { appliedAt: now(), applyError: null, ...(createdProfileId ? { createdProfileId } : {}) })
+      )
+    );
   };
 
-  for (const [profileId, cs] of Array.from(group("profile").entries())) {
+  // Independent writes run together: each person's parts, and the household
+  // address, touch different Subsplash fields and each reports its own error.
+  const profileWrites = Array.from(group("profile").entries()).flatMap(([profileId, cs]) =>
     // Basic details, home address and care notes are separate Subsplash
-    // writes (the notes are a custom field), so a refusal of one is reported
-    // on its own rows and doesn't stop the others.
-    for (const part of splitProfileWrites(cs)) {
+    // writes, so a refusal of one is reported on its own rows and doesn't
+    // stop the others.
+    splitProfileWrites(cs).map(async (part) => {
       try {
         await d.updateProfile(profileId, await buildProfilePatch(part, d, profileId));
         await finish(part, null);
       } catch (e) {
         await finish(part, errMessage(e));
       }
-    }
-  }
+    })
+  );
 
   const addr = group("household").get(request.householdId) ?? [];
-  if (addr.length > 0) {
+  const addressWrite = async () => {
+    if (addr.length === 0) return;
     const patch: Record<string, string> = {};
     for (const c of addr) if ((ADDRESS_FIELDS as string[]).includes(c.field)) patch[c.field] = c.newValue ?? "";
     try {
@@ -369,7 +377,8 @@ export async function applyAcceptedChanges(requestId: string, deps?: ApplyDeps):
     } catch (e) {
       await finish(addr, errMessage(e));
     }
-  }
+  };
+  await Promise.all([...profileWrites, addressWrite()]);
 
   const everything = await listChanges(requestId);
   for (const [subjectKey, cs] of Array.from(group("new_member").entries())) {
@@ -460,7 +469,7 @@ export interface AutoApplyResult {
 export async function autoApplySubmittedRequest(requestId: string, deps?: ApplyDeps): Promise<AutoApplyResult> {
   const request = await getRequest(requestId);
   if (!request || request.status !== "pending") throw new Error("Only a pending request can be applied.");
-  const d = deps ?? (await defaultDeps());
+  const d = deps ?? (await defaultDeps({ instant: true }));
   const household = d.getHousehold ? await d.getHousehold(request.householdId).catch(() => null) : null;
 
   for (const c of await listChanges(requestId)) {

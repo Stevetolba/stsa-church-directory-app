@@ -502,10 +502,16 @@ const getCachedProfilePage = unstable_cache(
 
 async function getCachedProfiles(): Promise<Profile[]> {
   const profiles: Profile[] = [];
-  for (let page = 1; page <= MAX_SUBSPLASH_PAGES; page++) {
-    const pageProfiles = await getCachedProfilePage(page);
-    profiles.push(...pageProfiles);
-    if (pageProfiles.length < MAX_SUBSPLASH_PAGE_SIZE) break;
+  // Pages are fetched in parallel batches: a cold cache (e.g. right after a
+  // write evicts it) is otherwise dozens of sequential round trips.
+  const BATCH = 6;
+  walk: for (let start = 1; start <= MAX_SUBSPLASH_PAGES; start += BATCH) {
+    const pages = Array.from({ length: Math.min(BATCH, MAX_SUBSPLASH_PAGES - start + 1) }, (_, i) => start + i);
+    const results = await Promise.all(pages.map((n) => getCachedProfilePage(n)));
+    for (const pageProfiles of results) {
+      profiles.push(...pageProfiles);
+      if (pageProfiles.length < MAX_SUBSPLASH_PAGE_SIZE) break walk;
+    }
   }
   // mapProfile's household_name comes from a `household` embed that no
   // profile fetch actually requests (confirmed against the live org: it's
@@ -1783,7 +1789,15 @@ export async function setChoiceCustomField(
   revalidateTag("subsplash-profiles");
 }
 
-export async function updateProfile(id: string, patch: UpdateProfileInput): Promise<Profile> {
+// `revalidate: false` skips evicting the cached roster. The household
+// self-update portal uses it: a family saving its own details shouldn't make
+// every later read re-walk the whole org (other staff see the change within
+// CACHE_REVALIDATE_SECONDS instead).
+export interface WriteOptions {
+  revalidate?: boolean;
+}
+
+export async function updateProfile(id: string, patch: UpdateProfileInput, opts: WriteOptions = {}): Promise<Profile> {
   const {
     campuses,
     directory_access,
@@ -1934,7 +1948,7 @@ export async function updateProfile(id: string, patch: UpdateProfileInput): Prom
   }
   // Otherwise the People list would show stale data for up to
   // CACHE_REVALIDATE_SECONDS after a save (ADR-0009).
-  revalidateTag("subsplash-profiles");
+  if (opts.revalidate !== false) revalidateTag("subsplash-profiles");
   return mapProfile((await res.json()) as RawProfile);
 }
 
@@ -2086,9 +2100,28 @@ export async function getHousehold(id: string): Promise<Household | null> {
   }
 }
 
+// The household as Subsplash has it right now, for the self-update portal.
+// getHousehold() joins members from the full cached roster walk (only to get
+// membership status), which is a cold 15-40s walk after any write. Here each
+// member is read directly instead: a household is a handful of people, fetched
+// in parallel, and the data is live rather than up to 5 minutes old.
+export async function getHouseholdLive(id: string): Promise<Household | null> {
+  if (USE_MOCK_DATA) return getHousehold(id);
+  try {
+    const raw = await subsplashFetch<RawHousehold>(`/people/v1/households/${id}?include=members,address`);
+    const household = mapHousehold(raw);
+    if (household.members?.length) {
+      household.members = await Promise.all(household.members.map(async (m) => (await getProfile(m.id)) ?? m));
+    }
+    return household;
+  } catch {
+    return null;
+  }
+}
+
 export type UpdateHouseholdInput = Partial<HouseholdAddress>;
 
-export async function updateHousehold(id: string, patch: UpdateHouseholdInput): Promise<Household> {
+export async function updateHousehold(id: string, patch: UpdateHouseholdInput, opts: WriteOptions = {}): Promise<Household> {
   if (USE_MOCK_DATA) {
     const existing = mockHouseholds.find((h) => h.id === id);
     if (!existing) throw new Error(`Household not found: ${id}`);
@@ -2120,6 +2153,6 @@ export async function updateHousehold(id: string, patch: UpdateHouseholdInput): 
   if (!res.ok) {
     throw new Error(`Subsplash API error: ${res.status} PATCH /people/v1/households/${id}${await apiErrorDetail(res)}`);
   }
-  revalidateTag("subsplash-households");
+  if (opts.revalidate !== false) revalidateTag("subsplash-households");
   return mapHousehold((await res.json()) as RawHousehold);
 }
