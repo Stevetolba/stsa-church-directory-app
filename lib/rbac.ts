@@ -104,6 +104,31 @@ export async function requireCanEmailChildren(): Promise<NextResponse | null> {
   return null;
 }
 
+// Volunteer roster (Volunteers menu): read access for admins/staff and for
+// Team Leads (volunteer-tier with session.user.canEmailChildren, i.e.
+// DirectoryRole "Team Lead" — ADR-0017). Plain volunteers and learners are
+// denied. Read-only: roster writes use requireAdmin.
+export async function requireVolunteerRosterAccess(): Promise<NextResponse | null> {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (
+    (session.user.role === "volunteer" && !session.user.canEmailChildren) ||
+    session.user.role === "learner"
+  ) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  await recordAccessEvent({
+    email: session.user.email ?? "unknown",
+    name: session.user.name ?? null,
+    role: session.user.role,
+    eventType: "directory_read",
+    resource: "volunteer-roster",
+  });
+  return null;
+}
+
 export interface SignedInActor {
   email: string;
   name: string | null;

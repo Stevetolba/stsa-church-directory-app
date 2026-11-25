@@ -81,6 +81,11 @@ export interface Profile {
   allergy_notes?: string;
   care_notes?: string;
   photo_url?: string;
+  // Volunteer roster fields: the "Ministry" custom field (shown as "Team")
+  // and "Ministry Role" (shown as "Role"). Both are multi-select (checkbox)
+  // fields in Subsplash. Empty array means not a volunteer / unset.
+  teams?: string[];
+  ministry_roles?: string[];
   custom_fields?: CustomField[];
   created_at: string;
   updated_at: string;

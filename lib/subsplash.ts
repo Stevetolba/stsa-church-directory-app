@@ -221,6 +221,16 @@ const MEMBERSHIP_STATUS_MAP: Record<string, MemberStatus> = {
 
 const CAMPUS_FIELD_NAME = "campus";
 
+// Volunteer roster fields. "Ministry" is shown as "Team" and "Ministry Role"
+// as "Role" in the UI; both are multi-select (checkbox) fields in Subsplash.
+// Names are configurable like the other custom fields here.
+export const MINISTRY_FIELD_NAME = (process.env.SUBSPLASH_MINISTRY_FIELD_NAME ?? "Ministry")
+  .trim()
+  .toLowerCase();
+export const MINISTRY_ROLE_FIELD_NAME = (process.env.SUBSPLASH_MINISTRY_ROLE_FIELD_NAME ?? "Ministry Role")
+  .trim()
+  .toLowerCase();
+
 // ADR-0010: the custom field a church admin sets in Subsplash to grant a
 // personal-email volunteer read-only access. Name is configurable so the
 // church can call it whatever they like without a code change. Default
@@ -265,6 +275,14 @@ function extractCustomFieldValue(field: RawCustomFieldValue): string | undefined
     return field.value.choices.map((c) => c.name).join(", ");
   }
   return field.value.choice?.name ?? field.value.text;
+}
+
+// Every selected choice name on a custom field (checkbox → choices, dropdown
+// → choice). Empty when the field is absent or unset.
+function extractChoiceNames(field: RawCustomFieldValue | undefined): string[] {
+  if (!field) return [];
+  if (field.value.choices?.length) return field.value.choices.map((c) => c.name);
+  return field.value.choice ? [field.value.choice.name] : [];
 }
 
 function findCampusField(
@@ -405,7 +423,7 @@ function formatPhone(phone: RawProfile["phone_number"]): string | undefined {
   return `${phone.country.calling_code} ${digits}`;
 }
 
-function mapProfile(raw: RawProfile): Profile {
+export function mapProfile(raw: RawProfile): Profile {
   const statusRaw = raw._embedded?.["latest-membership-status-change"]?.status;
   const household = raw._embedded?.household;
   const address_parts = mapAddressParts(raw._embedded?.address);
@@ -433,6 +451,8 @@ function mapProfile(raw: RawProfile): Profile {
     campuses: campuses.length ? campuses : undefined,
     directory_access: extractDirectoryAccess(raw.custom_fields),
     directory_role: extractDirectoryRole(raw.custom_fields),
+    teams: extractChoiceNames(findGenericField(raw.custom_fields, MINISTRY_FIELD_NAME)),
+    ministry_roles: extractChoiceNames(findGenericField(raw.custom_fields, MINISTRY_ROLE_FIELD_NAME)),
     address: formatAddressParts(address_parts),
     address_parts,
     baptism_date: raw.baptism_date ?? undefined,
@@ -647,6 +667,11 @@ export interface SearchProfilesParams {
   gender?: string[];
   maritalStatus?: string[];
   birthday?: BirthdayRange;
+  // Volunteer roster: Team (Ministry) / Role (Ministry Role) multi-selects,
+  // match-any within each; volunteersOnly keeps people with a team or role.
+  teams?: string[];
+  ministryRoles?: string[];
+  volunteersOnly?: boolean;
 }
 
 export type ChildrenFilterMode = "grade" | "age" | "all";
@@ -717,6 +742,9 @@ export function filterAndPaginateProfiles(
     gender,
     maritalStatus,
     birthday,
+    teams,
+    ministryRoles,
+    volunteersOnly,
   }: SearchProfilesParams
 ): ProfileSearchResult {
   const needle = search?.trim().toLowerCase();
@@ -735,7 +763,16 @@ export function filterAndPaginateProfiles(
   // age, it's only the search-text requirement that's waived for them.
   function matchesNonTextFilters(p: Profile): boolean {
     const matchesStatus = !status?.length || status.includes(p.status);
-    const matchesCampus = !campus?.length || (!!p.campus && campus.includes(p.campus));
+    // A person can belong to both campuses, so match against every campus
+    // they have, not just the first.
+    const matchesCampus =
+      !campus?.length ||
+      (p.campuses ?? (p.campus ? [p.campus] : [])).some((c) => campus.includes(c));
+    const matchesTeams = !teams?.length || (p.teams ?? []).some((t) => teams.includes(t));
+    const matchesMinistryRoles =
+      !ministryRoles?.length || (p.ministry_roles ?? []).some((r) => ministryRoles.includes(r));
+    const matchesVolunteersOnly =
+      !volunteersOnly || (p.teams?.length ?? 0) > 0 || (p.ministry_roles?.length ?? 0) > 0;
     const matchesGrade =
       !gradeFilterActive ||
       (p.academic_grade_value !== undefined &&
@@ -768,7 +805,10 @@ export function filterAndPaginateProfiles(
       matchesChildren &&
       matchesGender &&
       matchesMarital &&
-      matchesBirthday
+      matchesBirthday &&
+      matchesTeams &&
+      matchesMinistryRoles &&
+      matchesVolunteersOnly
     );
   }
 
@@ -1319,6 +1359,8 @@ export type UpdateProfileInput = Partial<
     | "campuses"
     | "directory_access"
     | "directory_role"
+    | "teams"
+    | "ministry_roles"
     | "allergy_notes"
     | "care_notes"
     | "date_of_birth"
@@ -1743,6 +1785,79 @@ export async function buildChoiceFieldInput(
   };
 }
 
+// Builds the custom_fields entry for a multi-select (checkbox) choice field
+// — Ministry / Ministry Role. An empty `names` array clears the field
+// ({choices: []}). Meta comes from the profile's own value first, then the DB
+// cache / roster sample, same discovery path as buildChoiceFieldInput.
+// Throws CustomFieldUpdateError when the field or a requested choice can't
+// be resolved.
+export async function buildMultiChoiceFieldInput(
+  profileId: string,
+  fieldName: string,
+  names: string[]
+): Promise<{ custom_field_definition: { id: string; revision_id?: string }; value: object }> {
+  const currentRaw = await subsplashFetch<RawProfile>(`/people/v1/profiles/${profileId}`).catch(
+    () => null
+  );
+  const fromProfile = currentRaw ? findGenericField(currentRaw.custom_fields, fieldName) : undefined;
+  let meta = fromProfile ? mergeGenericFieldMeta(null, fromProfile) : null;
+
+  if (!meta || !meta.revisionId || names.some((n) => !meta!.choiceIds[n])) {
+    const resolved = await resolveChoiceFieldMeta(fieldName, names);
+    if (resolved) {
+      meta = meta
+        ? { ...resolved, ...meta, choiceIds: { ...resolved.choiceIds, ...meta.choiceIds } }
+        : resolved;
+    }
+  }
+
+  if (!meta || !meta.revisionId) {
+    throw new CustomFieldUpdateError(
+      `Could not resolve the "${fieldName}" custom field's write metadata from Subsplash — it may not be configured, or no profile has a value set yet.`
+    );
+  }
+
+  const choices: { id: string }[] = [];
+  for (const name of names) {
+    const id = meta.choiceIds[name];
+    if (!id) {
+      throw new CustomFieldUpdateError(
+        `No known Subsplash choice id for "${name}" on the "${fieldName}" field — set it on a profile once in Subsplash first.`
+      );
+    }
+    choices.push({ id });
+  }
+  return {
+    custom_field_definition: { id: meta.definitionId, revision_id: meta.revisionId },
+    value: { choices },
+  };
+}
+
+// Distinct Team / Role options for the volunteer roster: every choice seen on
+// the cached roster, merged with the choices remembered in the write-meta
+// cache (so a choice nobody currently holds still shows up once it's been
+// learned). A choice that has never been set on any profile can't be
+// discovered — Subsplash has no field-definitions endpoint.
+export async function getVolunteerFieldOptions(): Promise<{ teams: string[]; roles: string[] }> {
+  const all = await allProfiles();
+  const teams = new Set<string>();
+  const roles = new Set<string>();
+  for (const p of all) {
+    p.teams?.forEach((t) => teams.add(t));
+    p.ministry_roles?.forEach((r) => roles.add(r));
+  }
+  if (!USE_MOCK_DATA) {
+    const [teamMeta, roleMeta] = await Promise.all([
+      loadCachedFieldMeta(MINISTRY_FIELD_NAME).catch(() => null),
+      loadCachedFieldMeta(MINISTRY_ROLE_FIELD_NAME).catch(() => null),
+    ]);
+    Object.keys(teamMeta?.choiceIds ?? {}).forEach((t) => teams.add(t));
+    Object.keys(roleMeta?.choiceIds ?? {}).forEach((r) => roles.add(r));
+  }
+  const sort = (set: Set<string>) => Array.from(set).sort((a, b) => a.localeCompare(b));
+  return { teams: sort(teams), roles: sort(roles) };
+}
+
 // Sets an arbitrary Subsplash choice field to `choiceName` on a profile —
 // the training-course equivalent of updateProfile's campus/directory_access/
 // directory_role/care_notes writes, but generic since the field name is
@@ -1797,11 +1912,33 @@ export interface WriteOptions {
   revalidate?: boolean;
 }
 
+// Mock-mode write for a multi-select field: updates both the typed array
+// (teams / ministry_roles) and the generic custom_fields entry.
+function setMockChoiceList(
+  profile: Profile,
+  label: string,
+  fieldName: string,
+  fallbackId: string,
+  values: string[]
+): void {
+  if (fieldName === MINISTRY_FIELD_NAME) profile.teams = values;
+  else profile.ministry_roles = values;
+  const joined = values.join(", ");
+  const field = profile.custom_fields?.find((f) => f.label.trim().toLowerCase() === fieldName);
+  if (field) {
+    field.value = joined;
+  } else {
+    profile.custom_fields = [...(profile.custom_fields ?? []), { id: fallbackId, label, value: joined }];
+  }
+}
+
 export async function updateProfile(id: string, patch: UpdateProfileInput, opts: WriteOptions = {}): Promise<Profile> {
   const {
     campuses,
     directory_access,
     directory_role,
+    teams,
+    ministry_roles,
     care_notes,
     address_parts,
     date_of_birth,
@@ -1864,6 +2001,10 @@ export async function updateProfile(id: string, patch: UpdateProfileInput, opts:
         ];
       }
     }
+    if (teams !== undefined) setMockChoiceList(existing, "Ministry", MINISTRY_FIELD_NAME, "cf-ministry", teams);
+    if (ministry_roles !== undefined) {
+      setMockChoiceList(existing, "Ministry Role", MINISTRY_ROLE_FIELD_NAME, "cf-ministry-role", ministry_roles);
+    }
     if (care_notes !== undefined) {
       existing.care_notes = care_notes;
       const notesField = existing.custom_fields?.find(
@@ -1920,6 +2061,12 @@ export async function updateProfile(id: string, patch: UpdateProfileInput, opts:
   }
   if (directory_role !== undefined) {
     customFieldInputs.push(await buildDirectoryRoleFieldInput(id, directory_role));
+  }
+  if (teams !== undefined) {
+    customFieldInputs.push(await buildMultiChoiceFieldInput(id, MINISTRY_FIELD_NAME, teams));
+  }
+  if (ministry_roles !== undefined) {
+    customFieldInputs.push(await buildMultiChoiceFieldInput(id, MINISTRY_ROLE_FIELD_NAME, ministry_roles));
   }
   if (customFieldInputs.length > 0) {
     body.custom_fields = customFieldInputs;

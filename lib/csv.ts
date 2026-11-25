@@ -1,4 +1,5 @@
 import type { Profile } from "@/types/profile";
+import type { VolunteerRow } from "@/types/volunteer";
 import type { Household } from "@/types/household";
 import type { ChildWithParents } from "@/lib/subsplash";
 import type { CheckInRecord } from "@/types/attendance";
@@ -228,4 +229,31 @@ export function seriesFrequencyToExportRow(
   const attended = new Set(person.attendedDates);
   for (const d of occurrenceDates) row[`date_${d}`] = attended.has(d) ? "X" : "";
   return row;
+}
+
+// Volunteer roster export — volunteer contact details plus their Teams and
+// Roles. Multiple values in one cell are joined with "; " (a comma would
+// force quoting and read poorly in a spreadsheet).
+export const VOLUNTEER_EXPORT_COLUMNS: { key: string; label: string }[] = [
+  { key: "first_name", label: "First Name" },
+  { key: "last_name", label: "Last Name" },
+  { key: "email", label: "Email" },
+  { key: "phone", label: "Phone" },
+  { key: "campus", label: "Campus" },
+  { key: "teams", label: "Teams" },
+  { key: "roles", label: "Roles" },
+  { key: "status", label: "Status" },
+];
+
+export function volunteerToExportRow(v: VolunteerRow): Record<string, string> {
+  return {
+    first_name: v.first_name,
+    last_name: v.last_name,
+    email: v.email,
+    phone: v.phone_number ?? "",
+    campus: v.campuses.join("; "),
+    teams: v.teams.join("; "),
+    roles: v.ministry_roles.join("; "),
+    status: v.status,
+  };
 }
