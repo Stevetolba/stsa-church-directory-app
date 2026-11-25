@@ -11,7 +11,8 @@ import { MultiSelectDropdown } from "@/components/MultiSelectDropdown";
 import { SuggestedFilters, type SuggestedFilter } from "@/components/SuggestedFilters";
 import { useVolunteerOptions, useVolunteers } from "@/hooks/useVolunteers";
 import { downloadCsv, toCsv, VOLUNTEER_EXPORT_COLUMNS, volunteerToExportRow } from "@/lib/csv";
-import type { Campus, Profile } from "@/types/profile";
+import type { Campus } from "@/types/profile";
+import type { PeopleSearchHit } from "@/app/api/volunteers/people-search/route";
 import type { VolunteerRow } from "@/types/volunteer";
 
 const CAMPUS_OPTIONS: Campus[] = ["Arlington", "Leesburg"];
@@ -31,7 +32,18 @@ const SUGGESTED_FILTERS: SuggestedFilter<RosterPreset>[] = [
 const secondaryButton =
   "flex items-center gap-2 whitespace-nowrap rounded-[10px] border border-[#CBD2D9] bg-white px-4 py-2 text-[13.5px] font-semibold text-[#5B7185] transition-colors hover:border-brand-navy/30 disabled:cursor-not-allowed disabled:opacity-40";
 
-export function VolunteersPageClient({ isAdmin }: { isAdmin: boolean }) {
+export function VolunteersPageClient({
+  canManage,
+  manageableTeams,
+  isAdmin,
+}: {
+  // Can add/edit/remove at all (admin, or a Team Lead with a team set).
+  canManage: boolean;
+  // Teams they may manage; null = every team (admin).
+  manageableTeams: string[] | null;
+  // Admins also get links to full profiles.
+  isAdmin: boolean;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -65,6 +77,9 @@ export function VolunteersPageClient({ isAdmin }: { isAdmin: boolean }) {
   const { data, error, isLoading, mutate } = useVolunteers({ search, campus, teams, roles });
   const { options, refreshOptions } = useVolunteerOptions();
   const volunteers = data?.volunteers ?? [];
+  // A Team Lead can only act on volunteers who are on one of their teams.
+  const rowManageable = (v: VolunteerRow) =>
+    canManage && (manageableTeams === null || v.teams.some((t) => manageableTeams.includes(t)));
 
   const [editing, setEditing] = useState<VolunteerRow | null>(null);
   const [adding, setAdding] = useState(false);
@@ -101,15 +116,31 @@ export function VolunteersPageClient({ isAdmin }: { isAdmin: boolean }) {
 
   async function handleRemove(v: VolunteerRow) {
     const name = `${v.first_name} ${v.last_name}`;
-    if (!window.confirm(`Remove ${name} from the volunteer roster? This clears their Team and Role.`)) return;
+    const mine = manageableTeams === null ? v.teams : v.teams.filter((t) => manageableTeams.includes(t));
+    const others = v.teams.filter((t) => !mine.includes(t));
+    const message =
+      manageableTeams === null
+        ? `Remove ${name} from the volunteer roster? This clears their Team and Role.`
+        : others.length > 0
+          ? `Remove ${name} from ${mine.join(", ")}? They stay on ${others.join(", ")}.`
+          : `Remove ${name} from the volunteer roster? This clears their Team and Role.`;
+    if (!window.confirm(message)) return;
     const res = await fetch(`/api/volunteers/${v.id}`, { method: "DELETE" });
+    const body = await res.json().catch(() => null);
     if (!res.ok) {
-      const body = await res.json().catch(() => null);
       toast.error((body?.error as string | undefined) ?? "Could not remove volunteer.");
       return;
     }
-    toast.success(`${name} removed from the roster`);
-    await applyLocalChange(v.id, null);
+    // The server returns the final lists (other teams are preserved for a
+    // Team Lead), so the row reflects exactly what was saved.
+    const finalTeams = (body?.teams as string[] | undefined) ?? [];
+    toast.success(finalTeams.length > 0 ? `${name} removed from ${mine.join(", ")}` : `${name} removed from the roster`);
+    await applyLocalChange(
+      v.id,
+      finalTeams.length > 0
+        ? { ...v, teams: finalTeams, ministry_roles: (body?.ministry_roles as string[] | null) ?? v.ministry_roles }
+        : null
+    );
     void refreshOptions();
   }
 
@@ -142,7 +173,7 @@ export function VolunteersPageClient({ isAdmin }: { isAdmin: boolean }) {
             <Download className="h-3.5 w-3.5" />
             Export CSV
           </button>
-          {isAdmin && (
+          {canManage && (
             <button
               type="button"
               onClick={() => setAdding(true)}
@@ -239,7 +270,7 @@ export function VolunteersPageClient({ isAdmin }: { isAdmin: boolean }) {
                 <th className="px-4 py-3">Role</th>
                 <th className="px-4 py-3">Email</th>
                 <th className="px-4 py-3">Phone</th>
-                {isAdmin && <th className="px-4 py-3 text-right">Actions</th>}
+                {canManage && <th className="px-4 py-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -265,8 +296,9 @@ export function VolunteersPageClient({ isAdmin }: { isAdmin: boolean }) {
                   </td>
                   <td className="px-4 py-3 text-[#5B7185]">{v.email || "—"}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-[#5B7185]">{v.phone_number || "—"}</td>
-                  {isAdmin && (
+                  {canManage && (
                     <td className="px-4 py-3">
+                      {rowManageable(v) && (
                       <div className="flex justify-end gap-1.5">
                         <button
                           type="button"
@@ -285,6 +317,7 @@ export function VolunteersPageClient({ isAdmin }: { isAdmin: boolean }) {
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
+                      )}
                     </td>
                   )}
                 </tr>
@@ -294,10 +327,11 @@ export function VolunteersPageClient({ isAdmin }: { isAdmin: boolean }) {
         </div>
       )}
 
-      {isAdmin && (adding || editing) && (
+      {canManage && (adding || editing) && (
         <VolunteerEditorModal
           existing={editing}
-          teamOptions={options.teams}
+          manageableTeams={manageableTeams}
+          teamOptions={manageableTeams ?? options.teams}
           roleOptions={options.roles}
           onClose={() => {
             setAdding(false);
@@ -338,12 +372,16 @@ function VolunteerEditorModal({
   existing,
   teamOptions,
   roleOptions,
+  manageableTeams,
   onClose,
   onSaved,
 }: {
   existing: VolunteerRow | null;
   teamOptions: string[];
   roleOptions: string[];
+  // null = every team (admin). A Team Lead only edits their own teams; the
+  // volunteer's other teams are shown read-only and left untouched.
+  manageableTeams: string[] | null;
   onClose: () => void;
   onSaved: (row: VolunteerRow) => Promise<void>;
 }) {
@@ -366,16 +404,24 @@ function VolunteerEditorModal({
         }
       : null
   );
-  const [teams, setTeams] = useState<string[]>(existing?.teams ?? []);
+  // A Team Lead edits only their own teams; the rest are kept by the server.
+  const mineOf = (all: string[]) => (manageableTeams === null ? all : all.filter((t) => manageableTeams.includes(t)));
+  const [teams, setTeams] = useState<string[]>(
+    existing ? mineOf(existing.teams) : manageableTeams && manageableTeams.length === 1 ? manageableTeams : []
+  );
+  const [otherTeams, setOtherTeams] = useState<string[]>(
+    existing && manageableTeams !== null ? existing.teams.filter((t) => !manageableTeams.includes(t)) : []
+  );
   const [roles, setRoles] = useState<string[]>(existing?.ministry_roles ?? []);
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Profile[]>([]);
+  const [results, setResults] = useState<PeopleSearchHit[]>([]);
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // People search for the "add" flow — debounced, excludes anyone already on
-  // the roster (they're edited from the table instead).
+  // People search for the "add" flow — debounced. Excludes anyone already on
+  // a team the caller manages (they're edited from the table instead); a Team
+  // Lead can still add someone who is on other teams.
   useEffect(() => {
     if (existing || person || query.trim().length < 2) {
       setResults([]);
@@ -384,19 +430,26 @@ function VolunteerEditorModal({
     const handle = setTimeout(async () => {
       setSearching(true);
       try {
-        const res = await fetch(`/api/profiles?search=${encodeURIComponent(query.trim())}&pageSize=10`);
+        const res = await fetch(`/api/volunteers/people-search?q=${encodeURIComponent(query.trim())}`);
         if (res.ok) {
-          const body = (await res.json()) as { profiles: Profile[] };
-          setResults(body.profiles.filter((p) => !(p.teams?.length || p.ministry_roles?.length)));
+          const body = (await res.json()) as { people: PeopleSearchHit[] };
+          setResults(
+            body.people.filter((p) =>
+              manageableTeams === null ? p.teams.length === 0 : !p.teams.some((t) => manageableTeams.includes(t))
+            )
+          );
         }
       } finally {
         setSearching(false);
       }
     }, 300);
     return () => clearTimeout(handle);
-  }, [query, existing, person]);
+  }, [query, existing, person, manageableTeams]);
 
-  const canSave = useMemo(() => !!person && (teams.length > 0 || roles.length > 0), [person, teams, roles]);
+  const canSave = useMemo(
+    () => !!person && (manageableTeams === null ? teams.length > 0 || roles.length > 0 : teams.length > 0),
+    [person, teams, roles, manageableTeams]
+  );
 
   async function handleSave() {
     if (!person) return;
@@ -413,8 +466,15 @@ function VolunteerEditorModal({
         setError((body?.error as string | undefined) ?? "Could not save. Please try again.");
         return;
       }
+      // The server returns the final lists (a Team Lead's save keeps the
+      // volunteer's other teams), so show exactly what was stored.
+      const saved = (await res.json().catch(() => null)) as { teams?: string[]; ministry_roles?: string[] } | null;
       toast.success(existing ? "Volunteer updated" : "Volunteer added");
-      await onSaved({ ...person.base, teams, ministry_roles: roles });
+      await onSaved({
+        ...person.base,
+        teams: saved?.teams ?? teams,
+        ministry_roles: saved?.ministry_roles ?? roles,
+      });
     } finally {
       setSaving(false);
     }
@@ -488,10 +548,14 @@ function VolunteerEditorModal({
                                 last_name: p.last_name,
                                 email: p.email,
                                 phone_number: p.phone_number,
-                                status: p.status,
-                                campuses: p.campuses ?? (p.campus ? [p.campus] : []),
+                                status: p.status as VolunteerRow["status"],
+                                campuses: p.campuses as VolunteerRow["campuses"],
                               },
                             });
+                            // Someone already a volunteer elsewhere keeps their
+                            // roles (roles are per person, not per team).
+                            setRoles(p.ministry_roles);
+                            setOtherTeams(p.teams);
                             setQuery("");
                           }}
                           className="flex w-full items-center justify-between px-3 py-2 text-left text-[13.5px] hover:bg-[#F3F6F9]"
@@ -518,6 +582,11 @@ function VolunteerEditorModal({
               onChange={setTeams}
               placeholder="Select teams"
             />
+            {manageableTeams !== null && otherTeams.length > 0 && (
+              <p className="mt-1.5 text-[12px] text-[#8A94A0]">
+                Also on {otherTeams.join(", ")} — managed by that team&apos;s lead and left unchanged.
+              </p>
+            )}
           </div>
           <div>
             <div className="mb-1.5 text-[12.5px] font-semibold text-[#5B7185]">Role</div>

@@ -6,6 +6,8 @@ import { auth } from "./auth";
 import { recordAccessEvent } from "./accessLog";
 import { isSundaySchoolSeriesId } from "./reportAccess";
 import type { Role } from "@/types/auth";
+import { getRosterScope } from "./rosterScope";
+import type { RosterScope } from "./volunteerAccess";
 
 export async function requireAdmin(): Promise<NextResponse | null> {
   const session = await auth();
@@ -127,6 +129,25 @@ export async function requireVolunteerRosterAccess(): Promise<NextResponse | nul
     resource: "volunteer-roster",
   });
   return null;
+}
+
+// Volunteer roster writes: admins (any team) and Team Leads (only the team(s)
+// on their own profile). Returns the caller's scope so the route can apply
+// the per-team rules in lib/volunteerAccess.ts; everyone else gets 401/403.
+export async function requireRosterManager(): Promise<NextResponse | RosterScope> {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const scope = await getRosterScope(session.user);
+  if (!scope.canManage) {
+    const noTeam = session.user.role === "volunteer" && session.user.canEmailChildren;
+    return NextResponse.json(
+      { error: noTeam ? "Set your own Team in Subsplash before managing volunteers." : "Forbidden" },
+      { status: 403 }
+    );
+  }
+  return scope;
 }
 
 export interface SignedInActor {

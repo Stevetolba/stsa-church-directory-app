@@ -32,5 +32,5 @@ export function useVolunteers({ search, campus, teams, roles }: UseVolunteersPar
 
 export function useVolunteerOptions() {
   const { data, mutate } = useSWR<VolunteerOptions>("/api/volunteers/options", fetcher);
-  return { options: data ?? { teams: [], roles: [] }, refreshOptions: mutate };
+  return { options: data ?? { teams: [], roles: [], manageableTeams: [] }, refreshOptions: mutate };
 }
