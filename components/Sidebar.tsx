@@ -11,6 +11,7 @@ import {
   CalendarCheck,
   ClipboardCheck,
   GraduationCap,
+  HeartHandshake,
   History,
   Home,
   LogOut,
@@ -35,11 +36,26 @@ import type { Role } from "@/types/auth";
 // ADR-0011: nav is role-scoped. Volunteers see Children, Events, and Reports
 // (the latter scoped further to just Sunday School — lib/reportAccess.ts);
 // staff/admin get the full directory plus everything volunteers see.
-const NAV_ITEMS: Array<{ href: string; label: string; icon: typeof Users; roles: Role[] }> = [
+const NAV_ITEMS: Array<{
+  href: string;
+  label: string;
+  icon: typeof Users;
+  roles: Role[];
+  // A "volunteer"-tier user only sees this item when they're a Team Lead
+  // (session canEmailChildren — ADR-0017).
+  requiresTeamLead?: boolean;
+}> = [
   { href: "/people", label: "People", icon: Users, roles: ["admin", "staff"] },
   { href: "/households", label: "Households", icon: Home, roles: ["admin", "staff"] },
   { href: "/birthdays", label: "Birthdays", icon: Cake, roles: ["admin", "staff"] },
   { href: "/children", label: "Children and Youth", icon: Baby, roles: ["admin", "staff", "volunteer"] },
+  {
+    href: "/volunteers",
+    label: "Volunteers",
+    icon: HeartHandshake,
+    roles: ["admin", "staff", "volunteer"],
+    requiresTeamLead: true,
+  },
   { href: "/events", label: "Events", icon: CalendarCheck, roles: ["admin", "staff", "volunteer"] },
   { href: "/reports", label: "Reports", icon: BarChart3, roles: ["admin", "staff", "volunteer"] },
   // ADR-0023: Training is the one nav item a "learner" sees at all — every
@@ -109,7 +125,11 @@ function SidebarContent({
         Directory
       </div>
       <nav>
-        {NAV_ITEMS.filter((item) => item.roles.includes(user.role)).map(({ href, label, icon: Icon }) => {
+        {NAV_ITEMS.filter(
+          (item) =>
+            item.roles.includes(user.role) &&
+            !(item.requiresTeamLead && user.role === "volunteer" && !user.canEmailChildren)
+        ).map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href);
           return (
             <Link

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -11,6 +11,8 @@ import type { Household } from "@/types/household";
 import { editProfileWithAddressSchema } from "@/lib/validation/profile";
 import { z } from "zod";
 import { StatusBadge } from "@/components/StatusBadge";
+import { MultiSelectDropdown } from "@/components/MultiSelectDropdown";
+import type { VolunteerOptions } from "@/types/volunteer";
 
 // Profile fields plus the profile's own structured address (street/city/
 // state/postal_code) — the address maps to Subsplash's _embedded.address on
@@ -64,6 +66,27 @@ export function EditProfileForm({
 
   const directoryAccess = watch("directory_access");
 
+  // Volunteer Team ("Ministry") and Role ("Ministry Role") multi-selects.
+  // Kept in local state (not react-hook-form) since they're sent only when
+  // changed, same as the other custom fields.
+  const initialTeams = profile.teams ?? [];
+  const initialRoles = profile.ministry_roles ?? [];
+  const [teams, setTeams] = useState<string[]>(initialTeams);
+  const [ministryRoles, setMinistryRoles] = useState<string[]>(initialRoles);
+  const [options, setOptions] = useState<VolunteerOptions>({ teams: [], roles: [] });
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/volunteers/options")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: VolunteerOptions | null) => {
+        if (!cancelled && data) setOptions(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const initialCampuses: string[] =
     profile.campuses ?? (profile.campus ? [profile.campus] : ["Arlington"]);
 
@@ -79,6 +102,8 @@ export function EditProfileForm({
       ...(!sameCampuses(campuses ?? [], initialCampuses) ? { campuses } : {}),
       ...(directory_access !== (profile.directory_access ?? false) ? { directory_access } : {}),
       ...(directory_role !== (profile.directory_role ?? "Volunteer") ? { directory_role } : {}),
+      ...(!sameCampuses(teams, initialTeams) ? { teams } : {}),
+      ...(!sameCampuses(ministryRoles, initialRoles) ? { ministry_roles: ministryRoles } : {}),
     };
 
     const profileRes = await fetch(`/api/profiles/${profile.id}`, {
@@ -158,6 +183,26 @@ export function EditProfileForm({
               </label>
             ))}
           </div>
+        </Field>
+        <Field label="Team" htmlFor="teams">
+          <MultiSelectDropdown
+            id="teams"
+            label="Team"
+            options={options.teams}
+            value={teams}
+            onChange={setTeams}
+            placeholder="No teams"
+          />
+        </Field>
+        <Field label="Role" htmlFor="ministry_roles">
+          <MultiSelectDropdown
+            id="ministry_roles"
+            label="Role"
+            options={options.roles}
+            value={ministryRoles}
+            onChange={setMinistryRoles}
+            placeholder="No roles"
+          />
         </Field>
         <Field label="Date of Birth" htmlFor="date_of_birth" error={errors.date_of_birth?.message}>
           <input

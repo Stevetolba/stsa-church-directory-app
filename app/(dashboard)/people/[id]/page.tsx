@@ -153,6 +153,43 @@ export default async function PersonDetailPage({ params }: { params: { id: strin
 
           <div className="h-px bg-[#E4E8EC]" />
 
+          {((profile.teams?.length ?? 0) > 0 || (profile.ministry_roles?.length ?? 0) > 0) && (
+            <>
+              <Section label="Volunteering">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="mb-1.5 text-[12px] font-semibold text-[#8A94A0]">Team</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(profile.teams ?? []).map((t) => (
+                        <span
+                          key={t}
+                          className="rounded-full bg-[#EAF0F5] px-2.5 py-0.5 text-[12px] font-semibold text-brand-navy"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1.5 text-[12px] font-semibold text-[#8A94A0]">Role</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(profile.ministry_roles ?? []).map((r) => (
+                        <span
+                          key={r}
+                          className="rounded-full bg-[#EAF0F5] px-2.5 py-0.5 text-[12px] font-semibold text-brand-navy"
+                        >
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </Section>
+
+              <div className="h-px bg-[#E4E8EC]" />
+            </>
+          )}
+
           <Section label="Personal">
             <div className="grid grid-cols-2 gap-4">
               <Field

@@ -24,6 +24,10 @@ export const editProfileSchema = z.object({
   // Elevates a non-staff person beyond the default volunteer tier
   // (ADR-0017) — see updateProfile's DirectoryRole custom-field write.
   directory_role: z.enum(["Admin", "Team Lead", "Volunteer", "Learner"]).optional(),
+  // Volunteer roster: "Ministry" (shown as Team) and "Ministry Role" (shown as
+  // Role) multi-selects. Must be listed here or Zod strips them from the PATCH.
+  teams: z.array(z.string().trim().min(1).max(100)).max(50).optional(),
+  ministry_roles: z.array(z.string().trim().min(1).max(100)).max(50).optional(),
   date_of_birth: z
     .string()
     .trim()
