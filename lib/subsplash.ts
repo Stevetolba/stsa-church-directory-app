@@ -1619,6 +1619,53 @@ function genericFieldUsesChoices(meta: GenericChoiceFieldMeta): boolean {
   return meta.type === "dropdown" || Object.keys(meta.choiceIds).length > 0;
 }
 
+// Subsplash DOES expose the org's custom field definitions (with every choice
+// and its id) at /people/v1/custom-field-definitions — confirmed against the
+// live org. Reading a field's full choice list from here (rather than only
+// the choices some profile currently holds) is what lets a never-yet-used
+// choice be listed and assigned. Cached briefly: choices rarely change, but a
+// newly added choice should appear within about a minute.
+interface RawFieldDefinition {
+  id: string;
+  name: string;
+  type?: string;
+  revision_id?: string;
+  status?: string;
+  choices?: { id: string; name: string }[];
+}
+
+const getCachedFieldDefinitions = unstable_cache(
+  async (): Promise<RawFieldDefinition[]> => {
+    const data = await subsplashFetch<HalCollection<RawFieldDefinition>>(
+      "/people/v1/custom-field-definitions?page[size]=100"
+    );
+    return Object.values(data._embedded ?? {})[0] ?? [];
+  },
+  ["subsplash-field-definitions"],
+  { revalidate: 60, tags: ["subsplash-field-defs"] }
+);
+
+// The active definition for `fieldName` as write metadata plus its choices in
+// Subsplash's own order. Null in mock mode or when the field doesn't exist.
+async function getFieldDefinitionMeta(
+  fieldName: string
+): Promise<(GenericChoiceFieldMeta & { choiceNames: string[] }) | null> {
+  if (USE_MOCK_DATA) return null;
+  const needle = fieldName.trim().toLowerCase();
+  const defs = await getCachedFieldDefinitions();
+  const def = defs.find((d) => d.name.trim().toLowerCase() === needle && d.status !== "archived");
+  if (!def) return null;
+  const choiceIds: Record<string, string> = {};
+  for (const c of def.choices ?? []) choiceIds[c.name] = c.id;
+  return {
+    definitionId: def.id,
+    revisionId: def.revision_id,
+    type: def.type,
+    choiceIds,
+    choiceNames: (def.choices ?? []).map((c) => c.name),
+  };
+}
+
 async function loadCachedFieldMeta(fieldName: string): Promise<GenericChoiceFieldMeta | null> {
   if (!isDbConfigured()) return null;
   const db = getDb();
@@ -1715,6 +1762,15 @@ export async function resolveChoiceFieldMeta(
   // the caller needs — otherwise a field cached with just one choice would
   // never learn the others.
   if (cached?.revisionId && wantedChoices.every((c) => cached.choiceIds[c])) return cached;
+  // Authoritative source first: the field definition lists every choice and
+  // id, so no roster walk is needed (and a choice nobody holds yet resolves).
+  const fromDefinition = await getFieldDefinitionMeta(fieldName).catch(() => null);
+  if (fromDefinition?.revisionId && wantedChoices.every((c) => fromDefinition.choiceIds[c])) {
+    const { choiceNames: _choiceNames, ...meta } = fromDefinition;
+    void _choiceNames;
+    await saveCachedFieldMeta(fieldName, meta);
+    return meta;
+  }
   const recentMiss = !opts.force && Date.now() - (rosterMisses.get(missKey) ?? 0) < ROSTER_MISS_TTL_MS;
   const sampled = USE_MOCK_DATA || recentMiss ? null : await sampleFieldMetaFromRoster(fieldName, wantedChoices);
   if (!USE_MOCK_DATA && !recentMiss) {
@@ -1785,6 +1841,11 @@ export async function buildChoiceFieldInput(
   };
 }
 
+// Case-insensitive alphabetical order, shared by every option list.
+export function sortAlphabetically(values: Iterable<string>): string[] {
+  return Array.from(values).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
 // Builds the custom_fields entry for a multi-select (checkbox) choice field
 // — Ministry / Ministry Role. An empty `names` array clears the field
 // ({choices: []}). Meta comes from the profile's own value first, then the DB
@@ -1833,11 +1894,9 @@ export async function buildMultiChoiceFieldInput(
   };
 }
 
-// Distinct Team / Role options for the volunteer roster: every choice seen on
-// the cached roster, merged with the choices remembered in the write-meta
-// cache (so a choice nobody currently holds still shows up once it's been
-// learned). A choice that has never been set on any profile can't be
-// discovered — Subsplash has no field-definitions endpoint.
+// Team / Role options for the volunteer roster: every choice defined on the
+// Subsplash field (from the custom-field-definitions endpoint), merged with
+// anything seen on the roster, sorted alphabetically.
 export async function getVolunteerFieldOptions(): Promise<{ teams: string[]; roles: string[] }> {
   const all = await allProfiles();
   const teams = new Set<string>();
@@ -1847,15 +1906,24 @@ export async function getVolunteerFieldOptions(): Promise<{ teams: string[]; rol
     p.ministry_roles?.forEach((r) => roles.add(r));
   }
   if (!USE_MOCK_DATA) {
-    const [teamMeta, roleMeta] = await Promise.all([
-      loadCachedFieldMeta(MINISTRY_FIELD_NAME).catch(() => null),
-      loadCachedFieldMeta(MINISTRY_ROLE_FIELD_NAME).catch(() => null),
+    // The field definitions list every choice, including ones no profile
+    // holds yet; the write-meta cache is a fallback if that call fails.
+    const [teamDef, roleDef] = await Promise.all([
+      getFieldDefinitionMeta(MINISTRY_FIELD_NAME).catch(() => null),
+      getFieldDefinitionMeta(MINISTRY_ROLE_FIELD_NAME).catch(() => null),
     ]);
-    Object.keys(teamMeta?.choiceIds ?? {}).forEach((t) => teams.add(t));
-    Object.keys(roleMeta?.choiceIds ?? {}).forEach((r) => roles.add(r));
+    teamDef?.choiceNames.forEach((t) => teams.add(t));
+    roleDef?.choiceNames.forEach((r) => roles.add(r));
+    if (!teamDef || !roleDef) {
+      const [teamMeta, roleMeta] = await Promise.all([
+        loadCachedFieldMeta(MINISTRY_FIELD_NAME).catch(() => null),
+        loadCachedFieldMeta(MINISTRY_ROLE_FIELD_NAME).catch(() => null),
+      ]);
+      if (!teamDef) Object.keys(teamMeta?.choiceIds ?? {}).forEach((t) => teams.add(t));
+      if (!roleDef) Object.keys(roleMeta?.choiceIds ?? {}).forEach((r) => roles.add(r));
+    }
   }
-  const sort = (set: Set<string>) => Array.from(set).sort((a, b) => a.localeCompare(b));
-  return { teams: sort(teams), roles: sort(roles) };
+  return { teams: sortAlphabetically(teams), roles: sortAlphabetically(roles) };
 }
 
 // Sets an arbitrary Subsplash choice field to `choiceName` on a profile —

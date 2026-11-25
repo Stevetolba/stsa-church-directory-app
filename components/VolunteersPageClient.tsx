@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Download, HeartHandshake, Pencil, Plus, Trash2, X } from "lucide-react";
@@ -69,6 +69,36 @@ export function VolunteersPageClient({ isAdmin }: { isAdmin: boolean }) {
   const [editing, setEditing] = useState<VolunteerRow | null>(null);
   const [adding, setAdding] = useState(false);
 
+  // Subsplash's profile list can lag a moment behind a save, so refetching
+  // right after one can return the old roster. Instead, apply the saved
+  // change to the on-screen list directly (honouring the active filters) and
+  // skip the immediate revalidate — the next focus/refresh picks up the
+  // server's view. `row` null means removed.
+  const applyLocalChange = useCallback(
+    async (id: string, row: VolunteerRow | null) => {
+      const needle = search.trim().toLowerCase();
+      const matches = (v: VolunteerRow) =>
+        (!needle || `${v.first_name} ${v.last_name} ${v.email}`.toLowerCase().includes(needle)) &&
+        (campus.length === 0 || v.campuses.some((c) => campus.includes(c))) &&
+        (teams.length === 0 || v.teams.some((t) => teams.includes(t))) &&
+        (roles.length === 0 || v.ministry_roles.some((r) => roles.includes(r)));
+      await mutate(
+        (current) => {
+          const list = (current?.volunteers ?? []).filter((v) => v.id !== id);
+          if (row && matches(row)) list.push(row);
+          list.sort(
+            (a, b) =>
+              a.last_name.localeCompare(b.last_name, undefined, { sensitivity: "base" }) ||
+              a.first_name.localeCompare(b.first_name, undefined, { sensitivity: "base" })
+          );
+          return { volunteers: list, total: list.length };
+        },
+        { revalidate: false }
+      );
+    },
+    [mutate, search, campus, teams, roles]
+  );
+
   async function handleRemove(v: VolunteerRow) {
     const name = `${v.first_name} ${v.last_name}`;
     if (!window.confirm(`Remove ${name} from the volunteer roster? This clears their Team and Role.`)) return;
@@ -79,7 +109,7 @@ export function VolunteersPageClient({ isAdmin }: { isAdmin: boolean }) {
       return;
     }
     toast.success(`${name} removed from the roster`);
-    await mutate();
+    await applyLocalChange(v.id, null);
     void refreshOptions();
   }
 
@@ -273,10 +303,10 @@ export function VolunteersPageClient({ isAdmin }: { isAdmin: boolean }) {
             setAdding(false);
             setEditing(null);
           }}
-          onSaved={async () => {
+          onSaved={async (row) => {
             setAdding(false);
             setEditing(null);
-            await mutate();
+            await applyLocalChange(row.id, row);
             void refreshOptions();
           }}
         />
@@ -287,9 +317,10 @@ export function VolunteersPageClient({ isAdmin }: { isAdmin: boolean }) {
 
 function Chips({ values }: { values: string[] }) {
   if (values.length === 0) return <span className="text-[#8A94A0]">—</span>;
+  const sorted = [...values].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   return (
     <div className="flex flex-wrap gap-1.5">
-      {values.map((v) => (
+      {sorted.map((v) => (
         <span
           key={v}
           className="whitespace-nowrap rounded-full bg-[#EAF0F5] px-2.5 py-0.5 text-[12px] font-semibold text-brand-navy"
@@ -314,10 +345,26 @@ function VolunteerEditorModal({
   teamOptions: string[];
   roleOptions: string[];
   onClose: () => void;
-  onSaved: () => Promise<void>;
+  onSaved: (row: VolunteerRow) => Promise<void>;
 }) {
-  const [person, setPerson] = useState<{ id: string; name: string } | null>(
-    existing ? { id: existing.id, name: `${existing.first_name} ${existing.last_name}` } : null
+  // `base` carries the contact fields the roster row needs, so the saved row
+  // can be shown immediately without waiting for a refetch.
+  const [person, setPerson] = useState<{ id: string; name: string; base: Omit<VolunteerRow, "teams" | "ministry_roles"> } | null>(
+    existing
+      ? {
+          id: existing.id,
+          name: `${existing.first_name} ${existing.last_name}`,
+          base: {
+            id: existing.id,
+            first_name: existing.first_name,
+            last_name: existing.last_name,
+            email: existing.email,
+            phone_number: existing.phone_number,
+            status: existing.status,
+            campuses: existing.campuses,
+          },
+        }
+      : null
   );
   const [teams, setTeams] = useState<string[]>(existing?.teams ?? []);
   const [roles, setRoles] = useState<string[]>(existing?.ministry_roles ?? []);
@@ -367,7 +414,7 @@ function VolunteerEditorModal({
         return;
       }
       toast.success(existing ? "Volunteer updated" : "Volunteer added");
-      await onSaved();
+      await onSaved({ ...person.base, teams, ministry_roles: roles });
     } finally {
       setSaving(false);
     }
@@ -432,7 +479,19 @@ function VolunteerEditorModal({
                         <button
                           type="button"
                           onClick={() => {
-                            setPerson({ id: p.id, name: `${p.first_name} ${p.last_name}` });
+                            setPerson({
+                              id: p.id,
+                              name: `${p.first_name} ${p.last_name}`,
+                              base: {
+                                id: p.id,
+                                first_name: p.first_name,
+                                last_name: p.last_name,
+                                email: p.email,
+                                phone_number: p.phone_number,
+                                status: p.status,
+                                campuses: p.campuses ?? (p.campus ? [p.campus] : []),
+                              },
+                            });
                             setQuery("");
                           }}
                           className="flex w-full items-center justify-between px-3 py-2 text-left text-[13.5px] hover:bg-[#F3F6F9]"

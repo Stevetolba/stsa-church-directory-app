@@ -46,7 +46,7 @@ export function MultiSelectDropdown({
   const allOptions = useMemo(() => {
     const set = new Set(options);
     value.forEach((v) => set.add(v));
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
   }, [options, value]);
 
   const visible = allOptions.filter((o) => o.toLowerCase().includes(query.trim().toLowerCase()));
@@ -71,7 +71,7 @@ export function MultiSelectDropdown({
           {value.length === 0 ? (
             <span className="text-[#8A94A0]">{placeholder}</span>
           ) : (
-            value.map((v) => (
+            [...value].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })).map((v) => (
               <span
                 key={v}
                 className="rounded-full bg-[#EAF0F5] px-2.5 py-0.5 text-[12px] font-semibold text-brand-navy"
