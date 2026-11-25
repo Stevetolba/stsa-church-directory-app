@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   filterAndPaginateProfiles,
+  sortAlphabetically,
   getVolunteerFieldOptions,
   mapProfile,
   updateProfile,
@@ -144,7 +145,7 @@ describe("updateProfile — teams / ministry_roles (mock mode)", () => {
 describe("getVolunteerFieldOptions (mock mode)", () => {
   it("returns sorted, de-duplicated teams and roles", async () => {
     const { teams, roles } = await getVolunteerFieldOptions();
-    expect(teams).toEqual(Array.from(new Set(teams)).sort((a, b) => a.localeCompare(b)));
+    expect(teams).toEqual(sortAlphabetically(teams));
     expect(teams).toContain("Welcome");
     expect(roles).toContain("Team Lead");
     expect(new Set(roles).size).toBe(roles.length);
@@ -176,5 +177,16 @@ describe("volunteer CSV export", () => {
     const [header, line] = csv.split("\r\n");
     expect(header).toBe("First Name,Last Name,Email,Phone,Campus,Teams,Roles,Status");
     expect(line).toContain('"Welcome; Children\'s, Youth"');
+  });
+});
+
+describe("sortAlphabetically", () => {
+  it("sorts case-insensitively and de-duplicates a Set", () => {
+    expect(sortAlphabetically(new Set(["worship", "AV/Recording Team", "AFC", "Men's Ministry"]))).toEqual([
+      "AFC",
+      "AV/Recording Team",
+      "Men's Ministry",
+      "worship",
+    ]);
   });
 });
