@@ -55,7 +55,12 @@ interface RawCustomFieldValue {
   // Confirmed against the live org: multi-select fields (e.g. Campus) use
   // `choices` (array), not the singular `choice` this originally assumed
   // — every campus lookup silently returned undefined as a result.
-  value: { text?: string; choice?: { id: string; name: string }; choices?: { id: string; name: string }[] };
+  value: {
+    text?: string;
+    date?: string;
+    choice?: { id: string; name: string };
+    choices?: { id: string; name: string }[];
+  };
 }
 
 interface RawMembershipStatusChange {
@@ -1841,6 +1846,62 @@ export async function buildChoiceFieldInput(
   };
 }
 
+// --- Custom field writes: read-modify-write ---
+//
+// Subsplash treats a PATCH's `custom_fields` array as ALL-OR-NOTHING
+// (openapi.yaml → ProfileRequest.custom_fields): whatever is sent replaces
+// every custom field on the profile, so sending just one field silently wipes
+// all the others (confirmed against the live org). Every write therefore goes
+// through mergeCustomFieldInputs, which re-reads the profile's current fields
+// and sends them all back with only the intended changes applied.
+//
+// Subsplash also rejects an empty value ("custom field must have a value"),
+// so clearing a field means leaving it out of the list — hence CustomFieldClear.
+
+export interface CustomFieldInput {
+  custom_field_definition: { id: string; revision_id?: string };
+  value: object;
+}
+export interface CustomFieldClear {
+  custom_field_definition: { id: string };
+  clear: true;
+}
+
+function rawFieldToInput(f: RawCustomFieldValue): CustomFieldInput | null {
+  const v = f.value;
+  let value: object;
+  if (v.choices?.length) value = { choices: v.choices.map((c) => ({ id: c.id })) };
+  else if (v.choice) value = { choice: { id: v.choice.id } };
+  else if (v.text) value = { text: v.text };
+  else if (v.date) value = { date: v.date };
+  else return null; // unset fields can't be sent back (empty values are rejected)
+  return {
+    custom_field_definition: { id: f.custom_field_definition.id, revision_id: f.custom_field_definition.revision_id },
+    value,
+  };
+}
+
+// The complete custom_fields list to PATCH: the profile's current fields,
+// with `changes` applied on top (a change replaces the field with the same
+// definition id; a clear removes it). Throws if the profile can't be read —
+// better to fail than to send a partial list and wipe the rest.
+export async function mergeCustomFieldInputs(
+  profileId: string,
+  changes: Array<CustomFieldInput | CustomFieldClear>
+): Promise<CustomFieldInput[]> {
+  const current = await subsplashFetch<RawProfile>(`/people/v1/profiles/${profileId}`);
+  const byDefinition = new Map<string, CustomFieldInput>();
+  for (const f of current.custom_fields ?? []) {
+    const input = rawFieldToInput(f);
+    if (input) byDefinition.set(f.custom_field_definition.id, input);
+  }
+  for (const change of changes) {
+    if ("clear" in change) byDefinition.delete(change.custom_field_definition.id);
+    else byDefinition.set(change.custom_field_definition.id, change);
+  }
+  return Array.from(byDefinition.values());
+}
+
 // Case-insensitive alphabetical order, shared by every option list.
 export function sortAlphabetically(values: Iterable<string>): string[] {
   return Array.from(values).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
@@ -1856,11 +1917,18 @@ export async function buildMultiChoiceFieldInput(
   profileId: string,
   fieldName: string,
   names: string[]
-): Promise<{ custom_field_definition: { id: string; revision_id?: string }; value: object }> {
+): Promise<CustomFieldInput | CustomFieldClear | null> {
   const currentRaw = await subsplashFetch<RawProfile>(`/people/v1/profiles/${profileId}`).catch(
     () => null
   );
   const fromProfile = currentRaw ? findGenericField(currentRaw.custom_fields, fieldName) : undefined;
+  // Subsplash rejects an empty selection, so clearing means omitting the
+  // field (see mergeCustomFieldInputs). Nothing to do if it isn't set.
+  if (names.length === 0) {
+    return fromProfile
+      ? { custom_field_definition: { id: fromProfile.custom_field_definition.id }, clear: true }
+      : null;
+  }
   let meta = fromProfile ? mergeGenericFieldMeta(null, fromProfile) : null;
 
   if (!meta || !meta.revisionId || names.some((n) => !meta!.choiceIds[n])) {
@@ -1964,7 +2032,7 @@ export async function setChoiceCustomField(
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ custom_fields: [input] }),
+    body: JSON.stringify({ custom_fields: await mergeCustomFieldInputs(profileId, [input]) }),
   });
   if (!res.ok) {
     throw new Error(`Subsplash API error: ${res.status} PATCH /people/v1/profiles/${profileId}`);
@@ -2117,10 +2185,7 @@ export async function updateProfile(id: string, patch: UpdateProfileInput, opts:
   // Campus, DirectoryAccess, DirectoryRole, and VolunteerNotes all live in
   // custom fields, not top-level columns, so they ride along in the same
   // PATCH via the custom_fields array (openapi.yaml → CustomFieldValueInput).
-  const customFieldInputs: Array<{
-    custom_field_definition: { id: string; revision_id?: string };
-    value: object;
-  }> = [];
+  const customFieldInputs: Array<CustomFieldInput | CustomFieldClear> = [];
   if (campuses !== undefined) {
     customFieldInputs.push(await buildCampusFieldInput(id, campuses));
   }
@@ -2131,13 +2196,15 @@ export async function updateProfile(id: string, patch: UpdateProfileInput, opts:
     customFieldInputs.push(await buildDirectoryRoleFieldInput(id, directory_role));
   }
   if (teams !== undefined) {
-    customFieldInputs.push(await buildMultiChoiceFieldInput(id, MINISTRY_FIELD_NAME, teams));
+    const input = await buildMultiChoiceFieldInput(id, MINISTRY_FIELD_NAME, teams);
+    if (input) customFieldInputs.push(input);
   }
   if (ministry_roles !== undefined) {
-    customFieldInputs.push(await buildMultiChoiceFieldInput(id, MINISTRY_ROLE_FIELD_NAME, ministry_roles));
+    const input = await buildMultiChoiceFieldInput(id, MINISTRY_ROLE_FIELD_NAME, ministry_roles);
+    if (input) customFieldInputs.push(input);
   }
   if (customFieldInputs.length > 0) {
-    body.custom_fields = customFieldInputs;
+    body.custom_fields = await mergeCustomFieldInputs(id, customFieldInputs);
   }
   // A profile's own address (independent of the household's) lives under
   // _embedded.address, same shape as the household write (openapi.yaml →
