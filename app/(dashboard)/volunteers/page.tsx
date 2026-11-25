@@ -1,16 +1,24 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { getRosterScope } from "@/lib/rosterScope";
 import { VolunteersPageClient } from "@/components/VolunteersPageClient";
 
-// Admins/staff and Team Leads can read the roster; only admins can change it.
-// Both are re-enforced server-side by the /api/volunteers routes
-// (requireVolunteerRosterAccess / requireAdmin) — this redirect just keeps
-// everyone else from landing on an empty page.
+// Admins/staff and Team Leads can read the roster. Writes: admins any team,
+// Team Leads only their own team(s) — both re-enforced server-side by the
+// /api/volunteers routes (requireRosterManager); the scope passed down here
+// only decides which controls to show. Everyone else is redirected.
 export default async function VolunteersPage() {
   const session = await auth();
   const role = session?.user?.role;
   const allowed = role === "admin" || role === "staff" || (role === "volunteer" && !!session?.user?.canEmailChildren);
-  if (!allowed) redirect("/children");
+  if (!allowed || !session?.user) redirect("/children");
 
-  return <VolunteersPageClient isAdmin={role === "admin"} />;
+  const scope = await getRosterScope(session.user);
+  return (
+    <VolunteersPageClient
+      canManage={scope.canManage}
+      manageableTeams={scope.teams}
+      isAdmin={role === "admin"}
+    />
+  );
 }

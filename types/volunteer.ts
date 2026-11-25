@@ -23,4 +23,6 @@ export interface VolunteerListResponse {
 export interface VolunteerOptions {
   teams: string[];
   roles: string[];
+  // Teams the caller may assign: null = every team (admin), [] = read-only.
+  manageableTeams: string[] | null;
 }

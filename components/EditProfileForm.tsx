@@ -73,7 +73,7 @@ export function EditProfileForm({
   const initialRoles = profile.ministry_roles ?? [];
   const [teams, setTeams] = useState<string[]>(initialTeams);
   const [ministryRoles, setMinistryRoles] = useState<string[]>(initialRoles);
-  const [options, setOptions] = useState<VolunteerOptions>({ teams: [], roles: [] });
+  const [options, setOptions] = useState<VolunteerOptions>({ teams: [], roles: [], manageableTeams: null });
   useEffect(() => {
     let cancelled = false;
     fetch("/api/volunteers/options")
