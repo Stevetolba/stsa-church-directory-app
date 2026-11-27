@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseCampuses,
   buildAddressChanges,
   buildNewMemberChanges,
   buildProfileChanges,
@@ -236,5 +237,13 @@ describe("gender and a child's email", () => {
     ]));
     const adult = buildNewMemberChanges({ first_name: "Al", last_name: "Lee", role: "parent", date_of_birth: "1980-01-01", email: "al@x.org" }, NOV_2026);
     expect(adult.changes.some((c) => c.field === "email")).toBe(false);
+  });
+});
+
+describe("parseCampuses", () => {
+  it("keeps only known campuses, in a fixed order", () => {
+    expect(parseCampuses("Leesburg, Arlington")).toEqual(["Arlington", "Leesburg"]);
+    expect(parseCampuses("Leesburg, Reston")).toEqual(["Leesburg"]);
+    expect(parseCampuses(null)).toEqual([]);
   });
 });

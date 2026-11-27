@@ -7,6 +7,7 @@ import {
   getRequest,
   listChanges,
   markNewMemberAddedManually,
+  newMembersMissingCampus,
   rejectRequest,
   replaceSubjectChanges,
   reviewRequest,
@@ -142,6 +143,78 @@ describe("new members", () => {
     await submitRequest(req.id, null);
     return req;
   }
+
+  it("writes the admin's campus pick to the new profile after creating it", async () => {
+    const req = await seedNew();
+    const ids = (await listChanges(req.id)).map((c) => c.id);
+    const d = deps();
+    expect(await reviewRequest(req.id, ids, "admin@x.org", d, { "new-1": ["Leesburg"] })).toBe("applied");
+    expect(vi.mocked(d.createProfile).mock.calls[0][0]).not.toHaveProperty("campuses");
+    expect(d.updateProfile).toHaveBeenCalledWith("new-profile", { campuses: ["Leesburg"] });
+    const row = (await listChanges(req.id)).find((c) => c.field === "campus")!;
+    expect(row).toMatchObject({ newValue: "Leesburg", decision: "accepted", subjectLabel: "Eve Lee" });
+    expect(row.appliedAt).not.toBeNull();
+  });
+
+  it("can put a new member on both campuses", async () => {
+    const req = await seedNew();
+    const ids = (await listChanges(req.id)).map((c) => c.id);
+    const d = deps();
+    await reviewRequest(req.id, ids, "admin@x.org", d, { "new-1": ["Arlington", "Leesburg"] });
+    expect(d.updateProfile).toHaveBeenCalledWith("new-profile", { campuses: ["Arlington", "Leesburg"] });
+  });
+
+  it("retries a failed campus write without creating the person again", async () => {
+    const req = await seedNew();
+    const ids = (await listChanges(req.id)).map((c) => c.id);
+    const failing = deps({
+      updateProfile: vi.fn(async () => {
+        throw new Error("no campus field");
+      }),
+    });
+    expect(await reviewRequest(req.id, ids, "admin@x.org", failing, { "new-1": ["Leesburg"] })).toBe("pending");
+    const failed = (await listChanges(req.id)).filter((c) => c.applyError);
+    expect(failed.map((c) => c.field)).toEqual(["campus"]);
+
+    const d = deps();
+    await applyAcceptedChanges(req.id, d);
+    expect(d.createProfile).not.toHaveBeenCalled();
+    expect(d.updateProfile).toHaveBeenCalledWith("new-profile", { campuses: ["Leesburg"] });
+    expect((await getRequest(req.id))?.status).toBe("applied");
+  });
+
+  it("uses the latest pick when a failed creation is applied again", async () => {
+    const req = await seedNew();
+    const ids = (await listChanges(req.id)).map((c) => c.id);
+    const failing = deps({
+      createProfile: vi.fn(async () => {
+        throw new Error("refused");
+      }),
+    });
+    await reviewRequest(req.id, ids, "admin@x.org", failing, { "new-1": ["Leesburg"] });
+    const d = deps();
+    const again = (await listChanges(req.id)).map((c) => c.id);
+    expect(await reviewRequest(req.id, again, "admin@x.org", d, { "new-1": ["Arlington"] })).toBe("applied");
+    expect(d.updateProfile).toHaveBeenCalledWith("new-profile", { campuses: ["Arlington"] });
+    expect((await listChanges(req.id)).filter((c) => c.field === "campus")).toHaveLength(1);
+  });
+
+  it("doesn't write a campus for a rejected new member", async () => {
+    const req = await seedNew();
+    const d = deps();
+    expect(await reviewRequest(req.id, [], "admin@x.org", d, { "new-1": ["Leesburg"] })).toBe("rejected");
+    expect(d.createProfile).not.toHaveBeenCalled();
+    expect(d.updateProfile).not.toHaveBeenCalled();
+  });
+
+  it("lists accepted new members that have no campus picked", async () => {
+    const req = await seedNew();
+    const changes = await listChanges(req.id);
+    const ids = changes.map((c) => c.id);
+    expect(newMembersMissingCampus(changes, ids)).toEqual(["Eve Lee"]);
+    expect(newMembersMissingCampus(changes, ids, { "new-1": ["Arlington"] })).toEqual([]);
+    expect(newMembersMissingCampus(changes, [])).toEqual([]);
+  });
 
   it("accepting one field accepts the whole person, and creates one profile", async () => {
     const req = await seedNew();

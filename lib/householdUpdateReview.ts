@@ -17,6 +17,7 @@ import type { UpdateChange } from "./householdUpdates";
 
 export interface ReviewRow {
   id: string;
+  field: ChangeField;
   fieldLabel: string;
   atSubmission: string;
   now: string;
@@ -71,6 +72,7 @@ export function buildReviewGroups(changes: UpdateChange[], household: Household 
     const live = liveValue(household, c);
     groups.get(key)!.rows.push({
       id: c.id,
+      field: c.field,
       fieldLabel: FIELD_LABELS[c.field],
       atSubmission: displayValue(c.field, c.oldValue, now),
       now: c.subjectType === "new_member" ? "—" : displayValue(c.field, live, now),
