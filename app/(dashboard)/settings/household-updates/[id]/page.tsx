@@ -3,7 +3,9 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getRequest, listChanges } from "@/lib/householdUpdates";
 import { buildReviewGroups } from "@/lib/householdUpdateReview";
-import { findDuplicateCandidates } from "@/lib/householdUpdateLogic";
+import { findDuplicateCandidates, parseCampuses } from "@/lib/householdUpdateLogic";
+import { householdCampus } from "@/lib/household";
+import type { Campus } from "@/types/profile";
 import { getHousehold, searchProfiles } from "@/lib/subsplash";
 import { HouseholdUpdateReview } from "@/components/household/HouseholdUpdateReview";
 
@@ -15,6 +17,15 @@ export default async function HouseholdUpdateDetailPage({ params }: { params: { 
   if (!request || request.status === "draft") notFound();
   const [changes, household] = await Promise.all([listChanges(request.id), getHousehold(request.householdId)]);
   const groups = buildReviewGroups(changes, household);
+
+  // The campus picker for each new member starts on an earlier pick if there
+  // is one, otherwise on the household's campus.
+  const familyCampus = household ? householdCampus(household) : undefined;
+  const initialCampuses: Record<string, Campus[]> = {};
+  for (const g of groups.filter((x) => x.type === "new_member")) {
+    const picked = parseCampuses(changes.find((c) => c.subjectId === g.subjectId && c.field === "campus")?.newValue);
+    initialCampuses[g.subjectId] = picked.length ? picked : familyCampus ? [familyCampus] : [];
+  }
 
   // Possible existing people for each proposed new member, so the admin can
   // avoid creating a duplicate profile.
@@ -49,7 +60,13 @@ export default async function HouseholdUpdateDetailPage({ params }: { params: { 
       {request.status === "rejected" && request.rejectionReason && (
         <p className="text-sm text-muted-foreground">Rejected: {request.rejectionReason}</p>
       )}
-      <HouseholdUpdateReview requestId={request.id} status={request.status} groups={groups} duplicates={duplicates} />
+      <HouseholdUpdateReview
+        requestId={request.id}
+        status={request.status}
+        groups={groups}
+        duplicates={duplicates}
+        initialCampuses={initialCampuses}
+      />
     </div>
   );
 }

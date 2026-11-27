@@ -14,9 +14,17 @@ import {
   type HouseholdUpdateRequestRow,
 } from "./db/schema";
 import type { ChangeField, ProposedChange, SubjectType } from "./householdUpdateLogic";
-import { ADDRESS_FIELDS, EXTRA_MEMBER_FIELDS, HOME_ADDRESS_FIELDS, hasDrifted, type HomeAddressField } from "./householdUpdateLogic";
+import {
+  ADDRESS_FIELDS,
+  EXTRA_MEMBER_FIELDS,
+  HOME_ADDRESS_FIELDS,
+  hasDrifted,
+  parseCampuses,
+  type HomeAddressField,
+} from "./householdUpdateLogic";
 import { liveValue } from "./householdUpdateReview";
 import type { Household } from "@/types/household";
+import type { Campus } from "@/types/profile";
 
 export type RequestStatus = "draft" | "pending" | "applied" | "partially_applied" | "rejected";
 export type Decision = "pending" | "accepted" | "rejected";
@@ -225,6 +233,39 @@ export async function replaceSubjectChanges(requestId: string, subject: Subject,
   await patchRequest(requestId, {});
 }
 
+// Records the campus the admin picked for a proposed new member, as one more
+// change row on that person, so a retry still knows it. A campus already
+// written to Subsplash is left as it is.
+async function setNewMemberCampus(requestId: string, subjectId: string, campuses: Campus[]): Promise<void> {
+  const rows = (await listChanges(requestId)).filter((c) => c.subjectType === "new_member" && c.subjectId === subjectId);
+  const existing = rows.find((c) => c.field === "campus");
+  if (rows.length === 0 || existing?.appliedAt) return;
+  const newValue = parseCampuses(campuses.join(",")).join(", ");
+  if (existing) return patchChange(existing.id, { newValue });
+  const row = {
+    requestId,
+    subjectType: "new_member" as const,
+    subjectId,
+    subjectLabel: rows[0].subjectLabel,
+    field: "campus" as const,
+    oldValue: null,
+    newValue,
+  };
+  if (isDbConfigured()) {
+    await getDb().insert(householdUpdateChanges).values(row);
+    return;
+  }
+  mem().changes.push({
+    ...row,
+    id: crypto.randomUUID(),
+    decision: "pending",
+    appliedAt: null,
+    applyError: null,
+    createdProfileId: null,
+    createdAt: now(),
+  });
+}
+
 // Submitting moves the request to "pending" for admin review. Calling it
 // again on a pending request just refreshes the note and timestamp.
 export async function submitRequest(requestId: string, note: string | null): Promise<void> {
@@ -282,8 +323,11 @@ export interface ApplyDeps {
 function splitProfileWrites(cs: UpdateChange[]): UpdateChange[][] {
   const home = cs.filter((c) => c.field in HOME_ADDRESS_FIELDS);
   const notes = cs.filter((c) => c.field === "care_notes");
-  const basic = cs.filter((c) => !(c.field in HOME_ADDRESS_FIELDS) && c.field !== "care_notes");
-  return [basic, home, notes].filter((g) => g.length > 0);
+  const campus = cs.filter((c) => c.field === "campus");
+  const basic = cs.filter(
+    (c) => !(c.field in HOME_ADDRESS_FIELDS) && c.field !== "care_notes" && c.field !== "campus"
+  );
+  return [basic, home, notes, campus].filter((g) => g.length > 0);
 }
 
 // Turns a person's accepted change rows into one updateProfile patch. A
@@ -298,6 +342,7 @@ async function buildProfilePatch(
   const addrChanges: Record<string, string> = {};
   for (const c of cs) {
     if (c.field === "graduation_year") patch.graduation_year = Number(c.newValue);
+    else if (c.field === "campus") patch.campuses = parseCampuses(c.newValue);
     else if (c.field in HOME_ADDRESS_FIELDS) addrChanges[HOME_ADDRESS_FIELDS[c.field as HomeAddressField]] = c.newValue ?? "";
     else patch[c.field] = c.newValue ?? "";
   }
@@ -416,7 +461,7 @@ export async function applyAcceptedChanges(requestId: string, deps?: ApplyDeps):
       }
     }
 
-    // Phone, home address and notes are written to the new profile afterwards.
+    // Phone, home address, notes and campus are written to the new profile afterwards.
     for (const part of splitProfileWrites(extras)) {
       try {
         await d.updateProfile(createdId, await buildProfilePatch(part, d, null));
@@ -491,16 +536,40 @@ export async function autoApplySubmittedRequest(requestId: string, deps?: ApplyD
   };
 }
 
+// Accepted new members, not yet created, that nobody has picked a campus for.
+export function newMembersMissingCampus(
+  changes: UpdateChange[],
+  acceptedIds: string[],
+  newMemberCampuses: Record<string, Campus[]> = {}
+): string[] {
+  const accepted = normalizeAcceptedIds(changes, acceptedIds);
+  const members = changes.filter((c) => c.subjectType === "new_member");
+  const missing = new Map<string, string>();
+  for (const c of members.filter((x) => accepted.has(x.id))) {
+    const rows = members.filter((x) => x.subjectId === c.subjectId);
+    if (rows.some((x) => x.appliedAt || x.createdProfileId)) continue;
+    if (newMemberCampuses[c.subjectId]?.length) continue;
+    if (rows.some((x) => x.field === "campus" && parseCampuses(x.newValue).length > 0)) continue;
+    missing.set(c.subjectId, c.subjectLabel || c.subjectId);
+  }
+  return Array.from(missing.values());
+}
+
 // Admin accepts the ticked changes (everything else is rejected) and they are
 // written to Subsplash.
 export async function reviewRequest(
   requestId: string,
   acceptedIds: string[],
   reviewerEmail: string,
-  deps?: ApplyDeps
+  deps?: ApplyDeps,
+  newMemberCampuses: Record<string, Campus[]> = {}
 ): Promise<RequestStatus> {
   const request = await getRequest(requestId);
   if (!request || request.status !== "pending") throw new Error("Only a pending request can be reviewed.");
+  // Saved first, so each campus row is decided along with the rest of its person.
+  for (const [subjectId, campuses] of Object.entries(newMemberCampuses)) {
+    await setNewMemberCampus(requestId, subjectId, campuses);
+  }
   const changes = await listChanges(requestId);
   const accepted = normalizeAcceptedIds(changes, acceptedIds);
   for (const c of changes) {

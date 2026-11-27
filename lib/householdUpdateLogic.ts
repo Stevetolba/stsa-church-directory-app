@@ -4,6 +4,7 @@
 // here so it's cheap to test; storage lives in lib/householdUpdates.ts.
 
 import { graduationYearForGradeValue, gradeLabelForValue, gradeValueForGraduationYear } from "./grades";
+import type { Campus } from "@/types/profile";
 
 export type HomeAddressField = "home_street" | "home_city" | "home_state" | "home_postal_code";
 export type ProfileField =
@@ -19,7 +20,9 @@ export type ProfileField =
   | "care_notes";
 export type AddressField = "street" | "city" | "state" | "postal_code";
 export type NewMemberRole = "parent" | "guardian" | "child";
-export type ChangeField = ProfileField | AddressField | "household_role";
+// "campus" is never proposed by a family: the admin picks it for a new member
+// at review time.
+export type ChangeField = ProfileField | AddressField | "household_role" | "campus";
 export type SubjectType = "profile" | "household" | "new_member";
 
 export const PROFILE_FIELDS: ProfileField[] = [
@@ -56,6 +59,7 @@ export const EXTRA_MEMBER_FIELDS: ChangeField[] = [
   "home_postal_code",
   "allergy_notes",
   "care_notes",
+  "campus",
 ];
 export const ADDRESS_FIELDS: AddressField[] = ["street", "city", "state", "postal_code"];
 
@@ -78,7 +82,16 @@ export const FIELD_LABELS: Record<ChangeField, string> = {
   state: "State",
   postal_code: "ZIP code",
   household_role: "Role in household",
+  campus: "Campus",
 };
+
+export const CAMPUSES: Campus[] = ["Arlington", "Leesburg"];
+
+// A campus change row stores its choices as "Arlington, Leesburg".
+export function parseCampuses(value: string | null | undefined): Campus[] {
+  const chosen = (value ?? "").split(",").map((v) => v.trim());
+  return CAMPUSES.filter((c) => chosen.includes(c));
+}
 
 export interface ProposedChange {
   field: ChangeField;

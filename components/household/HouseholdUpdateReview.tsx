@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ReviewGroup } from "@/lib/householdUpdateReview";
+import { CAMPUSES } from "@/lib/householdUpdateLogic";
+import type { Campus } from "@/types/profile";
 import { BusyLabel } from "./Spinner";
 
 type Duplicates = Record<string, { id: string; name: string; detail: string }[]>;
@@ -19,6 +21,7 @@ export function HouseholdUpdateReview(props: {
   status: string;
   groups: ReviewGroup[];
   duplicates: Duplicates;
+  initialCampuses: Record<string, Campus[]>;
 }) {
   const router = useRouter();
   const isPending = props.status === "pending";
@@ -33,7 +36,34 @@ export function HouseholdUpdateReview(props: {
   const busy = working !== null;
   const [message, setMessage] = useState<string | null>(null);
 
+  const [campuses, setCampuses] = useState(props.initialCampuses);
+
   const hasFailures = allRows.some((r) => r.decision === "accepted" && !r.applied && r.error);
+
+  // New members who don't exist in Subsplash yet: the admin picks their campus.
+  const toCreate = isPending ? props.groups.filter((g) => g.type === "new_member" && !g.rows.some((r) => r.applied)) : [];
+  const acceptedToCreate = toCreate.filter((g) => g.rows.some((r) => accepted.has(r.id)));
+  const needsCampus = acceptedToCreate.filter((g) => !campuses[g.subjectId]?.length);
+  // While the picker is showing, it stands in for the saved campus row.
+  const pickerRowIds = new Set(toCreate.flatMap((g) => g.rows.filter((r) => r.field === "campus").map((r) => r.id)));
+  const acceptedCount = Array.from(accepted).filter((id) => !pickerRowIds.has(id)).length;
+
+  function toggleCampus(subjectId: string, campus: Campus) {
+    setCampuses((prev) => {
+      const chosen = prev[subjectId] ?? [];
+      return {
+        ...prev,
+        [subjectId]: CAMPUSES.filter((c) => (c === campus ? !chosen.includes(c) : chosen.includes(c))),
+      };
+    });
+  }
+
+  function apply() {
+    void call("review", {
+      acceptedIds: Array.from(accepted),
+      newMemberCampuses: Object.fromEntries(acceptedToCreate.map((g) => [g.subjectId, campuses[g.subjectId]])),
+    });
+  }
 
   function toggle(id: string, group: ReviewGroup) {
     const next = new Set(accepted);
@@ -100,6 +130,26 @@ export function HouseholdUpdateReview(props: {
               </button>
             </div>
           )}
+          {toCreate.includes(g) && (
+            <fieldset
+              disabled={busy || !acceptedToCreate.includes(g)}
+              className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 text-sm disabled:opacity-50"
+            >
+              <legend className="sr-only">Campus for {g.label}</legend>
+              <span className="font-medium" aria-hidden="true">Campus</span>
+              {CAMPUSES.map((c) => (
+                <label key={c} className="inline-flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={campuses[g.subjectId]?.includes(c) ?? false}
+                    onChange={() => toggleCampus(g.subjectId, c)}
+                  />
+                  {c}
+                </label>
+              ))}
+              {needsCampus.includes(g) && <span className="text-destructive">Choose at least one campus.</span>}
+            </fieldset>
+          )}
           <table className="w-full text-left text-sm">
             <thead className="text-xs uppercase text-muted-foreground">
               <tr>
@@ -111,7 +161,7 @@ export function HouseholdUpdateReview(props: {
               </tr>
             </thead>
             <tbody>
-              {g.rows.map((r) => (
+              {g.rows.filter((r) => !pickerRowIds.has(r.id)).map((r) => (
                 <tr key={r.id} className="border-t border-border align-top">
                   <td className="px-4 py-2 font-medium">{r.fieldLabel}</td>
                   <td className="whitespace-pre-wrap px-4 py-2 text-muted-foreground">{r.atSubmission}</td>
@@ -156,13 +206,13 @@ export function HouseholdUpdateReview(props: {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={busy}
-              onClick={() => call("review", { acceptedIds: Array.from(accepted) })}
+              disabled={busy || needsCampus.length > 0}
+              onClick={apply}
               className="rounded-lg bg-brand-navy px-4 py-2 text-sm font-semibold text-brand-cream disabled:opacity-50"
             >
               <BusyLabel
                 busy={working === "review"}
-                idle={`Apply ${accepted.size} accepted change${accepted.size === 1 ? "" : "s"} to Subsplash`}
+                idle={`Apply ${acceptedCount} accepted change${acceptedCount === 1 ? "" : "s"} to Subsplash`}
                 working="Writing to Subsplash…"
               />
             </button>
@@ -177,6 +227,11 @@ export function HouseholdUpdateReview(props: {
               </button>
             )}
           </div>
+          {needsCampus.length > 0 && (
+            <p className="text-sm text-destructive">
+              Choose a campus for {needsCampus.map((g) => g.label).join(", ")} before applying.
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <input
               className="min-w-[16rem] flex-1 rounded-lg border border-border bg-white px-3 py-2 text-sm"
